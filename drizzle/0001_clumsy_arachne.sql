@@ -1,0 +1,1 @@
+ALTER TABLE `appointments` ADD `paid` integer DEFAULT false NOT NULL;
