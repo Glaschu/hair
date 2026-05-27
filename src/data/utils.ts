@@ -115,6 +115,7 @@ export function createClient(fields: Partial<Omit<Client, 'id'>> & { name: strin
     name: fields.name.trim(),
     phone: fields.phone ?? '',
     email: fields.email ?? '',
+    instagram: fields.instagram,
     tone: fields.tone ?? '#C49A7A',
     photo: fields.photo,
     since: fields.since ?? new Date().getFullYear().toString(),

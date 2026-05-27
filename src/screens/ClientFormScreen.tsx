@@ -36,6 +36,7 @@ export default function ClientFormScreen() {
   const [name, setName] = useState(existing?.name || '');
   const [phone, setPhone] = useState(existing?.phone || '');
   const [email, setEmail] = useState(existing?.email || '');
+  const [instagram, setInstagram] = useState(existing?.instagram || '');
   const [tone, setTone] = useState(existing?.tone || TONE_OPTIONS[0]);
   const [photo, setPhoto] = useState<string | undefined>(existing?.photo);
   const [savingPhoto, setSavingPhoto] = useState(false);
@@ -92,13 +93,13 @@ export default function ClientFormScreen() {
     if (existing) {
       setClients((prev) => prev.map((c) => c.id === existing.id ? {
         ...c,
-        name: name.trim(), phone, email, tone, photo, vip,
+        name: name.trim(), phone, email, instagram: instagram.trim(), tone, photo, vip,
         hair: { type: hairType, length: hairLength, natural: hairNatural },
         formula, allergies: allergies.trim() || 'None on file', notes,
       } : c));
     } else {
       const newClient = createClient({
-        name, phone, email, tone, photo, vip, notes, formula,
+        name, phone, email, instagram: instagram.trim(), tone, photo, vip, notes, formula,
         hair: { type: hairType, length: hairLength, natural: hairNatural },
         allergies: allergies.trim(),
       });
@@ -187,6 +188,8 @@ export default function ClientFormScreen() {
           <Field label="Phone" value={phone} onChangeText={setPhone} placeholder="+44 7700 900000" keyboardType="phone-pad" theme={theme} error={phoneError} />
           <Divider theme={theme} />
           <Field label="Email" value={email} onChangeText={setEmail} placeholder="sophie@email.com" keyboardType="email-address" theme={theme} error={emailError} />
+          <Divider theme={theme} />
+          <Field label="Instagram" value={instagram} onChangeText={setInstagram} placeholder="@username" theme={theme} />
           <Divider theme={theme} />
           <View style={styles.fieldRow}>
             <Text style={[styles.fieldLabel, { color: theme.ink3, width: 'auto', flex: 1 }]}>VIP Client</Text>

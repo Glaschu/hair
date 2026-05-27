@@ -9,6 +9,7 @@ export interface ClientPhoto {
   date: string;
   url: string;
   label: string;
+  appointmentId?: string;
 }
 
 export interface Client {
@@ -17,6 +18,7 @@ export interface Client {
   tone: string;
   phone: string;
   email: string;
+  instagram?: string;
   since: string;
   hair: HairInfo;
   formula: string;

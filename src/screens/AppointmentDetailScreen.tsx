@@ -1,24 +1,28 @@
 import React, { useState, useMemo } from 'react';
 import {
-  View, Text, ScrollView, Pressable, TextInput, Modal, FlatList, StyleSheet, Linking,
+  View, Text, ScrollView, Pressable, TextInput, Modal, FlatList, StyleSheet, Linking, Platform, Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../data/AppContext';
+import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
 import { Avatar, Icons, RoundBtn } from '../components';
 import { fmt } from '../data/utils';
 import { deductStock, restoreStock } from '../data/stock';
 import { notifyLowStock } from '../data/notifications';
-import { Appointment, Product } from '../data/types';
+import { savePhoto } from '../db/photos';
+import { Appointment, Product, ClientPhoto } from '../data/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AppointmentDetail'>;
 
 export default function AppointmentDetailScreen() {
-  const { theme, appointments, setAppointments, clients, products, setProducts, services, remindersEnabled } = useApp();
+  const { theme, appointments, setAppointments, clients, setClients, products, setProducts, services, remindersEnabled } = useApp();
+  const dialog = useDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -27,6 +31,7 @@ export default function AppointmentDetailScreen() {
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceDraft, setPriceDraft] = useState('');
   const [markPaid, setMarkPaid] = useState(true);
+  const [viewingPhoto, setViewingPhoto] = useState<ClientPhoto | null>(null);
 
   const apptId = route.params.appointmentId;
   const appt = appointments.find((a) => a.id === apptId);
@@ -46,6 +51,40 @@ export default function AppointmentDetailScreen() {
   const totalCost = usedProducts.reduce((s, up) => {
     return s + (up.product.cost * (up.amount / up.product.size));
   }, 0);
+
+  const addPhotos = async () => {
+    if (!client) return;
+    const action = await dialog.actionSheet({
+      title: 'Add Photo',
+      actions: [{ label: 'Take Photo' }, { label: 'Choose from Library' }]
+    });
+    if (action === null) return;
+    
+    const result = action === 0
+      ? await ImagePicker.launchCameraAsync({ allowsMultipleSelection: true, quality: 0.8 })
+      : await ImagePicker.launchImageLibraryAsync({
+          allowsMultipleSelection: true, quality: 0.8,
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        });
+
+    if (!result.canceled) {
+      try {
+        const saved = await Promise.all(result.assets.map(a => savePhoto(a.uri)));
+        const newPhotos: ClientPhoto[] = saved.map((uri) => ({
+          id: `ph-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          date: new Date().toISOString(),
+          url: uri,
+          label: '',
+          appointmentId: apptId,
+        }));
+        setClients((cs) => cs.map((c) => c.id === client.id
+          ? { ...c, photos: [...newPhotos, ...(c.photos || [])] }
+          : c));
+      } catch {
+        // failed
+      }
+    }
+  };
 
   const updateNotes = (text: string) => {
     setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, notes: text } : a));
@@ -205,7 +244,13 @@ export default function AppointmentDetailScreen() {
                   <Text style={[styles.contactBtnText, { color: theme.ink }]}>Call</Text>
                 </Pressable>
                 <Pressable
-                  onPress={() => Linking.openURL(`sms:${client.phone}`)}
+                  onPress={() => {
+                    const dateStr = fmt.day(appt.start);
+                    const timeStr = fmt.timeShort(appt.start);
+                    const msg = `Hi ${client.name}, just a quick reminder of your upcoming appointment for ${appt.service} on ${dateStr} at ${timeStr}. See you soon!`;
+                    const separator = Platform.OS === 'ios' ? '&' : '?';
+                    Linking.openURL(`sms:${client.phone}${separator}body=${encodeURIComponent(msg)}`);
+                  }}
                   style={[styles.contactBtn, { backgroundColor: theme.card, borderColor: theme.line }]}
                 >
                   <Icons.message size={15} color={theme.accent} />
@@ -353,7 +398,38 @@ export default function AppointmentDetailScreen() {
             )}
           </View>
         </View>
+
+        {/* Photos */}
+        <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text style={[styles.sectionEye, { color: theme.ink3, marginBottom: 0 }]}>PHOTOS</Text>
+            <Pressable onPress={addPhotos} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.accent + '15', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
+              <Icons.camera size={16} color={theme.accent} />
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accent }}>Add photo</Text>
+            </Pressable>
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+            {client?.photos?.filter(p => p.appointmentId === apptId).map(p => (
+              <Pressable key={p.id} onPress={() => setViewingPhoto(p)} style={{ width: 80, height: 80, borderRadius: 10, overflow: 'hidden' }}>
+                <Image source={{ uri: p.url }} style={{ flex: 1 }} resizeMode="cover" />
+              </Pressable>
+            ))}
+            {(!client?.photos || client.photos.filter(p => p.appointmentId === apptId).length === 0) && (
+              <Text style={{ fontSize: 13, fontStyle: 'italic', color: theme.ink3 }}>No photos for this appointment.</Text>
+            )}
+          </View>
+        </View>
       </ScrollView>
+
+      {/* Photo viewer modal */}
+      {viewingPhoto && (
+        <Modal visible animationType="fade" onRequestClose={() => setViewingPhoto(null)}>
+          <Pressable style={styles.photoViewer} onPress={() => setViewingPhoto(null)}>
+            <Image source={{ uri: viewingPhoto.url }} style={styles.photoViewerImg} resizeMode="contain" />
+            <Text style={styles.photoViewerDate}>{fmt.rel(viewingPhoto.date)}</Text>
+          </Pressable>
+        </Modal>
+      )}
 
       {/* Action buttons */}
       <View style={[styles.actionWrap, { backgroundColor: theme.bg }]}>
@@ -513,7 +589,18 @@ function ProductUseRow({
           >
             <Text style={[styles.amtBtnText, { color: theme.ink2 }]}>−</Text>
           </Pressable>
-          <Text style={[styles.amtText, { color: theme.ink }]}>{amount}{product.unit}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minWidth: 48 }}>
+            <TextInput
+              style={[styles.amtText, { color: theme.ink, padding: 0, minWidth: 0 }]}
+              value={amount.toString()}
+              onChangeText={(t) => {
+                const n = parseFloat(t);
+                onChangeAmount(isNaN(n) ? 0 : n);
+              }}
+              keyboardType="numeric"
+            />
+            <Text style={[styles.amtText, { color: theme.ink, padding: 0, minWidth: 0 }]}>{product.unit}</Text>
+          </View>
           <Pressable
             onPress={() => onChangeAmount(amount + 5)}
             hitSlop={8}
@@ -706,17 +793,17 @@ const styles = StyleSheet.create({
   productUseSwatchText: { fontSize: 7, fontWeight: '700', letterSpacing: 0.5 },
   productUseName: { fontSize: 13, fontWeight: '600' },
   productUseBrand: { fontSize: 11, marginTop: 1 },
-  amtControl: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  amtControl: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   amtBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 6,
-    borderWidth: 0.5,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  amtBtnText: { fontSize: 14, fontWeight: '500', lineHeight: 18 },
-  amtText: { fontSize: 12, fontWeight: '500', minWidth: 44, textAlign: 'center' },
+  amtBtnText: { fontSize: 20, fontWeight: '500', lineHeight: 24 },
+  amtText: { fontSize: 13, fontWeight: '600', minWidth: 48, textAlign: 'center' },
 
   // Sheets
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
@@ -775,4 +862,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12, borderRadius: 12, borderWidth: 0.5,
   },
   paidControlText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.5 },
+  photoViewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  photoViewerImg: { width: '100%', flex: 1, borderRadius: 12 },
+  photoViewerDate: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 12 },
 });

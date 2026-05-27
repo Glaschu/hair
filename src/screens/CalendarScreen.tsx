@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, Dimensions,
+  View, Text, ScrollView, Pressable, StyleSheet,
 } from 'react-native';
-
-const SCREEN_W = Dimensions.get('window').width;
-const CELL_W = Math.floor((SCREEN_W - 24) / 7);
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+// Each weekday column is 1/7 of the row, so the grid always fits 7 across at any
+// window width (phone, iPad, or a resizable Mac window).
+const COL_W = '14.2857%' as const;
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
@@ -55,9 +56,11 @@ export default function CalendarScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.eyebrow, { color: theme.ink3 }]}>
-            {fmt.monthYr(selectedDate).toUpperCase()}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={[styles.eyebrow, { color: theme.ink3, marginBottom: 0 }]}>
+              {fmt.monthYr(selectedDate).toUpperCase()}
+            </Text>
+          </View>
           <Text style={[styles.title, { color: theme.ink }]}>Calendar</Text>
         </View>
         {!isSameDay(selectedDate, new Date()) && (
@@ -89,44 +92,86 @@ export default function CalendarScreen() {
       </View>
 
       {/* Week strip */}
-      <View style={styles.weekStrip}>
-        <Pressable onPress={() => setSelectedDate(view === 'month' ? shiftMonth(selectedDate, -1) : addDays(selectedDate, view === 'week' ? -7 : -1))}>
-          <Icons.chevronLeft size={20} color={theme.ink2} />
-        </Pressable>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
-          {weekDays.map((day) => {
-            const isSelected = isSameDay(day, selectedDate);
-            const isToday = isSameDay(day, new Date());
-            const dayAppts = appointments.filter((a) => isSameDay(new Date(a.start), day));
-            return (
-              <Pressable
-                key={day.toISOString()}
-                onPress={() => setSelectedDate(day)}
-                style={styles.dayBtn}
-              >
-                <Text style={[styles.dayShort, { color: isSelected ? theme.accent : theme.ink3 }]}>
-                  {DAY_SHORT[day.getDay()]}
-                </Text>
-                <View style={[
-                  styles.dayNum,
-                  isSelected && { backgroundColor: theme.accent },
-                  isToday && !isSelected && { borderWidth: 1.5, borderColor: theme.accent },
-                ]}>
-                  <Text style={[styles.dayNumText, { color: isSelected ? '#fff' : isToday ? theme.accent : theme.ink }]}>
-                    {day.getDate()}
+      {view !== 'month' && (
+        <View style={styles.weekStrip}>
+          <Pressable onPress={() => setSelectedDate(addDays(selectedDate, view === 'week' ? -7 : -1))}>
+            <Icons.chevronLeft size={20} color={theme.ink2} />
+          </Pressable>
+          <View style={styles.weekDaysContainer}>
+            {weekDays.map((day) => {
+              const isSelected = isSameDay(day, selectedDate);
+              const isToday = isSameDay(day, new Date());
+              const dayAppts = appointments.filter((a) => isSameDay(new Date(a.start), day));
+              return (
+                <Pressable
+                  key={day.toISOString()}
+                  onPress={() => setSelectedDate(day)}
+                  style={styles.dayBtn}
+                >
+                  <Text style={[styles.dayShort, { color: isSelected ? theme.accent : theme.ink3 }]}>
+                    {DAY_SHORT[day.getDay()]}
                   </Text>
-                </View>
-                {dayAppts.length > 0 && (
-                  <View style={[styles.dot, { backgroundColor: isSelected ? '#fff' : theme.accent }]} />
-                )}
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-        <Pressable onPress={() => setSelectedDate(view === 'month' ? shiftMonth(selectedDate, 1) : addDays(selectedDate, view === 'week' ? 7 : 1))}>
-          <Icons.chevronRight size={20} color={theme.ink2} />
-        </Pressable>
-      </View>
+                  <View style={[
+                    styles.dayNum,
+                    isSelected && { backgroundColor: theme.accent },
+                    isToday && !isSelected && { borderWidth: 1.5, borderColor: theme.accent },
+                  ]}>
+                    <Text style={[styles.dayNumText, { color: isSelected ? '#fff' : isToday ? theme.accent : theme.ink }]}>
+                      {day.getDate()}
+                    </Text>
+                  </View>
+                  {dayAppts.length > 0 && (
+                    <View style={[styles.dot, { backgroundColor: isSelected ? '#fff' : theme.accent }]} />
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+          <Pressable onPress={() => setSelectedDate(addDays(selectedDate, view === 'week' ? 7 : 1))}>
+            <Icons.chevronRight size={20} color={theme.ink2} />
+          </Pressable>
+        </View>
+      )}
+
+      {/* Month strip */}
+      {view === 'month' && (
+        <View style={styles.weekStrip}>
+          <Pressable onPress={() => setSelectedDate(shiftMonth(selectedDate, -1))}>
+            <Icons.chevronLeft size={20} color={theme.ink2} />
+          </Pressable>
+          <View style={styles.weekDaysContainer}>
+            {[-3, -2, -1, 0, 1, 2, 3].map((offset) => {
+              const mDate = shiftMonth(selectedDate, offset);
+              const isSelected = offset === 0;
+              const isCurrentMonth = mDate.getMonth() === new Date().getMonth() && mDate.getFullYear() === new Date().getFullYear();
+              return (
+                <Pressable
+                  key={offset}
+                  onPress={() => setSelectedDate(mDate)}
+                  style={styles.dayBtn}
+                >
+                  <Text style={[styles.dayShort, { color: isSelected ? theme.accent : theme.ink3 }]}>
+                    '{mDate.getFullYear().toString().slice(2)}
+                  </Text>
+                  <View style={[
+                    styles.dayNum,
+                    { width: 36, borderRadius: 18 },
+                    isSelected && { backgroundColor: theme.accent },
+                    isCurrentMonth && !isSelected && { borderWidth: 1.5, borderColor: theme.accent },
+                  ]}>
+                    <Text style={[styles.dayNumText, { fontSize: 12, color: isSelected ? '#fff' : isCurrentMonth ? theme.accent : theme.ink }]}>
+                      {mDate.toLocaleDateString('en-GB', { month: 'short' })}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Pressable onPress={() => setSelectedDate(shiftMonth(selectedDate, 1))}>
+            <Icons.chevronRight size={20} color={theme.ink2} />
+          </Pressable>
+        </View>
+      )}
 
       {/* Day view content */}
       {view === 'day' && (
@@ -307,16 +352,22 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
             <Pressable
               key={day.toISOString()}
               onPress={() => onSelectDate(day)}
-              style={[styles.monthCell, isSelected && { backgroundColor: theme.accent, borderRadius: 10 }]}
+              style={styles.monthCell}
             >
-              <Text style={[styles.monthCellText, {
-                color: isSelected ? '#fff' : isToday ? theme.accent : theme.ink,
-                fontWeight: isToday || isSelected ? '700' : '400',
-              }]}>
-                {day.getDate()}
-              </Text>
-              {hasAppts && !isSelected && (
-                <View style={[styles.monthDot, { backgroundColor: theme.accent }]} />
+              <View style={[
+                styles.monthDayNum,
+                isSelected && { backgroundColor: theme.accent },
+                isToday && !isSelected && { borderWidth: 1.5, borderColor: theme.accent },
+              ]}>
+                <Text style={[styles.monthCellText, {
+                  color: isSelected ? '#fff' : isToday ? theme.accent : theme.ink,
+                  fontWeight: isToday || isSelected ? '700' : '400',
+                }]}>
+                  {day.getDate()}
+                </Text>
+              </View>
+              {hasAppts && (
+                <View style={[styles.monthDot, { backgroundColor: isSelected ? '#fff' : theme.accent }]} />
               )}
             </Pressable>
           );
@@ -369,12 +420,13 @@ const styles = StyleSheet.create({
   toggleRow: { flexDirection: 'row', marginHorizontal: 20, marginBottom: 12, padding: 3, borderRadius: 12 },
   toggleBtn: { flex: 1, paddingVertical: 7, alignItems: 'center' },
   toggleText: { fontSize: 13, fontWeight: '600' },
-  weekStrip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 12, gap: 4 },
-  dayBtn: { alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4 },
-  dayShort: { fontSize: 10, fontWeight: '500', marginBottom: 4 },
+  weekStrip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 12 },
+  weekDaysContainer: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 8 },
+  dayBtn: { flex: 1, alignItems: 'center', height: 60, paddingTop: 4 },
+  dayShort: { fontSize: 10, fontWeight: '500', marginBottom: 3 },
   dayNum: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   dayNumText: { fontSize: 14, fontWeight: '600' },
-  dot: { width: 4, height: 4, borderRadius: 2, marginTop: 3 },
+  dot: { width: 4, height: 4, borderRadius: 2, position: 'absolute', bottom: 4 },
   hourLabel: { width: 40, fontSize: 11, paddingTop: 2, fontWeight: '500' },
   hourLine: { flex: 1, height: 0.5, marginTop: 10 },
   apptBlock: {
@@ -398,8 +450,9 @@ const styles = StyleSheet.create({
   weekApptSvc: { fontSize: 12, marginTop: 1 },
   weekApptTime: { fontSize: 13, fontWeight: '500' },
   monthGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingVertical: 8 },
-  monthDayName: { width: CELL_W, textAlign: 'center', fontSize: 11, fontWeight: '600', paddingVertical: 4 },
-  monthCell: { width: CELL_W, height: CELL_W, alignItems: 'center', justifyContent: 'center' },
+  monthDayName: { width: COL_W, textAlign: 'center', fontSize: 11, fontWeight: '600', paddingVertical: 4 },
+  monthCell: { width: COL_W, height: 48, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  monthDayNum: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   monthCellText: { fontSize: 14 },
   monthDot: { width: 4, height: 4, borderRadius: 2, position: 'absolute', bottom: 4 },
   monthDayTitle: { fontSize: 10, letterSpacing: 1.4, marginBottom: 12, fontWeight: '600' },

@@ -43,6 +43,7 @@ export default function SettingsScreen() {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(studioName);
   const [timePicker, setTimePicker] = useState<{ day: number; field: 'start' | 'end' } | null>(null);
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [busy, setBusy] = useState<null | 'export' | 'import'>(null);
 
   const handleExport = async () => {
@@ -289,8 +290,8 @@ export default function SettingsScreen() {
                     onPress={() => setAccent(color)}
                     style={[styles.accentSwatch, {
                       backgroundColor: color,
-                      borderWidth: accent === color ? 3 : 0,
-                      borderColor: '#fff',
+                      borderWidth: accent === color ? 3 : 1,
+                      borderColor: accent === color ? '#fff' : theme.ink3 + '55',
                       shadowColor: color,
                       shadowOpacity: accent === color ? 0.4 : 0,
                       shadowRadius: 6,
@@ -481,6 +482,23 @@ export default function SettingsScreen() {
             backup guards against changes inside the app — it can't survive a lost phone.
           </Text>
         </View>
+
+        {/* App Info */}
+        <View style={[styles.section, { paddingHorizontal: 20 }]}>
+          <Text style={[styles.label, { color: theme.ink3 }]}>APP INFO</Text>
+          <Card>
+            <Pressable style={styles.dataRow} onPress={() => setWhatsNewOpen(true)}>
+              <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
+                <Icons.star size={16} color={theme.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.dataLabel, { color: theme.ink }]}>What's new</Text>
+                <Text style={[styles.dataSub, { color: theme.ink3 }]}>See features from the latest update</Text>
+              </View>
+              <Icons.chevronRight size={16} color={theme.ink3} />
+            </Pressable>
+          </Card>
+        </View>
       </ScrollView>
 
       {/* Time picker modal */}
@@ -516,6 +534,66 @@ export default function SettingsScreen() {
               );
             }}
           />
+        </View>
+      </Modal>
+
+      {/* What's New modal */}
+      <Modal visible={whatsNewOpen} transparent animationType="slide" onRequestClose={() => setWhatsNewOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.timePickerSheet, { backgroundColor: theme.bg, flex: 0.85, marginTop: 'auto' }]}>
+            <View style={styles.timePickerHandle} />
+            <Text style={[styles.timePickerTitle, { color: theme.ink, fontSize: 20, marginBottom: 24 }]}>What's New</Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}>
+              
+              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
+                <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
+                  <Icons.calendar size={18} color={theme.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Month Calendar Picker</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Easily jump between months using the new horizontal strip at the top of the calendar.</Text>
+                </View>
+              </View>
+
+              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
+                <View style={[styles.dataIcon, { backgroundColor: theme.sage + '25' }]}>
+                  <Icons.camera size={18} color={theme.sage} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Appointment Photos</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Attach photos directly to an appointment and see them inline when viewing a client's history. You can now use your camera straight from the app.</Text>
+                </View>
+              </View>
+
+              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
+                <View style={[styles.dataIcon, { backgroundColor: '#8a3ab925' }]}>
+                  <Icons.instagram size={18} color="#8a3ab9" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Instagram Direct Messages</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Save an Instagram handle for a client, and easily jump directly into an IG Direct Message thread from their profile.</Text>
+                </View>
+              </View>
+
+              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
+                <View style={[styles.dataIcon, { backgroundColor: theme.danger + '15' }]}>
+                  <Icons.edit size={18} color={theme.danger} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Precise Formula Editing</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Tap the number between the − and + buttons to type out an exact product amount manually.</Text>
+                </View>
+              </View>
+
+            </ScrollView>
+            <SafeAreaView edges={['bottom']}>
+              <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
+                <Pressable onPress={() => setWhatsNewOpen(false)} style={{ backgroundColor: theme.accent, borderRadius: 14, padding: 16, alignItems: 'center' }}>
+                  <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Done</Text>
+                </Pressable>
+              </View>
+            </SafeAreaView>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>

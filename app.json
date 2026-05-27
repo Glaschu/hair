@@ -14,7 +14,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.glaschu.iris",
-      "buildNumber": "1",
+      "buildNumber": "6",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -51,7 +51,7 @@
           "photosPermission": "Iris uses your photo library to attach client before and after photos."
         }
       ],
-      "@sentry/react-native"
+      "expo-font"
     ],
     "extra": {
       "eas": {

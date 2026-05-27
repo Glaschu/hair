@@ -8,17 +8,18 @@ export function rowToClient(
 ): Client {
   return {
     id: row.id, name: row.name, tone: row.tone, phone: row.phone,
-    email: row.email, since: row.since,
+    email: row.email, instagram: row.instagram ?? undefined, since: row.since,
     hair: { type: row.hairType, length: row.hairLength, natural: row.hairNatural },
     formula: row.formula, allergies: row.allergies, notes: row.notes,
     vip: row.vip ?? false, photo: row.photo ?? undefined,
-    photos: photos.map(p => ({ id: p.id, date: p.date, url: p.url, label: p.label })),
+    photos: photos.map(p => ({ id: p.id, date: p.date, url: p.url, label: p.label, appointmentId: p.appointmentId ?? undefined })),
   };
 }
 
 export function clientToRow(c: Client): typeof schema.clients.$inferInsert {
   return {
     id: c.id, name: c.name, tone: c.tone, phone: c.phone, email: c.email,
+    instagram: c.instagram ?? null,
     since: c.since, visits: 0, spend: 0,
     hairType: c.hair.type, hairLength: c.hair.length, hairNatural: c.hair.natural,
     formula: c.formula, allergies: c.allergies, notes: c.notes,

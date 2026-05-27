@@ -6,6 +6,7 @@ export const clients = sqliteTable('clients', {
   tone:        text('tone').notNull().default('#C49A7A'),
   phone:       text('phone').notNull().default(''),
   email:       text('email').notNull().default(''),
+  instagram:   text('instagram'),
   since:       text('since').notNull(),
   visits:      integer('visits').notNull().default(0),
   spend:       real('spend').notNull().default(0),
@@ -22,6 +23,7 @@ export const clients = sqliteTable('clients', {
 export const clientPhotos = sqliteTable('client_photos', {
   id:       text('id').primaryKey(),
   clientId: text('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  appointmentId: text('appointment_id'),
   date:     text('date').notNull(),
   url:      text('url').notNull(),
   label:    text('label').notNull().default(''),

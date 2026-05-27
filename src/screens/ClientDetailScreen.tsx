@@ -150,6 +150,10 @@ export default function ClientDetailScreen() {
             {[
               { icon: <Icons.phone size={18} color={theme.ink} />, label: 'Call', onPress: () => Linking.openURL(`tel:${client.phone}`) },
               { icon: <Icons.message size={18} color={theme.ink} />, label: 'Message', onPress: () => Linking.openURL(`sms:${client.phone}`) },
+              ...(client.instagram ? [{ icon: <Icons.instagram size={18} color={theme.ink} />, label: 'Insta', onPress: () => {
+                const handle = client.instagram?.replace('@', '');
+                Linking.openURL(`https://ig.me/m/${handle}`).catch(() => Linking.openURL(`https://instagram.com/${handle}`));
+              } }] : []),
               { icon: <Icons.plus size={18} color={theme.ink} />, label: 'Book', onPress: () => nav.navigate('NewAppointment', { clientId: client.id, prefillService: completedAppts[0]?.service }) },
             ].map((a) => (
               <Pressable key={a.label} onPress={a.onPress}
@@ -190,7 +194,7 @@ export default function ClientDetailScreen() {
           <OverviewTab client={client} upcomingAppts={upcomingAppts} nav={nav} />
         )}
         {tab === 'history' && (
-          <HistoryTab historyAppts={historyAppts} products={products} nav={nav} />
+          <HistoryTab historyAppts={historyAppts} products={products} nav={nav} client={client} onViewPhoto={setViewingPhoto} />
         )}
         {tab === 'photos' && (
           <PhotosTab client={client} onAdd={addPhotos} onView={setViewingPhoto} />
@@ -279,8 +283,8 @@ function OverviewTab({ client, upcomingAppts, nav }: { client: any; upcomingAppt
   );
 }
 
-function HistoryTab({ historyAppts, products, nav }: {
-  historyAppts: Appointment[]; products: any[]; nav: any;
+function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
+  historyAppts: Appointment[]; products: any[]; nav: any; client: any; onViewPhoto: (p: ClientPhoto) => void;
 }) {
   const { theme } = useApp();
 
@@ -340,6 +344,15 @@ function HistoryTab({ historyAppts, products, nav }: {
                       })}
                     </View>
                   </>
+                )}
+                {client?.photos?.some((p: any) => p.appointmentId === appt.id) && (
+                  <View style={{ marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                    {client.photos.filter((p: any) => p.appointmentId === appt.id).map((p: any) => (
+                      <Pressable key={p.id} onPress={() => onViewPhoto(p)} style={{ width: 48, height: 48, borderRadius: 8, overflow: 'hidden' }}>
+                        <Image source={{ uri: p.url }} style={{ flex: 1 }} resizeMode="cover" />
+                      </Pressable>
+                    ))}
+                  </View>
                 )}
               </Card>
             </View>

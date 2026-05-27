@@ -142,6 +142,13 @@ export const Icons = {
       <Path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
     </Icon>
   ),
+  instagram: (p: IconProps) => (
+    <Icon {...p}>
+      <Rect x={2} y={2} width={20} height={20} rx={5} ry={5}/>
+      <Path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+      <Path d="M17.5 6.5h.01"/>
+    </Icon>
+  ),
   moreHorizontal: (p: IconProps) => (
     <Icon {...p}>
       <Circle cx={5} cy={12} r={1}/>
