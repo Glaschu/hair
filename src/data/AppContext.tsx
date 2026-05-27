@@ -3,6 +3,7 @@ import { View, Text, ActivityIndicator, AppState as RNAppState } from 'react-nat
 import { Client, Product, Appointment, Service, Schedule, ExportPayload } from './types';
 import { lightTheme, darkTheme, Theme, accentOptions } from '../theme';
 import { db } from '../db';
+import { eq } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { seedIfEmpty } from '../db/seed';
 import { CLIENTS, PRODUCTS, WEEK_APPOINTMENTS, SERVICES, DEFAULT_SCHEDULE } from './mockData';
@@ -14,6 +15,8 @@ import {
   rowsToSchedule,
 } from '../db/helpers';
 import { syncAppointmentReminders, setupNotificationChannel } from './notifications';
+import { getOrCreateIrisCalendar, syncAppointmentsToCalendar } from './calendarSync';
+import { pullSync, pushSync, syncPhotos } from './syncEngine';
 import { writeAutoBackup } from './backup';
 
 interface AppState {
@@ -56,6 +59,15 @@ interface AppState {
   reminderLeadMinutes: number;
   setReminderLeadMinutes: (n: number) => void;
 
+  calendarSyncEnabled: boolean;
+  setCalendarSyncEnabled: (v: boolean) => void;
+
+  iCloudSyncEnabled: boolean;
+  setICloudSyncEnabled: (v: boolean) => void;
+
+  appleCalendarId: string | null;
+  setAppleCalendarId: (v: string | null) => void;
+
   resetToDemo: () => void;
   loadFromExport: (data: ExportPayload) => void;
 }
@@ -81,6 +93,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [bookingWindowDays, setBookingWindowDaysState] = useState(90);
   const [remindersEnabled, setRemindersEnabledState] = useState(false);
   const [reminderLeadMinutes, setReminderLeadMinutesState] = useState(60);
+  const [calendarSyncEnabled, setCalendarSyncEnabledState] = useState(false);
+  const [iCloudSyncEnabled, setICloudSyncEnabledState] = useState(false);
+  const [appleCalendarId, setAppleCalendarIdState] = useState<string | null>(null);
   const [lastExportAt, setLastExportAtState] = useState<string | null>(null);
 
   useEffect(() => {
@@ -114,6 +129,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (get('bookingWindowDays')) setBookingWindowDaysState(Number(get('bookingWindowDays')));
       if (get('remindersEnabled'))    setRemindersEnabledState(get('remindersEnabled') === 'true');
       if (get('reminderLeadMinutes')) setReminderLeadMinutesState(Number(get('reminderLeadMinutes')));
+      if (get('calendarSyncEnabled')) setCalendarSyncEnabledState(get('calendarSyncEnabled') === 'true');
+      if (get('iCloudSyncEnabled'))   setICloudSyncEnabledState(get('iCloudSyncEnabled') === 'true');
+      if (get('appleCalendarId'))     setAppleCalendarIdState(get('appleCalendarId')!);
       if (get('lastExportAt'))        setLastExportAtState(get('lastExportAt')!);
 
       loadedRef.current = true;
@@ -136,6 +154,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setBookingWindowDays = (n: number) => { setBookingWindowDaysState(n); setSetting('bookingWindowDays', String(n)); };
   const setRemindersEnabled = (v: boolean) => { setRemindersEnabledState(v); setSetting('remindersEnabled', String(v)); };
   const setReminderLeadMinutes = (n: number) => { setReminderLeadMinutesState(n); setSetting('reminderLeadMinutes', String(n)); };
+  const setCalendarSyncEnabled = (v: boolean) => { setCalendarSyncEnabledState(v); setSetting('calendarSyncEnabled', String(v)); };
+  const setICloudSyncEnabled = (v: boolean) => { setICloudSyncEnabledState(v); setSetting('iCloudSyncEnabled', String(v)); };
+  const setAppleCalendarId = (v: string | null) => { setAppleCalendarIdState(v); if (v) setSetting('appleCalendarId', v); };
 
   useEffect(() => { setupNotificationChannel(); }, []);
 
@@ -144,6 +165,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!loaded) return;
     syncAppointmentReminders(appointments, clients, reminderLeadMinutes, remindersEnabled).catch(() => {});
   }, [loaded, appointments, clients, reminderLeadMinutes, remindersEnabled]);
+
+  // Keep Apple Calendar in sync
+  const syncingRef = useRef(false);
+  useEffect(() => {
+    if (!loaded || !calendarSyncEnabled || !appleCalendarId || syncingRef.current) return;
+    let cancelled = false;
+
+    syncingRef.current = true;
+    syncAppointmentsToCalendar(appleCalendarId, appointments, clients)
+      .then(updated => {
+        if (cancelled) return;
+        // If sync modified the appointments (added appleEventId), save them
+        const changed = updated.filter((u, i) => u.appleEventId !== appointments[i].appleEventId);
+        if (changed.length > 0) {
+          db.transaction(() => {
+            for (const appt of changed) {
+              db.update(schema.appointments)
+                .set({ appleEventId: appt.appleEventId ?? null })
+                .where(eq(schema.appointments.id, appt.id)).run();
+            }
+          });
+          setAppointmentsState(updated);
+        }
+      })
+      .finally(() => {
+        syncingRef.current = false;
+      });
+      
+    return () => { cancelled = true; };
+  }, [loaded, calendarSyncEnabled, appleCalendarId, appointments, clients]);
 
   const markExported = () => {
     const now = new Date().toISOString();
@@ -165,10 +216,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const sub = RNAppState.addEventListener('change', (state) => {
       if (state === 'background' && loadedRef.current) {
         writeAutoBackup(snapshotRef.current);
+        if (iCloudSyncEnabled) {
+          pushSync(snapshotRef.current);
+          const allPhotos = clients.flatMap(c => c.photos ?? []);
+          syncPhotos(allPhotos).catch(() => {});
+        }
+      } else if (state === 'active' && loadedRef.current && iCloudSyncEnabled) {
+        pullSync(snapshotRef.current).then(merged => {
+          if (merged) {
+            setClients(merged.clients);
+            setProducts(merged.products);
+            setAppointments(merged.appointments);
+            setServices(merged.services);
+            setSchedule(merged.schedule);
+            const allPhotos = merged.clients.flatMap(c => c.photos ?? []);
+            syncPhotos(allPhotos).catch(() => {});
+          }
+        });
       }
     });
     return () => sub.remove();
-  }, []);
+  }, [iCloudSyncEnabled, clients]);
+
+  useEffect(() => {
+    if (iCloudSyncEnabled && loadedRef.current) {
+      pushSync(snapshotRef.current);
+    }
+  }, [iCloudSyncEnabled]);
 
   const setClients: React.Dispatch<React.SetStateAction<Client[]>> = (action) => {
     setClientsState(prev => {
@@ -320,9 +394,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       schedule, setSchedule,
       density, setDensity,
       bookingWindowDays, setBookingWindowDays,
-      lastExportAt, markExported,
       remindersEnabled, setRemindersEnabled,
       reminderLeadMinutes, setReminderLeadMinutes,
+      calendarSyncEnabled, setCalendarSyncEnabled,
+      iCloudSyncEnabled, setICloudSyncEnabled,
+      appleCalendarId, setAppleCalendarId,
+      lastExportAt, markExported,
       resetToDemo, loadFromExport,
     }}>
       {children}

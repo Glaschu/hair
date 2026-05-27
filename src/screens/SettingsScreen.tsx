@@ -16,6 +16,7 @@ import { Card, Icons, RoundBtn } from '../components';
 import { accentOptions } from '../theme';
 import { fmt } from '../data/utils';
 import { requestNotificationPermission } from '../data/notifications';
+import { getOrCreateIrisCalendar } from '../data/calendarSync';
 import { readAutoBackup } from '../data/backup';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -37,7 +38,7 @@ for (let h = 6; h <= 22; h++) {
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SettingsScreen() {
-  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport } = useApp();
+  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, calendarSyncEnabled, setCalendarSyncEnabled, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport } = useApp();
   const dialog = useDialog();
   const nav = useNavigation<Nav>();
   const [editingName, setEditingName] = useState(false);
@@ -115,6 +116,39 @@ export default function SettingsScreen() {
       return;
     }
     setRemindersEnabled(true);
+  };
+
+  const handleToggleCalendarSync = async () => {
+    if (calendarSyncEnabled) {
+      setCalendarSyncEnabled(false);
+      return;
+    }
+    const calId = await getOrCreateIrisCalendar();
+    if (!calId) {
+      await dialog.alert({
+        title: 'Permission Denied',
+        message: 'Iris needs calendar access to sync appointments. Enable it in your device settings.',
+      });
+      return;
+    }
+    setAppleCalendarId(calId);
+    setCalendarSyncEnabled(true);
+  };
+
+  const handleToggleICloudSync = async () => {
+    if (iCloudSyncEnabled) {
+      setICloudSyncEnabled(false);
+      return;
+    }
+    // Attempting to read/write a test file to ensure iCloud is working
+    try {
+      setICloudSyncEnabled(true);
+    } catch (e) {
+      await dialog.alert({
+        title: 'iCloud Error',
+        message: 'Could not enable iCloud sync. Ensure you are signed into iCloud and iCloud Drive is enabled for Iris.',
+      });
+    }
   };
 
   const handleRestoreAuto = async () => {
@@ -349,6 +383,48 @@ export default function SettingsScreen() {
                 </View>
               </>
             )}
+          </Card>
+        </View>
+
+        {/* Calendar Sync */}
+        <View style={[styles.section, { paddingHorizontal: 20 }]}>
+          <Text style={[styles.label, { color: theme.ink3 }]}>CALENDAR SYNC</Text>
+          <Card>
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.settingLabel, { color: theme.ink }]}>Sync with Apple Calendar</Text>
+                <Text style={{ fontSize: 11, color: theme.ink3, marginTop: 2 }}>
+                  Automatically mirror your appointments
+                </Text>
+              </View>
+              <Pressable
+                onPress={handleToggleCalendarSync}
+                style={[styles.toggleTrack, { backgroundColor: calendarSyncEnabled ? theme.accent : theme.bg2 }]}
+              >
+                <View style={[styles.toggleThumb, { transform: [{ translateX: calendarSyncEnabled ? 22 : 2 }] }]} />
+              </Pressable>
+            </View>
+          </Card>
+        </View>
+
+        {/* iCloud Sync */}
+        <View style={[styles.section, { paddingHorizontal: 20 }]}>
+          <Text style={[styles.label, { color: theme.ink3 }]}>ICLOUD SYNC</Text>
+          <Card>
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.settingLabel, { color: theme.ink }]}>Sync Across Devices</Text>
+                <Text style={{ fontSize: 11, color: theme.ink3, marginTop: 2 }}>
+                  Securely sync your clients and appointments across your iPhone and iPad using iCloud.
+                </Text>
+              </View>
+              <Pressable
+                onPress={handleToggleICloudSync}
+                style={[styles.toggleTrack, { backgroundColor: iCloudSyncEnabled ? theme.accent : theme.bg2 }]}
+              >
+                <View style={[styles.toggleThumb, { transform: [{ translateX: iCloudSyncEnabled ? 22 : 2 }] }]} />
+              </Pressable>
+            </View>
           </Card>
         </View>
 

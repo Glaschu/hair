@@ -12,6 +12,7 @@ export function rowToClient(
     hair: { type: row.hairType, length: row.hairLength, natural: row.hairNatural },
     formula: row.formula, allergies: row.allergies, notes: row.notes,
     vip: row.vip ?? false, photo: row.photo ?? undefined,
+    updatedAt: row.updatedAt ?? undefined,
     photos: photos.map(p => ({ id: p.id, date: p.date, url: p.url, label: p.label, appointmentId: p.appointmentId ?? undefined })),
   };
 }
@@ -24,6 +25,7 @@ export function clientToRow(c: Client): typeof schema.clients.$inferInsert {
     hairType: c.hair.type, hairLength: c.hair.length, hairNatural: c.hair.natural,
     formula: c.formula, allergies: c.allergies, notes: c.notes,
     vip: c.vip ?? false, photo: c.photo ?? null,
+    updatedAt: c.updatedAt,
   };
 }
 
@@ -34,6 +36,7 @@ export function rowToProduct(row: typeof schema.products.$inferSelect): Product 
     size: row.size, unit: row.unit, stock: row.stock, reorder: row.reorder,
     perUse: row.perUse, cost: row.cost, status: row.status as Product['status'],
     barcode: row.barcode ?? undefined,
+    updatedAt: row.updatedAt ?? undefined,
   };
 }
 
@@ -42,6 +45,7 @@ export function productToRow(p: Product): typeof schema.products.$inferInsert {
     id: p.id, name: p.name, brand: p.brand, category: p.category,
     size: p.size, unit: p.unit, stock: p.stock, reorder: p.reorder,
     perUse: p.perUse, cost: p.cost, status: p.status, barcode: p.barcode ?? null,
+    updatedAt: p.updatedAt,
   };
 }
 
@@ -54,6 +58,8 @@ export function rowToAppointment(
     id: row.id, clientId: row.clientId, start: row.start, end: row.end,
     service: row.service, status: row.status as Appointment['status'],
     price: row.price, notes: row.notes ?? undefined, paid: row.paid,
+    appleEventId: row.appleEventId ?? undefined,
+    updatedAt: row.updatedAt ?? undefined,
     products: apptProducts
       .filter(p => p.appointmentId === row.id)
       .map(p => ({ productId: p.productId, amount: p.amount })),
@@ -65,6 +71,8 @@ export function appointmentToRow(a: Appointment): typeof schema.appointments.$in
     id: a.id, clientId: a.clientId, start: a.start, end: a.end,
     service: a.service, status: a.status, price: a.price, notes: a.notes ?? null,
     paid: a.paid ?? false,
+    appleEventId: a.appleEventId ?? null,
+    updatedAt: a.updatedAt,
   };
 }
 
@@ -77,11 +85,12 @@ export function rowToService(
     id: row.id, name: row.name, duration: row.duration, price: row.price,
     defaults:    svcProducts.filter(p => p.serviceId === row.id && p.type === 'default').map(p => p.productId),
     recommended: svcProducts.filter(p => p.serviceId === row.id && p.type === 'recommended').map(p => p.productId),
+    updatedAt: row.updatedAt ?? undefined,
   };
 }
 
 export function serviceToRow(s: Service): typeof schema.services.$inferInsert {
-  return { id: s.id, name: s.name, duration: s.duration, price: s.price };
+  return { id: s.id, name: s.name, duration: s.duration, price: s.price, updatedAt: s.updatedAt };
 }
 
 // ---- Schedule ----

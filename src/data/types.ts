@@ -27,6 +27,7 @@ export interface Client {
   vip?: boolean;
   photo?: string;
   photos?: ClientPhoto[];
+  updatedAt?: number;
 }
 
 export type ProductStatus = 'ok' | 'low' | 'out';
@@ -44,6 +45,7 @@ export interface Product {
   cost: number;
   status: ProductStatus;
   barcode?: string;
+  updatedAt?: number;
 }
 
 export interface ApptProduct {
@@ -64,6 +66,8 @@ export interface Appointment {
   products: ApptProduct[];
   notes?: string;
   paid?: boolean;
+  appleEventId?: string;
+  updatedAt?: number;
 }
 
 export interface Service {
@@ -73,6 +77,7 @@ export interface Service {
   price: number;
   defaults: string[];
   recommended: string[];
+  updatedAt?: number;
 }
 
 export interface ScheduleDay {

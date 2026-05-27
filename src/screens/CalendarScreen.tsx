@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet,
+  View, Text, ScrollView, FlatList, Pressable, StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -182,9 +182,9 @@ export default function CalendarScreen() {
 
       {/* Week view */}
       {view === 'week' && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
-          <WeekView days={weekDays} allAppts={weekAppts} onSelectDay={setSelectedDate} density={density} />
-        </ScrollView>
+        <View style={{ flex: 1 }}>
+          <WeekView days={weekDays} allAppts={weekAppts} selectedDate={selectedDate} onSelectDay={setSelectedDate} density={density} />
+        </View>
       )}
 
       {/* Month view — appointment list for selected day */}
@@ -260,61 +260,81 @@ function DayHourGrid({ appts, date, density }: { appts: any[]; date: Date; densi
   );
 }
 
-function WeekView({ days, allAppts, onSelectDay, density: _density }: { days: Date[]; allAppts: any[]; onSelectDay: (d: Date) => void; density: string }) {
+function WeekView({ days, allAppts, selectedDate, onSelectDay, density: _density }: { days: Date[]; allAppts: any[]; selectedDate: Date; onSelectDay: (d: Date) => void; density: string }) {
   const { theme, clients } = useApp();
   const nav = useNavigation<Nav>();
+  const listRef = React.useRef<FlatList>(null);
+
+  React.useEffect(() => {
+    const index = days.findIndex(d => isSameDay(d, selectedDate));
+    if (index >= 0 && listRef.current) {
+      listRef.current.scrollToIndex({ index, animated: true, viewPosition: 0 });
+    }
+  }, [selectedDate, days]);
+
+  const renderItem = ({ item: day }: { item: Date }) => {
+    const dayAppts = allAppts
+      .filter((a) => isSameDay(new Date(a.start), day))
+      .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+    const isToday = isSameDay(day, new Date());
+
+    return (
+      <View style={styles.weekDaySection}>
+        <Pressable onPress={() => onSelectDay(day)} style={styles.weekDayHead}>
+          <Text style={[styles.weekDayLabel, {
+            color: isToday ? theme.accent : theme.ink2,
+            fontWeight: isToday ? '700' : '500',
+          }]}>
+            {day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+          </Text>
+          {dayAppts.length > 0 && (
+            <Text style={[styles.weekDayCount, { color: theme.ink3 }]}>{dayAppts.length} appt{dayAppts.length > 1 ? 's' : ''}</Text>
+          )}
+        </Pressable>
+        {dayAppts.length === 0 ? (
+          <View style={[styles.weekEmpty, { borderColor: theme.line }]}>
+            <Text style={[styles.weekEmptyText, { color: theme.ink3 }]}>Free</Text>
+          </View>
+        ) : (
+          dayAppts.map((appt) => {
+            const client = clients.find((c) => c.id === appt.clientId);
+            return (
+              <Pressable
+                key={appt.id}
+                onPress={() => nav.navigate('AppointmentDetail', { appointmentId: appt.id })}
+                style={({ pressed }) => [styles.weekAppt, {
+                  backgroundColor: pressed ? theme.bg2 : theme.card,
+                  borderColor: theme.line,
+                }]}
+              >
+                {client && <Avatar name={client.name} tone={client.tone} size={34} />}
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.weekApptName, { color: theme.ink }]}>{client?.name}</Text>
+                  <Text style={[styles.weekApptSvc, { color: theme.ink2 }]}>{appt.service}</Text>
+                </View>
+                <Text style={[styles.weekApptTime, { color: theme.ink3 }]}>{fmt.timeShort(appt.start)}</Text>
+              </Pressable>
+            );
+          })
+        )}
+      </View>
+    );
+  };
 
   return (
-    <View style={{ paddingTop: 10 }}>
-      {days.map((day) => {
-        const dayAppts = allAppts
-          .filter((a) => isSameDay(new Date(a.start), day))
-          .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
-        const isToday = isSameDay(day, new Date());
-
-        return (
-          <View key={day.toISOString()} style={styles.weekDaySection}>
-            <Pressable onPress={() => onSelectDay(day)} style={styles.weekDayHead}>
-              <Text style={[styles.weekDayLabel, {
-                color: isToday ? theme.accent : theme.ink2,
-                fontWeight: isToday ? '700' : '500',
-              }]}>
-                {day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-              </Text>
-              {dayAppts.length > 0 && (
-                <Text style={[styles.weekDayCount, { color: theme.ink3 }]}>{dayAppts.length} appt{dayAppts.length > 1 ? 's' : ''}</Text>
-              )}
-            </Pressable>
-            {dayAppts.length === 0 ? (
-              <View style={[styles.weekEmpty, { borderColor: theme.line }]}>
-                <Text style={[styles.weekEmptyText, { color: theme.ink3 }]}>Free</Text>
-              </View>
-            ) : (
-              dayAppts.map((appt) => {
-                const client = clients.find((c) => c.id === appt.clientId);
-                return (
-                  <Pressable
-                    key={appt.id}
-                    onPress={() => nav.navigate('AppointmentDetail', { appointmentId: appt.id })}
-                    style={({ pressed }) => [styles.weekAppt, {
-                      backgroundColor: pressed ? theme.bg2 : theme.card,
-                      borderColor: theme.line,
-                    }]}
-                  >
-                    {client && <Avatar name={client.name} tone={client.tone} size={34} />}
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <Text style={[styles.weekApptName, { color: theme.ink }]}>{client?.name}</Text>
-                      <Text style={[styles.weekApptSvc, { color: theme.ink2 }]}>{appt.service}</Text>
-                    </View>
-                    <Text style={[styles.weekApptTime, { color: theme.ink3 }]}>{fmt.timeShort(appt.start)}</Text>
-                  </Pressable>
-                );
-              })
-            )}
-          </View>
-        );
-      })}
-    </View>
+    <FlatList
+      ref={listRef}
+      data={days}
+      keyExtractor={(d) => d.toISOString()}
+      contentContainerStyle={{ paddingTop: 10, paddingBottom: 30 }}
+      showsVerticalScrollIndicator={false}
+      renderItem={renderItem}
+      onScrollToIndexFailed={(info) => {
+        setTimeout(() => {
+          listRef.current?.scrollToIndex({ index: info.index, animated: true });
+        }, 100);
+      }}
+    />
   );
 }
 

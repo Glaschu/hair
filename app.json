@@ -51,7 +51,14 @@
           "photosPermission": "Iris uses your photo library to attach client before and after photos."
         }
       ],
-      "expo-font"
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Iris uses your calendar to sync appointments."
+        }
+      ],
+      "expo-font",
+      "react-native-cloud-storage"
     ],
     "extra": {
       "eas": {
