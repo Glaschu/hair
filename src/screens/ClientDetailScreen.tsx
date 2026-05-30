@@ -8,7 +8,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
+import { useLocalDialog } from '../components/Dialog';
 import { savePhoto, deletePhoto } from '../db/photos';
 import { RootStackParamList } from '../navigation/types';
 import { Avatar, Card, Icons, RoundBtn, EmptyState } from '../components';
@@ -21,7 +21,7 @@ type Tab = 'overview' | 'history' | 'photos';
 
 export default function ClientDetailScreen() {
   const { theme, clients, setClients, appointments, products } = useApp();
-  const dialog = useDialog();
+  const { confirm, alert, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
   const [tab, setTab] = useState<Tab>('overview');
@@ -40,7 +40,7 @@ export default function ClientDetailScreen() {
     .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
 
   const historyAppts = clientAppts
-    .filter((a) => a.status === 'completed' || a.status === 'no-show')
+    .filter((a) => a.status === 'completed' || a.status === 'no-show' || a.status === 'cancelled')
     .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
 
   const lastVisit = completedAppts[0]?.start;
@@ -50,26 +50,43 @@ export default function ClientDetailScreen() {
 
   const pickProfilePhoto = async () => {
     const perform = async (useCamera: boolean) => {
-      const result = useCamera
-        ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8 })
-        : await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-      if (!result.canceled && result.assets[0]) {
-        setSavingPhoto(true);
-        try {
-          const uri = await savePhoto(result.assets[0].uri);
-          if (client.photo) await deletePhoto(client.photo);
-          setClients((cs) => cs.map((c) => c.id === client.id ? { ...c, photo: uri } : c));
-        } catch {
-          await dialog.alert({
-            title: "Couldn't save photo",
-            message: 'The photo could not be saved. Please try again.',
-          });
-        } finally {
-          setSavingPhoto(false);
+      try {
+        if (useCamera) {
+          const perm = await ImagePicker.requestCameraPermissionsAsync();
+          if (perm.status !== 'granted') {
+            await alert({ title: 'Permission Denied', message: 'Camera access is required to take photos.' });
+            return;
+          }
+        } else {
+          const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (perm.status !== 'granted') {
+            await alert({ title: 'Permission Denied', message: 'Photo library access is required to choose photos.' });
+            return;
+          }
         }
+        const result = useCamera
+          ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8 })
+          : await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8, mediaTypes: ['images'] });
+        if (!result.canceled && result.assets[0]) {
+          setSavingPhoto(true);
+          try {
+            const uri = await savePhoto(result.assets[0].uri);
+            if (client.photo) await deletePhoto(client.photo);
+            setClients((cs) => cs.map((c) => c.id === client.id ? { ...c, photo: uri, updatedAt: Date.now() } : c));
+          } catch {
+            await alert({
+              title: "Couldn't save photo",
+              message: 'The photo could not be saved. Please try again.',
+            });
+          } finally {
+            setSavingPhoto(false);
+          }
+        }
+      } catch (e) {
+        await alert({ title: 'Error', message: 'Could not open camera or library.' });
       }
     };
-    const idx = await dialog.actionSheet({
+    const idx = await actionSheet({
       title: 'Photo',
       actions: [{ label: 'Take Photo' }, { label: 'Choose from Library' }],
     });
@@ -78,9 +95,14 @@ export default function ClientDetailScreen() {
   };
 
   const addPhotos = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm.status !== 'granted') {
+      await alert({ title: 'Permission Denied', message: 'Photo library access is required to choose photos.' });
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: true, quality: 0.8,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
     });
     if (!result.canceled) {
       try {
@@ -92,10 +114,10 @@ export default function ClientDetailScreen() {
           label: '',
         }));
         setClients((cs) => cs.map((c) => c.id === client.id
-          ? { ...c, photos: [...newPhotos, ...(c.photos || [])] }
+          ? { ...c, photos: [...newPhotos, ...(c.photos || [])], updatedAt: Date.now() }
           : c));
       } catch {
-        await dialog.alert({
+        await alert({
           title: "Couldn't save photos",
           message: 'The photos could not be saved. Please try again.',
         });
@@ -191,7 +213,7 @@ export default function ClientDetailScreen() {
 
         {/* Tab content */}
         {tab === 'overview' && (
-          <OverviewTab client={client} upcomingAppts={upcomingAppts} nav={nav} />
+          <OverviewTab client={client} upcomingAppts={upcomingAppts} lastFinishedAppt={completedAppts[0]} nav={nav} />
         )}
         {tab === 'history' && (
           <HistoryTab historyAppts={historyAppts} products={products} nav={nav} client={client} onViewPhoto={setViewingPhoto} />
@@ -210,11 +232,12 @@ export default function ClientDetailScreen() {
           </Pressable>
         </Modal>
       )}
+      {dialog}
     </SafeAreaView>
   );
 }
 
-function OverviewTab({ client, upcomingAppts, nav }: { client: any; upcomingAppts: Appointment[]; nav: any }) {
+function OverviewTab({ client, upcomingAppts, lastFinishedAppt, nav }: { client: any; upcomingAppts: Appointment[]; lastFinishedAppt?: Appointment; nav: any }) {
   const { theme } = useApp();
   return (
     <View style={{ padding: 20, gap: 14 }}>
@@ -256,9 +279,13 @@ function OverviewTab({ client, upcomingAppts, nav }: { client: any; upcomingAppt
         <HairRow label="Length" value={client.hair.length} theme={theme} />
         <HairRow label="Natural" value={client.hair.natural} theme={theme} />
         <View style={[styles.divider, { backgroundColor: theme.line }]} />
-        <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>FORMULA</Text>
+        <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>
+          {lastFinishedAppt ? `FORMULA (LAST APPT: ${new Date(lastFinishedAppt.start).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }).toUpperCase()})` : 'FORMULA'}
+        </Text>
         <View style={[styles.formulaBox, { backgroundColor: theme.bg2 }]}>
-          <Text style={[styles.formulaText, { color: theme.ink }]}>{client.formula || 'Not recorded'}</Text>
+          <Text style={[styles.formulaText, { color: theme.ink }]}>
+            {(lastFinishedAppt?.formula) || client.formula || 'Not recorded'}
+          </Text>
         </View>
       </Card>
 
@@ -267,8 +294,15 @@ function OverviewTab({ client, upcomingAppts, nav }: { client: any; upcomingAppt
         <Text style={[styles.sectionLabel, { color: theme.warn }]}>ALLERGIES & SENSITIVITIES</Text>
         <Text style={[styles.bodyText, { color: theme.ink }]}>{client.allergies}</Text>
         <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 14 }]} />
-        <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>PREFERENCES</Text>
+        <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>PREFERENCES / CLIENT NOTES</Text>
         <Text style={[styles.bodyText, { color: theme.ink }]}>{client.notes || '—'}</Text>
+        {lastFinishedAppt?.notes && (
+          <>
+            <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 14 }]} />
+            <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>LATEST APPOINTMENT NOTES</Text>
+            <Text style={[styles.bodyText, { color: theme.ink }]}>{lastFinishedAppt.notes}</Text>
+          </>
+        )}
       </Card>
 
       {/* Contact */}
@@ -328,6 +362,20 @@ function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
                     <Text style={[styles.histPrice, { color: theme.ink }]}>{fmt.currency(appt.price)}</Text>
                   )}
                 </View>
+                {!isNoShow && appt.formula && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 8 }]} />
+                    <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>FORMULA</Text>
+                    <Text style={[styles.bodyText, { color: theme.ink }]}>{appt.formula}</Text>
+                  </>
+                )}
+                {!isNoShow && appt.notes && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 8 }]} />
+                    <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>NOTES</Text>
+                    <Text style={[styles.bodyText, { color: theme.ink }]}>{appt.notes}</Text>
+                  </>
+                )}
                 {!isNoShow && appt.products.length > 0 && (
                   <>
                     <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 8 }]} />

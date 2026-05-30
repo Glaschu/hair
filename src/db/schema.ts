@@ -56,6 +56,7 @@ export const appointments = sqliteTable('appointments', {
   status:       text('status', { enum: ['upcoming', 'completed', 'cancelled', 'no-show'] }).notNull().default('upcoming'),
   price:        real('price').notNull().default(0),
   notes:        text('notes'),
+  formula:      text('formula'),
   paid:         integer('paid', { mode: 'boolean' }).notNull().default(false),
   appleEventId: text('apple_event_id'),
   updatedAt:    integer('updated_at').$defaultFn(() => Date.now()).$onUpdateFn(() => Date.now()),

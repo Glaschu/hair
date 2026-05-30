@@ -147,6 +147,12 @@ export default function NewAppointmentScreen() {
       const p = products.find((pr) => pr.id === pid);
       return { productId: pid, amount: p?.perUse || 0 };
     });
+    
+    const lastCompleted = appointments
+      .filter((a) => a.clientId === client.id && a.status === 'completed')
+      .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime())[0];
+    const defaultFormula = lastCompleted?.formula || client.formula || undefined;
+
     const series = Array.from({ length: count }, (_, i) => {
       const s = new Date(start);
       s.setDate(s.getDate() + i * repeatWeeks * 7);
@@ -162,6 +168,7 @@ export default function NewAppointmentScreen() {
         price: service.price,
         products: products_.map((p) => ({ ...p })),
         notes: notes.trim() || undefined,
+        formula: defaultFormula,
       };
     });
 

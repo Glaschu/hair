@@ -65,6 +65,7 @@ export interface Appointment {
   price: number;
   products: ApptProduct[];
   notes?: string;
+  formula?: string;
   paid?: boolean;
   appleEventId?: string;
   updatedAt?: number;

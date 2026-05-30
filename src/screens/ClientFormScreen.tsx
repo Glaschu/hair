@@ -42,23 +42,40 @@ export default function ClientFormScreen() {
   const [savingPhoto, setSavingPhoto] = useState(false);
 
   const pickPhoto = async (useCamera: boolean) => {
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-    if (!result.canceled && result.assets[0]) {
-      setSavingPhoto(true);
-      try {
-        const uri = await savePhoto(result.assets[0].uri);
-        if (photo) await deletePhoto(photo);
-        setPhoto(uri);
-      } catch {
-        await dialog.alert({
-          title: "Couldn't save photo",
-          message: 'The photo could not be saved. Please try again.',
-        });
-      } finally {
-        setSavingPhoto(false);
+    try {
+      if (useCamera) {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (perm.status !== 'granted') {
+          await dialog.alert({ title: 'Permission Denied', message: 'Camera access is required.' });
+          return;
+        }
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (perm.status !== 'granted') {
+          await dialog.alert({ title: 'Permission Denied', message: 'Photo library access is required.' });
+          return;
+        }
       }
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8 })
+        : await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8, mediaTypes: ['images'] });
+      if (!result.canceled && result.assets[0]) {
+        setSavingPhoto(true);
+        try {
+          const uri = await savePhoto(result.assets[0].uri);
+          if (photo) await deletePhoto(photo);
+          setPhoto(uri);
+        } catch {
+          await dialog.alert({
+            title: "Couldn't save photo",
+            message: 'The photo could not be saved. Please try again.',
+          });
+        } finally {
+          setSavingPhoto(false);
+        }
+      }
+    } catch (e) {
+      await dialog.alert({ title: 'Error', message: 'Could not open camera or library.' });
     }
   };
 
@@ -96,6 +113,7 @@ export default function ClientFormScreen() {
         name: name.trim(), phone, email, instagram: instagram.trim(), tone, photo, vip,
         hair: { type: hairType, length: hairLength, natural: hairNatural },
         formula, allergies: allergies.trim() || 'None on file', notes,
+        updatedAt: Date.now(),
       } : c));
     } else {
       const newClient = createClient({

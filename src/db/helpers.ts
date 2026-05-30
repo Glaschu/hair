@@ -57,7 +57,7 @@ export function rowToAppointment(
   return {
     id: row.id, clientId: row.clientId, start: row.start, end: row.end,
     service: row.service, status: row.status as Appointment['status'],
-    price: row.price, notes: row.notes ?? undefined, paid: row.paid,
+    price: row.price, notes: row.notes ?? undefined, formula: row.formula ?? undefined, paid: row.paid,
     appleEventId: row.appleEventId ?? undefined,
     updatedAt: row.updatedAt ?? undefined,
     products: apptProducts
@@ -69,7 +69,7 @@ export function rowToAppointment(
 export function appointmentToRow(a: Appointment): typeof schema.appointments.$inferInsert {
   return {
     id: a.id, clientId: a.clientId, start: a.start, end: a.end,
-    service: a.service, status: a.status, price: a.price, notes: a.notes ?? null,
+    service: a.service, status: a.status, price: a.price, notes: a.notes ?? null, formula: a.formula ?? null,
     paid: a.paid ?? false,
     appleEventId: a.appleEventId ?? null,
     updatedAt: a.updatedAt,

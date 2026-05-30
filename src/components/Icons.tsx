@@ -21,6 +21,12 @@ export const Icons = {
   home: (p: IconProps) => (
     <Icon {...p}><Path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/></Icon>
   ),
+  layout: (p: IconProps) => (
+    <Icon {...p}><Rect x={3} y={3} width={18} height={18} rx={2} ry={2}/><Path d="M3 9h18"/><Path d="M9 21V9"/></Icon>
+  ),
+  cloud: (p: IconProps) => (
+    <Icon {...p}><Path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></Icon>
+  ),
   users: (p: IconProps) => (
     <Icon {...p}>
       <Path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>

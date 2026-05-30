@@ -8,12 +8,38 @@ const SYNC_FILE = '/iris-sync.json';
  * Pushes the current local database state to iCloud.
  */
 export async function pushSync(payload: ExportPayload): Promise<void> {
-  try {
-    const json = JSON.stringify(payload);
-    await CloudStorage.writeFile(SYNC_FILE, json);
-  } catch (e) {
-    console.error('iCloud pushSync error', e);
+  const available = await CloudStorage.isCloudAvailable();
+  if (!available) throw new Error('iCloud is not available on this device');
+
+  let finalPayload = payload;
+  const exists = await CloudStorage.exists(SYNC_FILE);
+  if (exists) {
+    try {
+      const raw = await CloudStorage.readFile(SYNC_FILE);
+      const remote = JSON.parse(raw) as ExportPayload;
+      if (remote.version === 1) {
+        finalPayload = {
+          version: 1,
+          exported: new Date().toISOString(),
+          clients: mergeArrays(payload.clients, remote.clients),
+          products: mergeArrays(payload.products, remote.products),
+          appointments: mergeArrays(payload.appointments, remote.appointments),
+          services: mergeArrays(payload.services, remote.services),
+          schedule: { ...remote.schedule, ...payload.schedule },
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to parse remote file before push', e);
+    }
   }
+
+  const json = JSON.stringify(finalPayload);
+  await CloudStorage.writeFile(SYNC_FILE, json);
+  
+  // Explicitly tell the OS iCloud daemon to push this file to the cloud immediately
+  try {
+    await CloudStorage.triggerSync(SYNC_FILE);
+  } catch {}
 }
 
 /**
@@ -21,33 +47,34 @@ export async function pushSync(payload: ExportPayload): Promise<void> {
  * Returns the merged payload, or null if there is no remote data.
  */
 export async function pullSync(localPayload: ExportPayload): Promise<ExportPayload | null> {
+  const available = await CloudStorage.isCloudAvailable();
+  if (!available) throw new Error('iCloud is not available on this device');
+
   try {
-    const exists = await CloudStorage.exists(SYNC_FILE);
-    if (!exists) return null;
-
-    const raw = await CloudStorage.readFile(SYNC_FILE);
-    const remote = JSON.parse(raw) as ExportPayload;
-
-    if (remote.version !== 1) return null;
-
-    const merged: ExportPayload = {
-      version: 1,
-      exported: new Date().toISOString(),
-      clients: mergeArrays(localPayload.clients, remote.clients),
-      products: mergeArrays(localPayload.products, remote.products),
-      appointments: mergeArrays(localPayload.appointments, remote.appointments),
-      services: mergeArrays(localPayload.services, remote.services),
-      // Schedule doesn't have an ID or updatedAt easily available right now, 
-      // but usually the owner just sets it once. We'll prefer remote for simplicity 
-      // or just merge keys.
-      schedule: { ...localPayload.schedule, ...remote.schedule },
-    };
-
-    return merged;
-  } catch (e) {
-    console.error('iCloud pullSync error', e);
-    return null;
+    await CloudStorage.triggerSync(SYNC_FILE);
+  } catch {
+    // Ignore if unsupported or offline
   }
+
+  const exists = await CloudStorage.exists(SYNC_FILE);
+  if (!exists) return null; // Nothing to pull
+
+  const raw = await CloudStorage.readFile(SYNC_FILE);
+  const remote = JSON.parse(raw) as ExportPayload;
+
+  if (remote.version !== 1) throw new Error('Unsupported sync version');
+
+  const merged: ExportPayload = {
+    version: 1,
+    exported: new Date().toISOString(),
+    clients: mergeArrays(localPayload.clients, remote.clients),
+    products: mergeArrays(localPayload.products, remote.products),
+    appointments: mergeArrays(localPayload.appointments, remote.appointments),
+    services: mergeArrays(localPayload.services, remote.services),
+    schedule: { ...localPayload.schedule, ...remote.schedule },
+  };
+
+  return merged;
 }
 
 /**
@@ -84,6 +111,13 @@ function mergeArrays<T extends { id: string; updatedAt?: number }>(local: T[], r
  * Syncs photos bidirectionally between local device and iCloud.
  */
 export async function syncPhotos(photos: ClientPhoto[]): Promise<void> {
+  try {
+    const available = await CloudStorage.isCloudAvailable();
+    if (!available) return;
+  } catch {
+    return;
+  }
+
   const localDir = new Directory(Paths.document, 'photos');
   if (!localDir.exists) localDir.create();
 
@@ -106,21 +140,26 @@ export async function syncPhotos(photos: ClientPhoto[]): Promise<void> {
 
     const localFile = new File(localDir, filename);
     const remotePath = `/photos/${filename}`;
+    
+    try {
+      await CloudStorage.triggerSync(remotePath);
+    } catch {}
+
     const existsRemote = remoteFiles.includes(filename);
 
     if (localFile.exists && !existsRemote) {
       // Upload local to remote
       try {
-        await CloudStorage.uploadFile(remotePath, localFile.uri, { mimeType: 'image/jpeg' });
+        await CloudStorage.uploadFile(remotePath, localFile.uri.replace(/^file:\/\//, ''), { mimeType: 'image/jpeg' });
       } catch (e) {
-        console.error('Failed to upload photo', e);
+        console.warn('Failed to upload photo', e);
       }
     } else if (!localFile.exists && existsRemote) {
       // Download remote to local
       try {
-        await CloudStorage.downloadFile(remotePath, localFile.uri);
+        await CloudStorage.downloadFile(remotePath, localFile.uri.replace(/^file:\/\//, ''));
       } catch (e) {
-        console.error('Failed to download photo', e);
+        console.warn('Failed to download photo', e);
       }
     }
   }

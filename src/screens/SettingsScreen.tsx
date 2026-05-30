@@ -16,8 +16,9 @@ import { Card, Icons, RoundBtn } from '../components';
 import { accentOptions } from '../theme';
 import { fmt } from '../data/utils';
 import { requestNotificationPermission } from '../data/notifications';
-import { getOrCreateIrisCalendar } from '../data/calendarSync';
+import { getOrCreateIrisCalendar, deleteIrisCalendar } from '../data/calendarSync';
 import { readAutoBackup } from '../data/backup';
+import { CloudStorage } from 'react-native-cloud-storage';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -38,14 +39,14 @@ for (let h = 6; h <= 22; h++) {
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SettingsScreen() {
-  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, calendarSyncEnabled, setCalendarSyncEnabled, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport } = useApp();
+  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, calendarSyncEnabled, setCalendarSyncEnabled, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
   const dialog = useDialog();
   const nav = useNavigation<Nav>();
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(studioName);
   const [timePicker, setTimePicker] = useState<{ day: number; field: 'start' | 'end' } | null>(null);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
-  const [busy, setBusy] = useState<null | 'export' | 'import'>(null);
+  const [busy, setBusy] = useState<null | 'export' | 'import' | 'sync'>(null);
 
   const handleExport = async () => {
     if (busy) return;
@@ -120,7 +121,11 @@ export default function SettingsScreen() {
 
   const handleToggleCalendarSync = async () => {
     if (calendarSyncEnabled) {
+      if (appleCalendarId) {
+        await deleteIrisCalendar(appleCalendarId);
+      }
       setCalendarSyncEnabled(false);
+      setAppleCalendarId(null);
       return;
     }
     const calId = await getOrCreateIrisCalendar();
@@ -142,12 +147,41 @@ export default function SettingsScreen() {
     }
     // Attempting to read/write a test file to ensure iCloud is working
     try {
+      const available = await CloudStorage.isCloudAvailable();
+      if (!available) {
+        await dialog.alert({
+          title: 'iCloud Error',
+          message: 'Could not enable iCloud sync. Ensure you are signed into an Apple ID with iCloud Drive enabled for Iris.',
+        });
+        return;
+      }
       setICloudSyncEnabled(true);
     } catch (e) {
       await dialog.alert({
         title: 'iCloud Error',
         message: 'Could not enable iCloud sync. Ensure you are signed into iCloud and iCloud Drive is enabled for Iris.',
       });
+    }
+  };
+
+  const handleManualSync = async () => {
+    if (busy) return;
+    setBusy('sync');
+    try {
+      const didPull = await forceSync();
+      await dialog.alert({
+        title: didPull ? 'Sync Complete' : 'Pushed to iCloud',
+        message: didPull 
+          ? 'iCloud has successfully synced the latest changes.' 
+          : 'Your data was pushed, but no new changes were found in iCloud to pull. If you expect changes, ensure iCloud Drive is enabled and wait a moment for Apple servers to sync.',
+      });
+    } catch (e: any) {
+      await dialog.alert({
+        title: 'Sync Error',
+        message: e?.message || 'Could not sync with iCloud.',
+      });
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -425,6 +459,17 @@ export default function SettingsScreen() {
                 <View style={[styles.toggleThumb, { transform: [{ translateX: iCloudSyncEnabled ? 22 : 2 }] }]} />
               </Pressable>
             </View>
+            {iCloudSyncEnabled && (
+              <>
+                <View style={[styles.divider, { backgroundColor: theme.line }]} />
+                <Pressable
+                  onPress={handleManualSync}
+                  style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12 }, { opacity: pressed ? 0.7 : 1 }]}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: theme.accent }}>Force Sync Now</Text>
+                </Pressable>
+              </>
+            )}
           </Card>
         </View>
 
@@ -623,41 +668,31 @@ export default function SettingsScreen() {
               
               <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
                 <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
-                  <Icons.calendar size={18} color={theme.accent} />
+                  <Icons.layout size={18} color={theme.accent} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Month Calendar Picker</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Easily jump between months using the new horizontal strip at the top of the calendar.</Text>
+                  <Text style={[styles.settingLabel, { color: theme.ink }]}>All-New iPad Mode</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Iris now features a beautiful, multi-column layout optimized specifically for the iPad's larger screen.</Text>
                 </View>
               </View>
 
               <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
                 <View style={[styles.dataIcon, { backgroundColor: theme.sage + '25' }]}>
-                  <Icons.camera size={18} color={theme.sage} />
+                  <Icons.cloud size={18} color={theme.sage} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Appointment Photos</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Attach photos directly to an appointment and see them inline when viewing a client's history. You can now use your camera straight from the app.</Text>
+                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Seamless iCloud Sync</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Turn on iCloud Sync to effortlessly keep your clients, appointments, and products perfectly in sync between your iPhone and iPad.</Text>
                 </View>
               </View>
 
               <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
                 <View style={[styles.dataIcon, { backgroundColor: '#8a3ab925' }]}>
-                  <Icons.instagram size={18} color="#8a3ab9" />
+                  <Icons.calendar size={18} color="#8a3ab9" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Instagram Direct Messages</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Save an Instagram handle for a client, and easily jump directly into an IG Direct Message thread from their profile.</Text>
-                </View>
-              </View>
-
-              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
-                <View style={[styles.dataIcon, { backgroundColor: theme.danger + '15' }]}>
-                  <Icons.edit size={18} color={theme.danger} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Precise Formula Editing</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Tap the number between the − and + buttons to type out an exact product amount manually.</Text>
+                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Smart Calendar Deduplication</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Iris now intelligently recognizes appointments synced across your Apple devices and links them automatically, eliminating duplicate events in your Apple Calendar.</Text>
                 </View>
               </View>
 

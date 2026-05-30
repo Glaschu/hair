@@ -108,7 +108,6 @@ export function fmtHHMM(hhmm: string): string {
   return m === 0 ? `${h12}${ap}` : `${h12}:${m.toString().padStart(2, '0')}${ap}`;
 }
 
-/** Builds a Client, filling sensible defaults for any fields not supplied. */
 export function createClient(fields: Partial<Omit<Client, 'id'>> & { name: string }): Client {
   return {
     id: `c-${Date.now()}`,
@@ -124,6 +123,7 @@ export function createClient(fields: Partial<Omit<Client, 'id'>> & { name: strin
     allergies: fields.allergies || 'None on file',
     notes: fields.notes ?? '',
     vip: fields.vip ?? false,
+    updatedAt: Date.now(),
   };
 }
 

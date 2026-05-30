@@ -8,7 +8,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
+import { useLocalDialog } from '../components/Dialog';
 import { RootStackParamList } from '../navigation/types';
 import { Avatar, Icons, RoundBtn } from '../components';
 import { fmt } from '../data/utils';
@@ -22,7 +22,7 @@ type Route = RouteProp<RootStackParamList, 'AppointmentDetail'>;
 
 export default function AppointmentDetailScreen() {
   const { theme, appointments, setAppointments, clients, setClients, products, setProducts, services, remindersEnabled } = useApp();
-  const dialog = useDialog();
+  const { confirm, alert, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -54,18 +54,37 @@ export default function AppointmentDetailScreen() {
 
   const addPhotos = async () => {
     if (!client) return;
-    const action = await dialog.actionSheet({
+    const action = await actionSheet({
       title: 'Add Photo',
       actions: [{ label: 'Take Photo' }, { label: 'Choose from Library' }]
     });
     if (action === null) return;
     
-    const result = action === 0
-      ? await ImagePicker.launchCameraAsync({ allowsMultipleSelection: true, quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      if (action === 0) {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (perm.status !== 'granted') {
+          await alert({ title: 'Permission Denied', message: 'Camera access is required to take photos.' });
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (perm.status !== 'granted') {
+          await alert({ title: 'Permission Denied', message: 'Photo library access is required to choose photos.' });
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
           allowsMultipleSelection: true, quality: 0.8,
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: ['images'],
         });
+      }
+    } catch (e) {
+      console.log("ImagePicker Error:", e);
+      await alert({ title: 'Error', message: 'Could not open the camera or library on this device.' });
+      return;
+    }
 
     if (!result.canceled) {
       try {
@@ -88,6 +107,10 @@ export default function AppointmentDetailScreen() {
 
   const updateNotes = (text: string) => {
     setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, notes: text } : a));
+  };
+
+  const updateFormula = (text: string) => {
+    setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, formula: text } : a));
   };
 
   const updateProductAmount = (productId: string, amount: number) => {
@@ -156,12 +179,14 @@ export default function AppointmentDetailScreen() {
   };
 
   const handleUndo = () => {
-    setProducts((prods) =>
-      prods.map((p) => {
-        const used = usedProducts.find((up) => up.productId === p.id);
-        return used ? restoreStock(p, used.amount) : p;
-      })
-    );
+    if (isCompleted) {
+      setProducts((prods) =>
+        prods.map((p) => {
+          const used = usedProducts.find((up) => up.productId === p.id);
+          return used ? restoreStock(p, used.amount) : p;
+        })
+      );
+    }
     setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'upcoming' } : a));
   };
 
@@ -261,26 +286,33 @@ export default function AppointmentDetailScreen() {
           </View>
         )}
 
-        {/* At the chair — formula & allergies */}
-        {client && (client.formula || (client.allergies && client.allergies !== 'None on file')) && (
+        {/* At the chair — allergies */}
+        {client && client.allergies && client.allergies !== 'None on file' && (
           <View style={{ paddingHorizontal: 20, marginBottom: 16, gap: 10 }}>
-            {client.allergies && client.allergies !== 'None on file' && (
-              <View style={[styles.allergyBanner, { backgroundColor: theme.warn + '18', borderColor: theme.warn }]}>
-                <Icons.alert size={14} color={theme.warn} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.allergyLabel, { color: theme.warn }]}>ALLERGIES & SENSITIVITIES</Text>
-                  <Text style={[styles.allergyText, { color: theme.ink }]}>{client.allergies}</Text>
-                </View>
+            <View style={[styles.allergyBanner, { backgroundColor: theme.warn + '18', borderColor: theme.warn }]}>
+              <Icons.alert size={14} color={theme.warn} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.allergyLabel, { color: theme.warn }]}>ALLERGIES & SENSITIVITIES</Text>
+                <Text style={[styles.allergyText, { color: theme.ink }]}>{client.allergies}</Text>
               </View>
-            )}
-            <View style={[styles.formulaCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-              <Text style={[styles.sectionEye, { color: theme.ink3, marginBottom: 6 }]}>COLOUR FORMULA</Text>
-              <Text style={[styles.formulaText, { color: client.formula ? theme.ink : theme.ink3 }]}>
-                {client.formula || 'Not recorded'}
-              </Text>
             </View>
           </View>
         )}
+
+        {/* Formula */}
+        <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
+          <Text style={[styles.sectionEye, { color: theme.ink3, marginBottom: 8 }]}>COLOR FORMULA</Text>
+          <View style={[styles.notesCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+            <TextInput
+              style={[styles.notesInput, { color: theme.ink }]}
+              value={appt.formula || ''}
+              onChangeText={updateFormula}
+              placeholder="e.g. 30g 6N + 30g 20vol..."
+              placeholderTextColor={theme.ink3}
+              multiline
+            />
+          </View>
+        </View>
 
         {/* Products section */}
         <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
@@ -375,27 +407,19 @@ export default function AppointmentDetailScreen() {
           </View>
         )}
 
+
         {/* Notes */}
         <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
           <Text style={[styles.sectionEye, { color: theme.ink3, marginBottom: 8 }]}>NOTES</Text>
           <View style={[styles.notesCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-            {isCompleted || isCancelled || isNoShow ? (
-              <Text style={[
-                styles.notesText,
-                { color: appt.notes ? theme.ink : theme.ink3, fontStyle: appt.notes ? 'normal' : 'italic' },
-              ]}>
-                {appt.notes || 'No notes for this appointment.'}
-              </Text>
-            ) : (
-              <TextInput
-                style={[styles.notesInput, { color: theme.ink }]}
-                value={appt.notes || ''}
-                onChangeText={updateNotes}
-                placeholder="Anything to remember about this visit…"
-                placeholderTextColor={theme.ink3}
-                multiline
-              />
-            )}
+            <TextInput
+              style={[styles.notesInput, { color: theme.ink }]}
+              value={appt.notes || ''}
+              onChangeText={updateNotes}
+              placeholder="Anything to remember about this visit…"
+              placeholderTextColor={theme.ink3}
+              multiline
+            />
           </View>
         </View>
 
@@ -431,6 +455,8 @@ export default function AppointmentDetailScreen() {
         </Modal>
       )}
 
+      {dialog}
+
       {/* Action buttons */}
       <View style={[styles.actionWrap, { backgroundColor: theme.bg }]}>
         {!isCompleted && !isCancelled && !isNoShow && (
@@ -456,12 +482,14 @@ export default function AppointmentDetailScreen() {
             </Pressable>
           </View>
         )}
-        {isCompleted && (
+        {(isCompleted || isCancelled || isNoShow) && (
           <Pressable
             onPress={handleUndo}
             style={[styles.undoBtn, { backgroundColor: theme.card, borderColor: theme.line }]}
           >
-            <Text style={[styles.undoBtnText, { color: theme.ink }]}>Undo completion · restore stock</Text>
+            <Text style={[styles.undoBtnText, { color: theme.ink }]}>
+              {isCompleted ? 'Undo completion · restore stock' : `Undo ${isCancelled ? 'cancel' : 'no-show'}`}
+            </Text>
           </Pressable>
         )}
       </View>

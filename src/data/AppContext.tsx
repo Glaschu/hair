@@ -69,7 +69,8 @@ interface AppState {
   setAppleCalendarId: (v: string | null) => void;
 
   resetToDemo: () => void;
-  loadFromExport: (data: ExportPayload) => void;
+  loadFromExport: (payload: ExportPayload) => Promise<void>;
+  forceSync: () => Promise<boolean>;
 }
 
 export type { ExportPayload } from './types';
@@ -240,13 +241,87 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (iCloudSyncEnabled && loadedRef.current) {
-      pushSync(snapshotRef.current);
+      forceSync();
     }
   }, [iCloudSyncEnabled]);
 
+  useEffect(() => {
+    if (!iCloudSyncEnabled || !loadedRef.current) return;
+    const timer = setTimeout(() => {
+      pushSync(snapshotRef.current);
+      const allPhotos = clients.flatMap(c => c.photos ?? []);
+      syncPhotos(allPhotos).catch(() => {});
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [iCloudSyncEnabled, clients, products, appointments, services, schedule]);
+
+  // Polling mechanism to pull changes automatically while the app is open
+  // This is especially helpful when two devices are open side-by-side (like simulators)
+  // or when a user leaves the app open on a counter for long periods.
+  useEffect(() => {
+    if (!iCloudSyncEnabled || !loadedRef.current) return;
+    const interval = setInterval(() => {
+      pullSync(snapshotRef.current).then(merged => {
+        if (merged) {
+          setClients(merged.clients);
+          setProducts(merged.products);
+          setAppointments(merged.appointments);
+          setServices(merged.services);
+          setSchedule(merged.schedule);
+          
+          snapshotRef.current = {
+            version: 1,
+            exported: new Date().toISOString(),
+            clients: merged.clients,
+            products: merged.products,
+            appointments: merged.appointments,
+            services: merged.services,
+            schedule: merged.schedule,
+          };
+        }
+      });
+    }, 15000); // Poll every 15 seconds
+    return () => clearInterval(interval);
+  }, [iCloudSyncEnabled]);
+
+  const forceSync = async (): Promise<boolean> => {
+    if (!iCloudSyncEnabled) return false;
+    let didPull = false;
+    const merged = await pullSync(snapshotRef.current);
+    if (merged) {
+      didPull = true;
+      setClients(merged.clients);
+      setProducts(merged.products);
+      setAppointments(merged.appointments);
+      setServices(merged.services);
+      setSchedule(merged.schedule);
+      
+      // Update snapshot ref instantly before pushing
+      snapshotRef.current = {
+        version: 1,
+        exported: new Date().toISOString(),
+        clients: merged.clients,
+        products: merged.products,
+        appointments: merged.appointments,
+        services: merged.services,
+        schedule: merged.schedule,
+      };
+    }
+    
+    // Explicitly push the newly merged (or current) state immediately
+    await pushSync(snapshotRef.current);
+    return didPull;
+  };
+
   const setClients: React.Dispatch<React.SetStateAction<Client[]>> = (action) => {
     setClientsState(prev => {
-      const next = typeof action === 'function' ? action(prev) : action;
+      let next = typeof action === 'function' ? action(prev) : action;
+      if (typeof action === 'function') {
+        next = next.map(item => {
+          const prevItem = prev.find(p => p.id === item.id);
+          return prevItem !== item ? { ...item, updatedAt: Date.now() } : item;
+        });
+      }
       if (loadedRef.current) {
         db.transaction((tx) => {
           tx.delete(schema.clientPhotos).run();
@@ -267,7 +342,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setProducts: React.Dispatch<React.SetStateAction<Product[]>> = (action) => {
     setProductsState(prev => {
-      const next = typeof action === 'function' ? action(prev) : action;
+      let next = typeof action === 'function' ? action(prev) : action;
+      if (typeof action === 'function') {
+        next = next.map(item => {
+          const prevItem = prev.find(p => p.id === item.id);
+          return prevItem !== item ? { ...item, updatedAt: Date.now() } : item;
+        });
+      }
       if (loadedRef.current) {
         db.transaction((tx) => {
           tx.delete(schema.products).run();
@@ -283,7 +364,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>> = (action) => {
     setAppointmentsState(prev => {
-      const next = typeof action === 'function' ? action(prev) : action;
+      let next = typeof action === 'function' ? action(prev) : action;
+      if (typeof action === 'function') {
+        next = next.map(item => {
+          const prevItem = prev.find(p => p.id === item.id);
+          return prevItem !== item ? { ...item, updatedAt: Date.now() } : item;
+        });
+      }
       if (loadedRef.current) {
         db.transaction((tx) => {
           tx.delete(schema.appointmentProducts).run();
@@ -303,7 +390,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setServices: React.Dispatch<React.SetStateAction<Service[]>> = (action) => {
     setServicesState(prev => {
-      const next = typeof action === 'function' ? action(prev) : action;
+      let next = typeof action === 'function' ? action(prev) : action;
+      if (typeof action === 'function') {
+        next = next.map(item => {
+          const prevItem = prev.find(p => p.id === item.id);
+          return prevItem !== item ? { ...item, updatedAt: Date.now() } : item;
+        });
+      }
       if (loadedRef.current) {
         db.transaction((tx) => {
           tx.delete(schema.serviceProducts).run();
@@ -347,7 +440,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSchedule(DEFAULT_SCHEDULE);
   };
 
-  const loadFromExport = (data: ExportPayload) => {
+  const loadFromExport = async (data: ExportPayload) => {
     setClients(data.clients);
     setProducts(data.products);
     setAppointments(data.appointments);
@@ -400,7 +493,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       iCloudSyncEnabled, setICloudSyncEnabled,
       appleCalendarId, setAppleCalendarId,
       lastExportAt, markExported,
-      resetToDemo, loadFromExport,
+      resetToDemo,
+      loadFromExport,
+      forceSync,
     }}>
       {children}
     </AppContext.Provider>

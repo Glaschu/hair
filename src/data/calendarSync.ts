@@ -57,6 +57,14 @@ export async function getOrCreateIrisCalendar(): Promise<string | null> {
   }
 }
 
+export async function deleteIrisCalendar(calendarId: string): Promise<void> {
+  try {
+    await Calendar.deleteCalendarAsync(calendarId);
+  } catch (error) {
+    console.error('Failed to delete calendar', error);
+  }
+}
+
 /**
  * Creates, updates, or deletes calendar events to match the provided appointments.
  * Returns the updated appointments with `appleEventId` set.
@@ -108,14 +116,35 @@ export async function syncAppointmentsToCalendar(
         try {
           await Calendar.updateEventAsync(appt.appleEventId, eventDetails);
         } catch {
-          // If update fails (e.g. user deleted it), recreate it
+          // If update fails (e.g. user deleted it, or it was from another device), 
+          // check if it exists before recreating
+          const startDay = new Date(appt.start); startDay.setHours(0, 0, 0, 0);
+          const endDay = new Date(appt.end); endDay.setHours(23, 59, 59, 999);
+          const existingEvents = await Calendar.getEventsAsync([calendarId], startDay, endDay);
+          const duplicate = existingEvents.find(e => e.title === title && new Date(e.startDate).getTime() === new Date(appt.start).getTime());
+          
+          if (duplicate) {
+            await Calendar.updateEventAsync(duplicate.id, eventDetails);
+            updatedAppointments[i] = { ...appt, appleEventId: duplicate.id };
+          } else {
+            const newId = await Calendar.createEventAsync(calendarId, eventDetails);
+            updatedAppointments[i] = { ...appt, appleEventId: newId };
+          }
+        }
+      } else {
+        // Create new, but check if it was created by another device first!
+        const startDay = new Date(appt.start); startDay.setHours(0, 0, 0, 0);
+        const endDay = new Date(appt.end); endDay.setHours(23, 59, 59, 999);
+        const existingEvents = await Calendar.getEventsAsync([calendarId], startDay, endDay);
+        const duplicate = existingEvents.find(e => e.title === title && new Date(e.startDate).getTime() === new Date(appt.start).getTime());
+        
+        if (duplicate) {
+          await Calendar.updateEventAsync(duplicate.id, eventDetails);
+          updatedAppointments[i] = { ...appt, appleEventId: duplicate.id };
+        } else {
           const newId = await Calendar.createEventAsync(calendarId, eventDetails);
           updatedAppointments[i] = { ...appt, appleEventId: newId };
         }
-      } else {
-        // Create new
-        const newId = await Calendar.createEventAsync(calendarId, eventDetails);
-        updatedAppointments[i] = { ...appt, appleEventId: newId };
       }
     } catch (err) {
       console.error(`Failed to sync appointment ${appt.id}`, err);

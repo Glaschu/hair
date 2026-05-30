@@ -36,6 +36,13 @@
       "when": 1779905178512,
       "tag": "0004_lucky_brother_voodoo",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1779997307508,
+      "tag": "0005_bored_wendigo",
+      "breakpoints": true
     }
   ]
 }
