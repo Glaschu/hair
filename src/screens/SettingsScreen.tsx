@@ -39,7 +39,7 @@ for (let h = 6; h <= 22; h++) {
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SettingsScreen() {
-  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, calendarSyncEnabled, setCalendarSyncEnabled, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
+  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, vatRate, setVatRate, calendarSyncEnabled, setCalendarSyncEnabled, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
   const dialog = useDialog();
   const nav = useNavigation<Nav>();
   const [editingName, setEditingName] = useState(false);
@@ -473,6 +473,31 @@ export default function SettingsScreen() {
           </Card>
         </View>
 
+        {/* Preferences */}
+        <View style={[styles.section, { paddingHorizontal: 20 }]}>
+          <Text style={[styles.label, { color: theme.ink3 }]}>PREFERENCES</Text>
+          <Card>
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.settingLabel, { color: theme.ink }]}>Default VAT Rate (%)</Text>
+                <Text style={{ fontSize: 11, color: theme.ink3, marginTop: 2 }}>
+                  Used for calculating product costs
+                </Text>
+              </View>
+              <TextInput
+                value={String(vatRate)}
+                onChangeText={(t) => {
+                  const num = parseInt(t.replace(/[^0-9]/g, ''), 10);
+                  if (!isNaN(num)) setVatRate(num);
+                  else if (t === '') setVatRate(0);
+                }}
+                keyboardType="number-pad"
+                style={[styles.timeChip, styles.timeChipText, { backgroundColor: theme.bg2, color: theme.ink, minWidth: 60, textAlign: 'center', paddingVertical: 6 }]}
+              />
+            </View>
+          </Card>
+        </View>
+
         {/* Working hours */}
         <View style={[styles.section, { paddingHorizontal: 20 }]}>
           <Text style={[styles.label, { color: theme.ink3 }]}>WORKING HOURS</Text>
@@ -668,31 +693,31 @@ export default function SettingsScreen() {
               
               <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
                 <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
-                  <Icons.layout size={18} color={theme.accent} />
+                  <Icons.search size={18} color={theme.accent} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>All-New iPad Mode</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Iris now features a beautiful, multi-column layout optimized specifically for the iPad's larger screen.</Text>
+                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Smart Product Search</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Easily find products across the app with our new smart search bar. Filter by brand instantly or search by name to add exactly what you need.</Text>
                 </View>
               </View>
 
               <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
                 <View style={[styles.dataIcon, { backgroundColor: theme.sage + '25' }]}>
-                  <Icons.cloud size={18} color={theme.sage} />
+                  <Icons.trend size={18} color={theme.sage} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Seamless iCloud Sync</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Turn on iCloud Sync to effortlessly keep your clients, appointments, and products perfectly in sync between your iPhone and iPad.</Text>
+                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Automated VAT</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Set your default VAT rate in Preferences and effortlessly add it to your product costs with a single tap during creation.</Text>
                 </View>
               </View>
 
               <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
                 <View style={[styles.dataIcon, { backgroundColor: '#8a3ab925' }]}>
-                  <Icons.calendar size={18} color="#8a3ab9" />
+                  <Icons.barcode size={18} color="#8a3ab9" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Smart Calendar Deduplication</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Iris now intelligently recognizes appointments synced across your Apple devices and links them automatically, eliminating duplicate events in your Apple Calendar.</Text>
+                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Refined Scanning & iPad UI</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Enjoy a smoother barcode scanning flow without UI glitches, and instantly open client Instagram profiles directly on your iPad.</Text>
                 </View>
               </View>
 

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, TextInput, Modal, FlatList,
+  View, Text, ScrollView, Pressable, StyleSheet, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -8,7 +8,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
 import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
-import { Avatar, Card, Icons, RoundBtn, StatusBadge, CustomTimeRow } from '../components';
+import { Avatar, Card, Icons, RoundBtn, StatusBadge, CustomTimeRow, ProductPicker } from '../components';
 import { Client, Service, Product } from '../data/types';
 import { fmt, isSameDay, addDays, checkSchedule, fmtHHMM, DAY_NAMES, generateTimeSlots, createClient, clientMatchesQuery } from '../data/utils';
 import { hasConflict } from '../data/booking';
@@ -202,6 +202,7 @@ export default function NewAppointmentScreen() {
   }
 
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
       {/* Header */}
       <View style={styles.header}>
@@ -236,9 +237,10 @@ export default function NewAppointmentScreen() {
         Step {currentStepIdx + 1} — {STEP_LABELS[currentStepIdx]}
       </Text>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+      <View style={{ flex: 1 }}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-        {/* Step 1: Client */}
+          {/* Step 1: Client */}
         {step === 'client' && (
           <View style={{ padding: 20 }}>
             <Text style={[styles.stepTitle, { color: theme.ink }]}>Select Client</Text>
@@ -522,46 +524,20 @@ export default function NewAppointmentScreen() {
               <Text style={styles.nextBtnText}>Review</Text>
               <Icons.arrowRight size={18} color="#fff" />
             </Pressable>
+
+            <ProductPicker
+              visible={showProductPicker}
+              onClose={() => setShowProductPicker(false)}
+              onSelect={(ids) => {
+                if (Array.isArray(ids)) {
+                  setSelectedProducts(ids);
+                }
+              }}
+              initialSelectedIds={selectedProducts}
+              mode="multiple"
+            />
           </View>
         )}
-
-        {/* Product picker modal */}
-        <Modal visible={showProductPicker} transparent animationType="slide" onRequestClose={() => setShowProductPicker(false)}>
-          <Pressable style={styles.modalBackdrop} onPress={() => setShowProductPicker(false)} />
-          <View style={[styles.pickerSheet, { backgroundColor: theme.card }]}>
-            <View style={styles.pickerHandle} />
-            <Text style={[styles.pickerTitle, { color: theme.ink }]}>All Products</Text>
-            <FlatList
-              data={products}
-              keyExtractor={(p) => p.id}
-              style={{ maxHeight: 380 }}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item: p }) => (
-                <Pressable
-                  onPress={() => { toggleProduct(p.id); }}
-                  style={[styles.pickerRow, { borderBottomColor: theme.line }]}
-                >
-                  <View style={[styles.pickerCheck, {
-                    backgroundColor: selectedProducts.includes(p.id) ? theme.accent : 'transparent',
-                    borderColor: selectedProducts.includes(p.id) ? theme.accent : theme.ink3,
-                  }]}>
-                    {selectedProducts.includes(p.id) && <Icons.check size={12} color="#fff" />}
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[styles.pickerRowName, { color: theme.ink }]}>{p.name}</Text>
-                    <Text style={[styles.pickerRowSub, { color: theme.ink3 }]}>{p.brand} · {p.stock} in stock</Text>
-                  </View>
-                </Pressable>
-              )}
-            />
-            <Pressable
-              onPress={() => setShowProductPicker(false)}
-              style={[styles.pickerDone, { backgroundColor: theme.accent }]}
-            >
-              <Text style={styles.pickerDoneText}>Done ({selectedProducts.length} selected)</Text>
-            </Pressable>
-          </View>
-        </Modal>
 
         {/* Step 5: Review */}
         {step === 'review' && selectedClient && selectedService && (
@@ -662,7 +638,9 @@ export default function NewAppointmentScreen() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+      </View>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 

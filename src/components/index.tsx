@@ -11,3 +11,4 @@ export { EmptyState } from './EmptyState';
 export { ErrorBoundary } from './ErrorBoundary';
 export { CustomTimeRow } from './CustomTimeRow';
 export { DialogHost, useLocalDialog } from './Dialog';
+export { ProductPicker } from './ProductPicker';

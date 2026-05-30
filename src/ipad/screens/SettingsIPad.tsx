@@ -29,11 +29,12 @@ const LEAD_OPTIONS = [
 const TIME_OPTIONS: string[] = [];
 for (let h = 6; h <= 22; h++) { TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:00`); if (h < 22) TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:30`); }
 
-type SectionId = 'studio' | 'appearance' | 'reminders' | 'hours' | 'services' | 'sync' | 'data';
+type SectionId = 'studio' | 'appearance' | 'reminders' | 'preferences' | 'hours' | 'services' | 'sync' | 'data';
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: 'studio', label: 'Studio' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'reminders', label: 'Reminders' },
+  { id: 'preferences', label: 'Preferences' },
   { id: 'hours', label: 'Working hours' },
   { id: 'services', label: 'Services' },
   { id: 'sync', label: 'Sync' },
@@ -265,6 +266,25 @@ export function SettingsIPad() {
             </Card>
           </Block>
         );
+      case 'preferences':
+        return (
+          <Block title="PREFERENCES">
+            <Card>
+              <ColRow label="Default VAT Rate (%)" hint="Used for calculating product costs">
+                <TextInput
+                  value={String(app.vatRate)}
+                  onChangeText={(t) => {
+                    const num = parseInt(t.replace(/[^0-9]/g, ''), 10);
+                    if (!isNaN(num)) app.setVatRate(num);
+                    else if (t === '') app.setVatRate(0);
+                  }}
+                  keyboardType="number-pad"
+                  style={{ backgroundColor: theme.bg2, color: theme.ink, fontSize: 15, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, minWidth: 60, textAlign: 'center' }}
+                />
+              </ColRow>
+            </Card>
+          </Block>
+        );
       case 'appearance':
         return (
           <Block title="APPEARANCE">
@@ -457,31 +477,31 @@ export function SettingsIPad() {
               
               <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
                 <View style={{ backgroundColor: theme.accent + '18', width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
-                  <Icons.layout size={18} color={theme.accent} />
+                  <Icons.search size={18} color={theme.accent} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '600', fontSize: 15, color: theme.ink }}>All-New iPad Mode</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Iris now features a beautiful, multi-column layout optimized specifically for the iPad's larger screen.</Text>
+                  <Text style={{ fontWeight: '600', fontSize: 15, color: theme.ink }}>Smart Product Search</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Easily find products across the app with our new smart search bar. Filter by brand instantly or search by name to add exactly what you need.</Text>
                 </View>
               </View>
 
               <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
                 <View style={{ backgroundColor: theme.sage + '25', width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
-                  <Icons.cloud size={18} color={theme.sage} />
+                  <Icons.trend size={18} color={theme.sage} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '600', fontSize: 15, color: theme.ink }}>Seamless iCloud Sync</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Turn on iCloud Sync to effortlessly keep your clients, appointments, and products perfectly in sync between your iPhone and iPad.</Text>
+                  <Text style={{ fontWeight: '600', fontSize: 15, color: theme.ink }}>Automated VAT</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Set your default VAT rate in Preferences and effortlessly add it to your product costs with a single tap during creation.</Text>
                 </View>
               </View>
 
               <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
                 <View style={{ backgroundColor: '#8a3ab925', width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
-                  <Icons.calendar size={18} color="#8a3ab9" />
+                  <Icons.barcode size={18} color="#8a3ab9" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '600', fontSize: 15, color: theme.ink }}>Smart Calendar Deduplication</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Iris now intelligently recognizes appointments synced across your Apple devices and links them automatically, eliminating duplicate events in your Apple Calendar.</Text>
+                  <Text style={{ fontWeight: '600', fontSize: 15, color: theme.ink }}>Refined Scanning & iPad UI</Text>
+                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Enjoy a smoother barcode scanning flow without UI glitches, and instantly open client Instagram profiles directly on your iPad.</Text>
                 </View>
               </View>
 

@@ -8,7 +8,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
 import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
-import { Icons, RoundBtn } from '../components';
+import { Icons, RoundBtn, ProductPicker } from '../components';
 import { numberFieldError } from '../data/utils';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -187,52 +187,18 @@ export default function ServiceFormScreen() {
       </KeyboardAvoidingView>
 
       {/* Product picker modal */}
-      <Modal
+      <ProductPicker
         visible={productPicker !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setProductPicker(null)}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={() => setProductPicker(null)} />
-        <View style={[styles.pickerSheet, { backgroundColor: theme.card }]}>
-          <View style={styles.pickerHandle} />
-          <Text style={[styles.pickerTitle, { color: theme.ink }]}>
-            {productPicker === 'defaults' ? 'Default Products' : 'Recommended Products'}
-          </Text>
-          <FlatList
-            data={products}
-            keyExtractor={(p) => p.id}
-            style={{ maxHeight: 360 }}
-            showsVerticalScrollIndicator={false}
-            renderItem={({ item: p }) => {
-              const isSelected = activeList.includes(p.id);
-              return (
-                <Pressable
-                  onPress={() => toggleInList(activeList, setActiveList, p.id)}
-                  style={[styles.pickerRow, { borderBottomColor: theme.line }]}
-                >
-                  <View style={[styles.pickerCheck, {
-                    backgroundColor: isSelected ? theme.accent : 'transparent',
-                    borderColor: isSelected ? theme.accent : theme.ink3,
-                  }]}>
-                    {isSelected && <Icons.check size={12} color="#fff" />}
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[styles.pickerRowName, { color: theme.ink }]}>{p.name}</Text>
-                    <Text style={[styles.pickerRowSub, { color: theme.ink3 }]}>{p.brand} · {p.stock} in stock</Text>
-                  </View>
-                </Pressable>
-              );
-            }}
-          />
-          <Pressable
-            onPress={() => setProductPicker(null)}
-            style={[styles.pickerDone, { backgroundColor: theme.accent }]}
-          >
-            <Text style={styles.pickerDoneText}>Done</Text>
-          </Pressable>
-        </View>
-      </Modal>
+        onClose={() => setProductPicker(null)}
+        title={productPicker === 'defaults' ? 'Default Products' : 'Recommended Products'}
+        mode="multiple"
+        initialSelectedIds={activeList}
+        onSelect={(ids) => {
+          if (Array.isArray(ids)) {
+            setActiveList(ids);
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }

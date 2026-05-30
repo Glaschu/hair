@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
-  View, Text, ScrollView, Pressable, TextInput, Modal, FlatList, StyleSheet, Linking, Platform, Image
+  View, Text, ScrollView, Pressable, TextInput, Modal, FlatList, StyleSheet, Linking, Platform, Image, KeyboardAvoidingView
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -8,9 +8,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../data/AppContext';
-import { useLocalDialog } from '../components/Dialog';
 import { RootStackParamList } from '../navigation/types';
-import { Avatar, Icons, RoundBtn } from '../components';
+import { Avatar, Icons, RoundBtn, useLocalDialog, ProductPicker } from '../components';
 import { fmt } from '../data/utils';
 import { deductStock, restoreStock } from '../data/stock';
 import { notifyLowStock } from '../data/notifications';
@@ -194,8 +193,9 @@ export default function AppointmentDetailScreen() {
   const statusBg = isNoShow ? theme.danger + '20' : isCompleted ? theme.sage + '20' : isCancelled ? theme.ink3 + '15' : theme.accent + '15';
 
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 140 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 140 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {/* Top bar */}
         <View style={styles.topBar}>
           <RoundBtn onPress={() => nav.goBack()} size={38}>
@@ -495,40 +495,14 @@ export default function AppointmentDetailScreen() {
       </View>
 
       {/* Product picker modal */}
-      <Modal visible={pickerOpen} animationType="slide" transparent>
-        <View style={styles.sheetOverlay}>
-          <Pressable style={{ flex: 1 }} onPress={() => setPickerOpen(false)} />
-          <View style={[styles.sheet, { backgroundColor: theme.bg }]}>
-            <View style={styles.sheetHandle} />
-            <Text style={[styles.sheetTitle, { color: theme.ink }]}>Add product</Text>
-            <FlatList
-              data={products.filter((p) => !appt.products.some((ap) => ap.productId === p.id))}
-              keyExtractor={(item) => item.id}
-              style={{ maxHeight: 400 }}
-              renderItem={({ item }) => (
-                <Pressable
-                  onPress={() => addProduct(item.id)}
-                  style={({ pressed }) => [
-                    styles.pickerRow,
-                    { borderColor: theme.line, opacity: pressed ? 0.7 : 1 },
-                  ]}
-                >
-                  <View style={[styles.pickerSwatch, { backgroundColor: theme.bg2 }]}>
-                    <Text style={[styles.pickerSwatchText, { color: theme.ink3 }]}>
-                      {item.brand.slice(0, 3).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.pickerName, { color: theme.ink }]}>{item.name}</Text>
-                    <Text style={[styles.pickerBrand, { color: theme.ink2 }]}>{item.brand}</Text>
-                  </View>
-                  <Text style={[styles.pickerUnit, { color: theme.ink3 }]}>{item.perUse}{item.unit}</Text>
-                </Pressable>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
+      <ProductPicker
+        visible={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(id) => {
+          if (typeof id === 'string') addProduct(id);
+        }}
+        excludeIds={appt.products.map(p => p.productId)}
+      />
 
       {/* Completion confirm modal */}
       <Modal visible={confirmOpen} animationType="slide" transparent>
@@ -583,7 +557,8 @@ export default function AppointmentDetailScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 

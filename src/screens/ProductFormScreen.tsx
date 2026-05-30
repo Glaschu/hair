@@ -19,7 +19,7 @@ const CATEGORIES = ['Color', 'Developer', 'Lightener', 'Treatment', 'Styling', '
 const UNITS = ['ml', 'g', 'oz', 'units'];
 
 export default function ProductFormScreen() {
-  const { theme, products, setProducts, services, setServices, appointments, setAppointments } = useApp();
+  const { theme, products, setProducts, services, setServices, appointments, setAppointments, vatRate } = useApp();
   const dialog = useDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
@@ -211,6 +211,19 @@ export default function ProductFormScreen() {
         <SectionLabel label="COST" theme={theme} />
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
           <FieldRow label="Unit cost (£)" value={cost} onChangeText={setCost} placeholder="e.g. 12.50" keyboardType="decimal-pad" theme={theme} error={fieldErrors.cost} />
+          <View style={[styles.divider, { backgroundColor: theme.line }]} />
+          <Pressable
+            onPress={() => {
+              const current = parseFloat(cost) || 0;
+              if (current > 0) {
+                const withVat = current * (1 + vatRate / 100);
+                setCost(withVat.toFixed(2));
+              }
+            }}
+            style={({ pressed }) => [{ padding: 12, alignItems: 'center', backgroundColor: pressed ? theme.bg2 : 'transparent' }]}
+          >
+            <Text style={{ fontSize: 13, fontWeight: '500', color: theme.accent }}>+ Add {vatRate}% VAT</Text>
+          </Pressable>
         </View>
 
         {/* Barcode */}

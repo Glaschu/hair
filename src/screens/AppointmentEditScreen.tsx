@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, TextInput, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -38,6 +38,7 @@ export default function AppointmentEditScreen() {
   };
 
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
@@ -65,11 +66,12 @@ export default function AppointmentEditScreen() {
           </Text>
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: 60 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+        <View style={{ flex: 1 }}>
+          <ScrollView
+            contentContainerStyle={{ padding: 20, paddingBottom: 60 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
           {/* Service picker */}
           <Text style={[styles.label, { color: theme.ink3 }]}>SERVICE</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 28 }}>
@@ -123,9 +125,11 @@ export default function AppointmentEditScreen() {
             numberOfLines={4}
             textAlignVertical="top"
           />
-        </ScrollView>
+          </ScrollView>
+        </View>
       )}
     </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 

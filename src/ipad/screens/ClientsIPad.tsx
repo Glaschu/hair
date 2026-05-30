@@ -208,6 +208,12 @@ function ClientDetailPanel({ clientId }: { clientId: string }) {
           <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 230 }}>
             <Btn compact icon={<Icons.phone size={15} color={theme.ink} />} onPress={() => Linking.openURL(`tel:${client.phone}`)}>Call</Btn>
             <Btn compact icon={<Icons.message size={15} color={theme.ink} />} onPress={() => Linking.openURL(`sms:${client.phone}`)}>Message</Btn>
+            {client.instagram && (
+              <Btn compact icon={<Icons.instagram size={15} color={theme.ink} />} onPress={() => {
+                const handle = client.instagram?.replace('@', '');
+                Linking.openURL(`https://ig.me/m/${handle}`).catch(() => Linking.openURL(`https://instagram.com/${handle}`));
+              }}>Insta</Btn>
+            )}
             <Btn compact variant="primary" icon={<Icons.plus size={15} color="#fff" />} onPress={() => nav.navigate('NewAppointment', { clientId: client.id, prefillService: completed[0]?.service })}>Book</Btn>
             <RoundBtn size={36} onPress={() => nav.navigate('ClientForm', { clientId: client.id })}><Icons.edit size={15} color={theme.ink} /></RoundBtn>
           </View>

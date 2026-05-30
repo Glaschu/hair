@@ -59,6 +59,9 @@ interface AppState {
   reminderLeadMinutes: number;
   setReminderLeadMinutes: (n: number) => void;
 
+  vatRate: number;
+  setVatRate: (n: number) => void;
+
   calendarSyncEnabled: boolean;
   setCalendarSyncEnabled: (v: boolean) => void;
 
@@ -94,6 +97,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [bookingWindowDays, setBookingWindowDaysState] = useState(90);
   const [remindersEnabled, setRemindersEnabledState] = useState(false);
   const [reminderLeadMinutes, setReminderLeadMinutesState] = useState(60);
+  const [vatRate, setVatRateState] = useState(20);
   const [calendarSyncEnabled, setCalendarSyncEnabledState] = useState(false);
   const [iCloudSyncEnabled, setICloudSyncEnabledState] = useState(false);
   const [appleCalendarId, setAppleCalendarIdState] = useState<string | null>(null);
@@ -130,6 +134,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (get('bookingWindowDays')) setBookingWindowDaysState(Number(get('bookingWindowDays')));
       if (get('remindersEnabled'))    setRemindersEnabledState(get('remindersEnabled') === 'true');
       if (get('reminderLeadMinutes')) setReminderLeadMinutesState(Number(get('reminderLeadMinutes')));
+      if (get('vatRate'))             setVatRateState(Number(get('vatRate')));
       if (get('calendarSyncEnabled')) setCalendarSyncEnabledState(get('calendarSyncEnabled') === 'true');
       if (get('iCloudSyncEnabled'))   setICloudSyncEnabledState(get('iCloudSyncEnabled') === 'true');
       if (get('appleCalendarId'))     setAppleCalendarIdState(get('appleCalendarId')!);
@@ -155,6 +160,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setBookingWindowDays = (n: number) => { setBookingWindowDaysState(n); setSetting('bookingWindowDays', String(n)); };
   const setRemindersEnabled = (v: boolean) => { setRemindersEnabledState(v); setSetting('remindersEnabled', String(v)); };
   const setReminderLeadMinutes = (n: number) => { setReminderLeadMinutesState(n); setSetting('reminderLeadMinutes', String(n)); };
+  const setVatRate = (n: number) => { setVatRateState(n); setSetting('vatRate', String(n)); };
   const setCalendarSyncEnabled = (v: boolean) => { setCalendarSyncEnabledState(v); setSetting('calendarSyncEnabled', String(v)); };
   const setICloudSyncEnabled = (v: boolean) => { setICloudSyncEnabledState(v); setSetting('iCloudSyncEnabled', String(v)); };
   const setAppleCalendarId = (v: string | null) => { setAppleCalendarIdState(v); if (v) setSetting('appleCalendarId', v); };
@@ -489,6 +495,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       bookingWindowDays, setBookingWindowDays,
       remindersEnabled, setRemindersEnabled,
       reminderLeadMinutes, setReminderLeadMinutes,
+      vatRate, setVatRate,
       calendarSyncEnabled, setCalendarSyncEnabled,
       iCloudSyncEnabled, setICloudSyncEnabled,
       appleCalendarId, setAppleCalendarId,
