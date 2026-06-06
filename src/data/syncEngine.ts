@@ -21,10 +21,11 @@ export async function pushSync(payload: ExportPayload): Promise<void> {
         finalPayload = {
           version: 1,
           exported: new Date().toISOString(),
-          clients: mergeArrays(payload.clients, remote.clients),
-          products: mergeArrays(payload.products, remote.products),
-          appointments: mergeArrays(payload.appointments, remote.appointments),
-          services: mergeArrays(payload.services, remote.services),
+          tombstones: { ...remote.tombstones, ...payload.tombstones },
+          clients: mergeArrays(payload.clients, remote.clients, { ...remote.tombstones, ...payload.tombstones }),
+          products: mergeArrays(payload.products, remote.products, { ...remote.tombstones, ...payload.tombstones }),
+          appointments: mergeArrays(payload.appointments, remote.appointments, { ...remote.tombstones, ...payload.tombstones }),
+          services: mergeArrays(payload.services, remote.services, { ...remote.tombstones, ...payload.tombstones }),
           schedule: { ...remote.schedule, ...payload.schedule },
         };
       }
@@ -67,10 +68,11 @@ export async function pullSync(localPayload: ExportPayload): Promise<ExportPaylo
   const merged: ExportPayload = {
     version: 1,
     exported: new Date().toISOString(),
-    clients: mergeArrays(localPayload.clients, remote.clients),
-    products: mergeArrays(localPayload.products, remote.products),
-    appointments: mergeArrays(localPayload.appointments, remote.appointments),
-    services: mergeArrays(localPayload.services, remote.services),
+    tombstones: { ...localPayload.tombstones, ...remote.tombstones },
+    clients: mergeArrays(localPayload.clients, remote.clients, { ...localPayload.tombstones, ...remote.tombstones }),
+    products: mergeArrays(localPayload.products, remote.products, { ...localPayload.tombstones, ...remote.tombstones }),
+    appointments: mergeArrays(localPayload.appointments, remote.appointments, { ...localPayload.tombstones, ...remote.tombstones }),
+    services: mergeArrays(localPayload.services, remote.services, { ...localPayload.tombstones, ...remote.tombstones }),
     schedule: { ...localPayload.schedule, ...remote.schedule },
   };
 
@@ -81,16 +83,19 @@ export async function pullSync(localPayload: ExportPayload): Promise<ExportPaylo
  * Merges two arrays of objects based on their `id` and `updatedAt` properties.
  * If an item exists in both, the one with the higher `updatedAt` is kept.
  */
-function mergeArrays<T extends { id: string; updatedAt?: number }>(local: T[], remote: T[]): T[] {
+function mergeArrays<T extends { id: string; updatedAt?: number }>(local: T[], remote: T[], tombstones?: Record<string, number>): T[] {
   const map = new Map<string, T>();
 
   // Add local items
   for (const item of local) {
+    if (tombstones && tombstones[item.id] && tombstones[item.id] >= (item.updatedAt ?? 0)) continue;
     map.set(item.id, item);
   }
 
   // Merge remote items
   for (const item of remote) {
+    if (tombstones && tombstones[item.id] && tombstones[item.id] >= (item.updatedAt ?? 0)) continue;
+    
     const existing = map.get(item.id);
     if (existing) {
       const localTime = existing.updatedAt ?? 0;

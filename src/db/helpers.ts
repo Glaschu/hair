@@ -36,6 +36,8 @@ export function rowToProduct(row: typeof schema.products.$inferSelect): Product 
     size: row.size, unit: row.unit, stock: row.stock, reorder: row.reorder,
     perUse: row.perUse, cost: row.cost, status: row.status as Product['status'],
     barcode: row.barcode ?? undefined,
+    hasVat: row.hasVat ?? false,
+    baseCost: row.baseCost ?? undefined,
     updatedAt: row.updatedAt ?? undefined,
   };
 }
@@ -45,6 +47,7 @@ export function productToRow(p: Product): typeof schema.products.$inferInsert {
     id: p.id, name: p.name, brand: p.brand, category: p.category,
     size: p.size, unit: p.unit, stock: p.stock, reorder: p.reorder,
     perUse: p.perUse, cost: p.cost, status: p.status, barcode: p.barcode ?? null,
+    hasVat: p.hasVat ?? false, baseCost: p.baseCost ?? null,
     updatedAt: p.updatedAt,
   };
 }

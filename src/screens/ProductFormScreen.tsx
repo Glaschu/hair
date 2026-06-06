@@ -7,9 +7,8 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useApp } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
-import { Icons, RoundBtn } from '../components';
+import { Icons, RoundBtn, useLocalDialog } from '../components';
 import { numberFieldError } from '../data/utils';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -20,7 +19,7 @@ const UNITS = ['ml', 'g', 'oz', 'units'];
 
 export default function ProductFormScreen() {
   const { theme, products, setProducts, services, setServices, appointments, setAppointments, vatRate } = useApp();
-  const dialog = useDialog();
+  const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -35,6 +34,8 @@ export default function ProductFormScreen() {
   const [reorder, setReorder] = useState(String(existing?.reorder || ''));
   const [perUse, setPerUse] = useState(String(existing?.perUse || ''));
   const [cost, setCost] = useState(String(existing?.cost || ''));
+  const [baseCost, setBaseCost] = useState(existing?.baseCost ? String(existing.baseCost) : '');
+  const [vatApplied, setVatApplied] = useState(existing?.hasVat || false);
   const [barcode, setBarcode] = useState(existing?.barcode || '');
   const [scannerOpen, setScannerOpen] = useState(false);
 
@@ -54,7 +55,7 @@ export default function ProductFormScreen() {
     if (!permission?.granted) {
       const { granted } = await requestPermission();
       if (!granted) {
-        await dialog.alert({
+        await alert({
           title: 'Camera permission required',
           message: 'Please allow camera access to scan barcodes.',
         });
@@ -69,7 +70,7 @@ export default function ProductFormScreen() {
     const conflict = products.find((p) => p.barcode === data && p.id !== existing?.id);
     if (conflict) {
       setScannerOpen(false);
-      dialog.alert({
+      alert({
         title: 'Barcode in use',
         message: `This barcode is already assigned to "${conflict.name}".`,
       });
@@ -87,6 +88,7 @@ export default function ProductFormScreen() {
     const perUseNum = parseFloat(perUse) || 0;
     const costNum = parseFloat(cost) || 0;
     const status = stockNum === 0 ? 'out' as const : stockNum <= reorderNum ? 'low' as const : 'ok' as const;
+    const bCostNum = baseCost && vatApplied ? parseFloat(baseCost) : undefined;
 
     if (existing) {
       setProducts((prev) => prev.map((p) => p.id === existing.id ? {
@@ -94,6 +96,7 @@ export default function ProductFormScreen() {
         name: name.trim(), brand: brand.trim(), category,
         size: sizeNum, unit, stock: stockNum, reorder: reorderNum,
         perUse: perUseNum, cost: costNum, status, barcode: barcode || undefined,
+        hasVat: vatApplied, baseCost: bCostNum,
       } : p));
     } else {
       setProducts((prev) => [...prev, {
@@ -101,6 +104,7 @@ export default function ProductFormScreen() {
         name: name.trim(), brand: brand.trim(), category,
         size: sizeNum, unit, stock: stockNum, reorder: reorderNum,
         perUse: perUseNum, cost: costNum, status, barcode: barcode || undefined,
+        hasVat: vatApplied, baseCost: bCostNum,
       }]);
     }
     nav.goBack();
@@ -108,7 +112,7 @@ export default function ProductFormScreen() {
 
   const deleteProduct = async () => {
     if (!existing) return;
-    const ok = await dialog.confirm({
+    const ok = await confirm({
       title: 'Delete product',
       message: `Remove ${existing.name}? It will also be removed from any services and appointments that use it.`,
       confirmLabel: 'Delete',
@@ -210,20 +214,56 @@ export default function ProductFormScreen() {
         {/* Cost */}
         <SectionLabel label="COST" theme={theme} />
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
-          <FieldRow label="Unit cost (£)" value={cost} onChangeText={setCost} placeholder="e.g. 12.50" keyboardType="decimal-pad" theme={theme} error={fieldErrors.cost} />
-          <View style={[styles.divider, { backgroundColor: theme.line }]} />
-          <Pressable
-            onPress={() => {
-              const current = parseFloat(cost) || 0;
-              if (current > 0) {
-                const withVat = current * (1 + vatRate / 100);
-                setCost(withVat.toFixed(2));
+          <FieldRow 
+            label="Unit cost (£)" 
+            value={cost} 
+            onChangeText={(val: string) => {
+              setCost(val);
+              if (vatApplied) {
+                setVatApplied(false);
+                setBaseCost('');
               }
-            }}
-            style={({ pressed }) => [{ padding: 12, alignItems: 'center', backgroundColor: pressed ? theme.bg2 : 'transparent' }]}
-          >
-            <Text style={{ fontSize: 13, fontWeight: '500', color: theme.accent }}>+ Add {vatRate}% VAT</Text>
-          </Pressable>
+            }} 
+            placeholder="e.g. 12.50" 
+            keyboardType="decimal-pad" 
+            theme={theme} 
+            error={fieldErrors.cost} 
+          />
+          {vatApplied && baseCost ? (
+            <View style={{ padding: 16, backgroundColor: theme.bg2, borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Text style={{ fontSize: 13, color: theme.ink2 }}>Product cost</Text>
+                <Text style={{ fontSize: 13, color: theme.ink }}>£{parseFloat(baseCost).toFixed(2)}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
+                <Text style={{ fontSize: 13, color: theme.ink2 }}>+ {vatRate}% VAT</Text>
+                <Text style={{ fontSize: 13, color: theme.ink }}>£{(parseFloat(cost) - parseFloat(baseCost)).toFixed(2)}</Text>
+              </View>
+              <View style={{ height: 1, backgroundColor: theme.line, marginBottom: 10 }} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: theme.ink }}>Total</Text>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: theme.ink }}>£{parseFloat(cost).toFixed(2)}</Text>
+              </View>
+            </View>
+          ) : (
+            <>
+              <View style={[styles.divider, { backgroundColor: theme.line }]} />
+              <Pressable
+                onPress={() => {
+                  const current = parseFloat(cost) || 0;
+                  if (current > 0) {
+                    const withVat = current * (1 + vatRate / 100);
+                    setBaseCost(cost);
+                    setCost(withVat.toFixed(2));
+                    setVatApplied(true);
+                  }
+                }}
+                style={({ pressed }) => [{ padding: 12, alignItems: 'center', backgroundColor: pressed ? theme.bg2 : 'transparent' }]}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '500', color: theme.accent }}>+ Add {vatRate}% VAT</Text>
+              </Pressable>
+            </>
+          )}
         </View>
 
         {/* Barcode */}
@@ -300,6 +340,7 @@ export default function ProductFormScreen() {
           </CameraView>
         </View>
       </Modal>
+      {dialog}
     </SafeAreaView>
   );
 }

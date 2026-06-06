@@ -11,16 +11,35 @@ import { Eyebrow, Title, Btn, StatTile } from '../ui';
 
 type Range = 'week' | 'month' | 'all';
 const RANGES: { id: Range; label: string }[] = [
-  { id: 'week', label: '7 days' }, { id: 'month', label: '30 days' }, { id: 'all', label: 'All time' },
+  { id: 'week', label: 'This week' }, { id: 'month', label: 'This month' }, { id: 'all', label: 'All time' },
 ];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function rangeBounds(range: Range) {
-  const now = new Date(); const end = new Date(now); end.setHours(23, 59, 59, 999);
-  const span = range === 'week' ? 6 : range === 'month' ? 29 : null;
-  if (span === null) return { start: new Date(0), end };
-  const start = new Date(now); start.setDate(start.getDate() - span); start.setHours(0, 0, 0, 0);
-  return { start, end };
+  const now = new Date();
+  
+  if (range === 'week') {
+    const start = new Date(now);
+    const day = start.getDay();
+    const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+    start.setDate(diff);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }
+  if (range === 'month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }
+  
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+  return { start: new Date(0), end };
 }
 
 export function ReportsIPad() {
@@ -28,8 +47,16 @@ export function ReportsIPad() {
   const { isLandscape } = useResponsive();
   const { goToClient } = useShell();
   const [range, setRange] = useState<Range>('week');
+  const [marginMode, setMarginMode] = useState<'completed' | 'projected'>('completed');
   const { start, end } = useMemo(() => rangeBounds(range), [range]);
   const inRange = (iso: string) => { const d = new Date(iso); return d >= start && d <= end; };
+
+  const rangeStr = useMemo(() => {
+    if (range === 'all') return '';
+    const s = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const e = end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return ` · ${s.toUpperCase()} - ${e.toUpperCase()}`;
+  }, [range, start, end]);
 
   const completed = useMemo(() => appointments.filter((a) => a.status === 'completed' && inRange(a.start)), [appointments, start, end]);
   const upcoming = useMemo(() => appointments.filter((a) => a.status === 'upcoming' && inRange(a.start)), [appointments, start, end]);
@@ -46,18 +73,19 @@ export function ReportsIPad() {
 
   const productUsage = useMemo(() => {
     const m: Record<string, number> = {};
-    [...completed, ...upcoming].forEach((a) => a.products.forEach((up) => { m[up.productId] = (m[up.productId] || 0) + up.amount; }));
+    const appts = marginMode === 'completed' ? completed : [...completed, ...upcoming];
+    appts.forEach((a) => a.products.forEach((up) => { m[up.productId] = (m[up.productId] || 0) + up.amount; }));
     return Object.entries(m).map(([pid, amt]) => {
       const p = products.find((x) => x.id === pid);
       return p ? { product: p, amount: amt, cost: p.cost * (amt / p.size) } : null;
     }).filter((x): x is { product: Product; amount: number; cost: number } => x !== null).sort((a, b) => b.cost - a.cost);
-  }, [completed, upcoming, products]);
+  }, [completed, upcoming, products, marginMode]);
 
   const productCost = productUsage.reduce((s, p) => s + p.cost, 0);
-  const totalRev = revenue + projected;
-  const margin = totalRev - productCost;
-  const marginPct = totalRev > 0 ? Math.round((margin / totalRev) * 100) : 0;
-  const costPct = totalRev > 0 ? Math.min(100, (productCost / totalRev) * 100) : 0;
+  const mRevenue = marginMode === 'completed' ? revenue : revenue + projected;
+  const margin = mRevenue - productCost;
+  const marginPct = mRevenue > 0 ? Math.round((margin / mRevenue) * 100) : 0;
+  const costPct = mRevenue > 0 ? Math.min(100, (productCost / mRevenue) * 100) : 0;
 
   const dayOfWeek = useMemo(() => {
     const counts = [0, 0, 0, 0, 0, 0, 0];
@@ -117,7 +145,7 @@ export function ReportsIPad() {
         <View style={[styles.hero, { backgroundColor: theme.heroBg }]}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 24 }}>
             <View style={{ flex: 1.4 }}>
-              <Text style={styles.heroEye}>REVENUE</Text>
+              <Text style={styles.heroEye}>REVENUE{rangeStr}</Text>
               <Text style={styles.heroAmount}>{fmt.currency(revenue)}</Text>
             </View>
             <StatTile dark label="Completed" value={String(completed.length)} />
@@ -129,10 +157,10 @@ export function ReportsIPad() {
 
         {/* Margin + Busiest days */}
         <View style={{ flexDirection: 'row', gap: 18 }}>
-          <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line, flex: 1.3 }]}>
+          <Pressable onPress={() => setMarginMode(m => m === 'completed' ? 'projected' : 'completed')} style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line, flex: 1.3 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
               <View style={{ flex: 1 }}>
-                <Eyebrow>MARGIN</Eyebrow>
+                <Eyebrow>{marginMode === 'completed' ? 'MARGIN · COMPLETED' : 'MARGIN · WITH PROJECTED'}</Eyebrow>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
                   <Text style={{ fontSize: 40, fontWeight: '500', fontStyle: 'italic', color: theme.ink, letterSpacing: -1 }}>{fmt.currency(margin)}</Text>
                   <Text style={{ color: theme.sage, fontSize: 14, fontWeight: '600' }}>({marginPct}%)</Text>
@@ -148,7 +176,7 @@ export function ReportsIPad() {
               <Legend color={theme.warn} label={`Product cost ${fmt.currency(productCost)}`} />
               <Legend color={theme.sage} label={`Margin ${fmt.currency(margin)}`} />
             </View>
-          </View>
+          </Pressable>
           <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line, flex: 1 }]}>
             <Eyebrow>PATTERN · BUSIEST DAYS</Eyebrow>
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 110, gap: 6, marginTop: 14 }}>

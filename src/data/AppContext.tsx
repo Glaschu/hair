@@ -62,6 +62,9 @@ interface AppState {
   vatRate: number;
   setVatRate: (n: number) => void;
 
+  tombstones: Record<string, number>;
+  setTombstones: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+
   calendarSyncEnabled: boolean;
   setCalendarSyncEnabled: (v: boolean) => void;
 
@@ -102,6 +105,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [iCloudSyncEnabled, setICloudSyncEnabledState] = useState(false);
   const [appleCalendarId, setAppleCalendarIdState] = useState<string | null>(null);
   const [lastExportAt, setLastExportAtState] = useState<string | null>(null);
+  const [tombstones, setTombstonesState] = useState<Record<string, number>>({});
 
   useEffect(() => {
     try {
@@ -139,6 +143,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (get('iCloudSyncEnabled'))   setICloudSyncEnabledState(get('iCloudSyncEnabled') === 'true');
       if (get('appleCalendarId'))     setAppleCalendarIdState(get('appleCalendarId')!);
       if (get('lastExportAt'))        setLastExportAtState(get('lastExportAt')!);
+      if (get('tombstones'))          setTombstonesState(JSON.parse(get('tombstones')!));
 
       loadedRef.current = true;
       setLoaded(true);
@@ -173,12 +178,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     syncAppointmentReminders(appointments, clients, reminderLeadMinutes, remindersEnabled).catch(() => {});
   }, [loaded, appointments, clients, reminderLeadMinutes, remindersEnabled]);
 
-  // Keep Apple Calendar in sync
+  // Keep Apple Calendar in sync.
+  //
+  // The effect re-fires whenever `appointments` changes — including its own
+  // writes (the sync sets each appointment's `appleEventId`). To stop that
+  // becoming an infinite loop (especially in failure paths where the sync
+  // keeps reassigning the id to whichever "duplicate" it finds), we hash the
+  // inputs the calendar actually cares about — id / start / end / status /
+  // clientId / service / notes — and skip if that hash hasn't changed since
+  // the last sync. `appleEventId` is the OUTPUT of this effect and is
+  // deliberately excluded.
   const syncingRef = useRef(false);
+  const lastSyncSigRef = useRef<string>('');
   useEffect(() => {
     if (!loaded || !calendarSyncEnabled || !appleCalendarId || syncingRef.current) return;
-    let cancelled = false;
 
+    const sig = appointments
+      .map(a => `${a.id}|${a.start}|${a.end}|${a.status}|${a.clientId}|${a.service}|${a.notes ?? ''}`)
+      .join(';');
+    if (sig === lastSyncSigRef.current) return;
+
+    let cancelled = false;
     syncingRef.current = true;
     syncAppointmentsToCalendar(appleCalendarId, appointments, clients)
       .then(updated => {
@@ -195,13 +215,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           });
           setAppointmentsState(updated);
         }
+        // Mark this input state as synced. The re-render triggered by the
+        // setState above will compute the same sig (appleEventId excluded)
+        // and bail at the early return.
+        lastSyncSigRef.current = sig;
       })
       .finally(() => {
         syncingRef.current = false;
       });
-      
+
     return () => { cancelled = true; };
   }, [loaded, calendarSyncEnabled, appleCalendarId, appointments, clients]);
+
+  // Allow a retry after the user toggles sync off and back on (e.g. after
+  // granting permission), even if the appointments themselves haven't changed.
+  useEffect(() => {
+    if (!calendarSyncEnabled) lastSyncSigRef.current = '';
+  }, [calendarSyncEnabled]);
 
   const markExported = () => {
     const now = new Date().toISOString();
@@ -211,12 +241,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Latest data snapshot, kept current for the on-background auto-backup.
   const snapshotRef = useRef<ExportPayload>({
-    version: 1, exported: '', clients: [], products: [], appointments: [], services: [], schedule: {},
+    version: 1, exported: '', clients: [], products: [], appointments: [], services: [], schedule: {}, tombstones: {},
   });
   snapshotRef.current = {
     version: 1,
     exported: new Date().toISOString(),
-    clients, products, appointments, services, schedule,
+    clients, products, appointments, services, schedule, tombstones,
   };
 
   useEffect(() => {
@@ -319,6 +349,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return didPull;
   };
 
+  const registerTombstones = (prev: {id: string}[], next: {id: string}[]) => {
+    const removed = prev.filter(p => !next.some(n => n.id === p.id));
+    if (removed.length > 0) {
+      setTombstonesState(curr => {
+        const up = { ...curr };
+        const now = Date.now();
+        removed.forEach(r => up[r.id] = now);
+        setSetting('tombstones', JSON.stringify(up));
+        return up;
+      });
+    }
+  };
+
   const setClients: React.Dispatch<React.SetStateAction<Client[]>> = (action) => {
     setClientsState(prev => {
       let next = typeof action === 'function' ? action(prev) : action;
@@ -328,6 +371,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return prevItem !== item ? { ...item, updatedAt: Date.now() } : item;
         });
       }
+      registerTombstones(prev, next);
       if (loadedRef.current) {
         db.transaction((tx) => {
           tx.delete(schema.clientPhotos).run();
@@ -355,6 +399,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return prevItem !== item ? { ...item, updatedAt: Date.now() } : item;
         });
       }
+      registerTombstones(prev, next);
       if (loadedRef.current) {
         db.transaction((tx) => {
           tx.delete(schema.products).run();
@@ -377,6 +422,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return prevItem !== item ? { ...item, updatedAt: Date.now() } : item;
         });
       }
+      registerTombstones(prev, next);
       if (loadedRef.current) {
         db.transaction((tx) => {
           tx.delete(schema.appointmentProducts).run();
@@ -403,6 +449,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return prevItem !== item ? { ...item, updatedAt: Date.now() } : item;
         });
       }
+      registerTombstones(prev, next);
       if (loadedRef.current) {
         db.transaction((tx) => {
           tx.delete(schema.serviceProducts).run();
@@ -452,6 +499,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAppointments(data.appointments);
     setServices(data.services);
     setSchedule(data.schedule);
+    if (data.tombstones) {
+      setTombstonesState(data.tombstones);
+      setSetting('tombstones', JSON.stringify(data.tombstones));
+    }
   };
 
   const base = dark ? darkTheme : lightTheme;
@@ -499,6 +550,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       calendarSyncEnabled, setCalendarSyncEnabled,
       iCloudSyncEnabled, setICloudSyncEnabled,
       appleCalendarId, setAppleCalendarId,
+      tombstones, setTombstones: setTombstonesState,
       lastExportAt, markExported,
       resetToDemo,
       loadFromExport,

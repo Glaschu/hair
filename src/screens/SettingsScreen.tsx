@@ -9,10 +9,9 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
 import { useApp, ExportPayload } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
 import { DEFAULT_SCHEDULE } from '../data/mockData';
 import { RootStackParamList } from '../navigation/types';
-import { Card, Icons, RoundBtn } from '../components';
+import { Card, Icons, RoundBtn, useLocalDialog } from '../components';
 import { accentOptions } from '../theme';
 import { fmt } from '../data/utils';
 import { requestNotificationPermission } from '../data/notifications';
@@ -40,7 +39,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SettingsScreen() {
   const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, vatRate, setVatRate, calendarSyncEnabled, setCalendarSyncEnabled, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
-  const dialog = useDialog();
+  const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(studioName);
@@ -89,12 +88,12 @@ export default function SettingsScreen() {
         typeof data.schedule !== 'object' || data.schedule === null
       ) throw new Error('Invalid format');
       loadFromExport(data);
-      await dialog.alert({
+      await alert({
         title: 'Import complete',
         message: `Loaded ${data.clients.length} clients, ${data.products.length} products, ${data.appointments.length} appointments.`,
       });
     } catch {
-      await dialog.alert({
+      await alert({
         title: 'Import failed',
         message: 'The file could not be read. Make sure it was exported from Iris.',
       });
@@ -110,7 +109,7 @@ export default function SettingsScreen() {
     }
     const granted = await requestNotificationPermission();
     if (!granted) {
-      await dialog.alert({
+      await alert({
         title: 'Notifications are off',
         message: 'Turn on notifications for Iris in your device settings to get appointment reminders.',
       });
@@ -130,7 +129,7 @@ export default function SettingsScreen() {
     }
     const calId = await getOrCreateIrisCalendar();
     if (!calId) {
-      await dialog.alert({
+      await alert({
         title: 'Permission Denied',
         message: 'Iris needs calendar access to sync appointments. Enable it in your device settings.',
       });
@@ -149,7 +148,7 @@ export default function SettingsScreen() {
     try {
       const available = await CloudStorage.isCloudAvailable();
       if (!available) {
-        await dialog.alert({
+        await alert({
           title: 'iCloud Error',
           message: 'Could not enable iCloud sync. Ensure you are signed into an Apple ID with iCloud Drive enabled for Iris.',
         });
@@ -157,7 +156,7 @@ export default function SettingsScreen() {
       }
       setICloudSyncEnabled(true);
     } catch (e) {
-      await dialog.alert({
+      await alert({
         title: 'iCloud Error',
         message: 'Could not enable iCloud sync. Ensure you are signed into iCloud and iCloud Drive is enabled for Iris.',
       });
@@ -169,14 +168,14 @@ export default function SettingsScreen() {
     setBusy('sync');
     try {
       const didPull = await forceSync();
-      await dialog.alert({
+      await alert({
         title: didPull ? 'Sync Complete' : 'Pushed to iCloud',
         message: didPull 
           ? 'iCloud has successfully synced the latest changes.' 
           : 'Your data was pushed, but no new changes were found in iCloud to pull. If you expect changes, ensure iCloud Drive is enabled and wait a moment for Apple servers to sync.',
       });
     } catch (e: any) {
-      await dialog.alert({
+      await alert({
         title: 'Sync Error',
         message: e?.message || 'Could not sync with iCloud.',
       });
@@ -188,13 +187,13 @@ export default function SettingsScreen() {
   const handleRestoreAuto = async () => {
     const data = readAutoBackup();
     if (!data) {
-      await dialog.alert({
+      await alert({
         title: 'No automatic backup yet',
         message: 'Iris saves a snapshot each time you close the app — there isn\'t one to restore yet.',
       });
       return;
     }
-    const ok = await dialog.confirm({
+    const ok = await confirm({
       title: 'Restore automatic backup',
       message: `This replaces all current data with the snapshot from ${fmt.day(data.exported)}.`,
       confirmLabel: 'Restore',
@@ -202,7 +201,7 @@ export default function SettingsScreen() {
     });
     if (!ok) return;
     loadFromExport(data);
-    await dialog.alert({
+    await alert({
       title: 'Backup restored',
       message: 'Your most recent automatic backup has been loaded.',
     });
@@ -213,7 +212,7 @@ export default function SettingsScreen() {
   const backupSub = lastExportAt ? `Last backed up ${fmt.ago(lastExportAt)}` : 'Not backed up yet';
 
   const handleReset = async () => {
-    const idx = await dialog.actionSheet({
+    const idx = await actionSheet({
       title: 'Reset data',
       message: 'Choose an option:',
       actions: [
@@ -223,10 +222,10 @@ export default function SettingsScreen() {
     });
     if (idx === 0) {
       resetToDemo();
-      await dialog.alert({ title: 'Done', message: 'Data reset to demo state.' });
+      await alert({ title: 'Done', message: 'Data reset to demo state.' });
     } else if (idx === 1) {
       loadFromExport({ version: 1, exported: '', clients: [], products: [], appointments: [], services: [], schedule: DEFAULT_SCHEDULE });
-      await dialog.alert({ title: 'Done', message: 'All data wiped.' });
+      await alert({ title: 'Done', message: 'All data wiped.' });
     }
   };
 
@@ -732,6 +731,7 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+      {dialog}
     </SafeAreaView>
   );
 }

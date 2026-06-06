@@ -6,9 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
-import { Avatar, Card, Icons, RoundBtn, StatusBadge, CustomTimeRow, ProductPicker } from '../components';
+import { Avatar, Card, Icons, RoundBtn, StatusBadge, CustomTimeRow, ProductPicker, useLocalDialog } from '../components';
 import { Client, Service, Product } from '../data/types';
 import { fmt, isSameDay, addDays, checkSchedule, fmtHHMM, DAY_NAMES, generateTimeSlots, createClient, clientMatchesQuery } from '../data/utils';
 import { hasConflict } from '../data/booking';
@@ -31,7 +30,7 @@ const REPEAT_OPTIONS: { weeks: number; label: string }[] = [
 
 export default function NewAppointmentScreen() {
   const { theme, clients, setClients, services, products, appointments, setAppointments, schedule, bookingWindowDays } = useApp();
-  const dialog = useDialog();
+  const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -48,7 +47,7 @@ export default function NewAppointmentScreen() {
     route.params?.clientId ? clients.find((c) => c.id === route.params.clientId) || null : null
   );
   const [selectedService, setSelectedService] = useState<Service | null>(prefillSvc);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(route.params?.date ? new Date(route.params.date) : new Date());
   const [selectedTime, setSelectedTime] = useState<{ h: number; m: number }>({ h: 10, m: 0 });
   const [selectedProducts, setSelectedProducts] = useState<string[]>(
     prefillSvc ? [...prefillSvc.defaults] : []
@@ -59,6 +58,19 @@ export default function NewAppointmentScreen() {
   const [showCustomTime, setShowCustomTime] = useState(false);
   const [repeatWeeks, setRepeatWeeks] = useState(0);
   const [repeatTimes, setRepeatTimes] = useState(4);
+  const scrollRef = React.useRef<ScrollView>(null);
+
+  React.useEffect(() => {
+    if (step === 'time' && scrollRef.current) {
+      const idx = Array.from({ length: bookingWindowDays }, (_, i) => addDays(new Date(), i))
+        .findIndex(d => isSameDay(d, selectedDate));
+      if (idx > 0) {
+        setTimeout(() => {
+          scrollRef.current?.scrollTo({ x: Math.max(0, idx * 56 - 60), animated: true });
+        }, 50);
+      }
+    }
+  }, [step]);
   const [showNewClient, setShowNewClient] = useState(false);
   const [newClientName, setNewClientName] = useState('');
   const [newClientPhone, setNewClientPhone] = useState('');
@@ -134,7 +146,7 @@ export default function NewAppointmentScreen() {
     const start = new Date(selectedDate);
     start.setHours(selectedTime.h, selectedTime.m, 0, 0);
     if (start.getTime() < Date.now()) {
-      await dialog.alert({
+      await alert({
         title: 'Time is in the past',
         message: 'Pick a time later than now for this booking.',
       });
@@ -176,34 +188,31 @@ export default function NewAppointmentScreen() {
     setConfirmed(true);
   };
 
-  if (confirmed) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
-        <View style={styles.confirmedWrap}>
-          <View style={[styles.confirmedCircle, { backgroundColor: theme.sage + '20' }]}>
-            <Icons.check size={40} color={theme.sage} />
-          </View>
-          <Text style={[styles.confirmedTitle, { color: theme.ink }]}>Booked!</Text>
-          <Text style={[styles.confirmedSub, { color: theme.ink2 }]}>
-            {selectedClient?.name} · {selectedService?.name}{'\n'}
-            {repeatWeeks > 0
-              ? `${repeatTimes} visits · every ${repeatWeeks} weeks`
-              : `${fmt.rel(selectedDate.toISOString())} at ${selectedTime.h % 12 || 12}:${selectedTime.m.toString().padStart(2, '0')}${selectedTime.h >= 12 ? 'pm' : 'am'}`}
-          </Text>
-          <Pressable
-            style={[styles.doneBtn, { backgroundColor: theme.accent }]}
-            onPress={() => nav.goBack()}
-          >
-            <Text style={styles.doneBtnText}>Done</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
+      {confirmed ? (
+        <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
+          <View style={styles.confirmedWrap}>
+            <View style={[styles.confirmedCircle, { backgroundColor: theme.sage + '20' }]}>
+              <Icons.check size={40} color={theme.sage} />
+            </View>
+            <Text style={[styles.confirmedTitle, { color: theme.ink }]}>Booked!</Text>
+            <Text style={[styles.confirmedSub, { color: theme.ink2 }]}>
+              {selectedClient?.name} · {selectedService?.name}{'\n'}
+              {repeatWeeks > 0
+                ? `${repeatTimes} visits · every ${repeatWeeks} weeks`
+                : `${fmt.rel(selectedDate.toISOString())} at ${selectedTime.h % 12 || 12}:${selectedTime.m.toString().padStart(2, '0')}${selectedTime.h >= 12 ? 'pm' : 'am'}`}
+            </Text>
+            <Pressable
+              style={[styles.doneBtn, { backgroundColor: theme.accent }]}
+              onPress={() => nav.goBack()}
+            >
+              <Text style={styles.doneBtnText}>Done</Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      ) : (
+        <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
       {/* Header */}
       <View style={styles.header}>
         <RoundBtn onPress={goBack} size={38}>
@@ -361,7 +370,7 @@ export default function NewAppointmentScreen() {
             <Text style={[styles.stepTitle, { color: theme.ink }]}>Pick a Time</Text>
 
             {/* Date strip */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+            <ScrollView ref={scrollRef} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 {Array.from({ length: bookingWindowDays }, (_, i) => addDays(new Date(), i)).map((day, i, arr) => {
                   const isSelected = isSameDay(day, selectedDate);
@@ -640,6 +649,8 @@ export default function NewAppointmentScreen() {
       </ScrollView>
       </View>
       </SafeAreaView>
+      )}
+      {dialog}
     </KeyboardAvoidingView>
   );
 }
@@ -711,7 +722,7 @@ const styles = StyleSheet.create({
   noMatch: { fontSize: 14, fontStyle: 'italic', textAlign: 'center', paddingVertical: 20 },
   newClientToggle: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 13, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', marginBottom: 14,
+    paddingVertical: 13, borderRadius: 12, borderWidth: 1, marginBottom: 14,
   },
   newClientToggleText: { fontSize: 14, fontWeight: '600' },
   newClientCard: { borderRadius: 14, borderWidth: 0.5, padding: 14, gap: 10, marginBottom: 14 },
@@ -771,7 +782,7 @@ const styles = StyleSheet.create({
   addProductBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, marginTop: 12, marginBottom: 4, paddingVertical: 12,
-    borderRadius: 12, borderWidth: 1, borderStyle: 'dashed',
+    borderRadius: 12, borderWidth: 1,
   },
   addProductBtnText: { fontSize: 14, fontWeight: '600' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },

@@ -45,6 +45,8 @@ export interface Product {
   cost: number;
   status: ProductStatus;
   barcode?: string;
+  hasVat?: boolean;
+  baseCost?: number;
   updatedAt?: number;
 }
 
@@ -97,4 +99,5 @@ export interface ExportPayload {
   appointments: Appointment[];
   services: Service[];
   schedule: Schedule;
+  tombstones?: Record<string, number>;
 }

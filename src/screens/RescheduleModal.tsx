@@ -23,6 +23,19 @@ export default function RescheduleModal() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState<{ h: number; m: number } | null>(null);
   const [showCustomTime, setShowCustomTime] = useState(false);
+  const scrollRef = React.useRef<ScrollView>(null);
+
+  React.useEffect(() => {
+    if (scrollRef.current) {
+      const idx = Array.from({ length: bookingWindowDays }, (_, i) => addDays(new Date(), i))
+        .findIndex(d => isSameDay(d, selectedDate));
+      if (idx > 0) {
+        setTimeout(() => {
+          scrollRef.current?.scrollTo({ x: Math.max(0, idx * 56 - 60), animated: true });
+        }, 50);
+      }
+    }
+  }, []);
 
   const svc = services.find((s) => s.name === appt.service);
   const durationMins = svc?.duration ?? 60;
@@ -104,7 +117,7 @@ export default function RescheduleModal() {
         <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>PICK A DATE</Text>
 
         {/* Date strip */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 24 }}>
+        <ScrollView ref={scrollRef} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 24 }}>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {Array.from({ length: bookingWindowDays }, (_, i) => addDays(new Date(), i)).map((day, i, arr) => {
               const isSelected = isSameDay(day, selectedDate);

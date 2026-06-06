@@ -7,10 +7,9 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
 import { savePhoto, deletePhoto } from '../db/photos';
 import { RootStackParamList } from '../navigation/types';
-import { Avatar, Icons, RoundBtn } from '../components';
+import { Avatar, Icons, RoundBtn, useLocalDialog } from '../components';
 import { createClient } from '../data/utils';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -27,7 +26,7 @@ const HAIR_NATURALS = ['Dark brown', 'Medium brown', 'Light brown', 'Blonde', 'R
 
 export default function ClientFormScreen() {
   const { theme, clients, setClients, appointments, setAppointments } = useApp();
-  const dialog = useDialog();
+  const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -46,13 +45,13 @@ export default function ClientFormScreen() {
       if (useCamera) {
         const perm = await ImagePicker.requestCameraPermissionsAsync();
         if (perm.status !== 'granted') {
-          await dialog.alert({ title: 'Permission Denied', message: 'Camera access is required.' });
+          await alert({ title: 'Permission Denied', message: 'Camera access is required.' });
           return;
         }
       } else {
         const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (perm.status !== 'granted') {
-          await dialog.alert({ title: 'Permission Denied', message: 'Photo library access is required.' });
+          await alert({ title: 'Permission Denied', message: 'Photo library access is required.' });
           return;
         }
       }
@@ -66,7 +65,7 @@ export default function ClientFormScreen() {
           if (photo) await deletePhoto(photo);
           setPhoto(uri);
         } catch {
-          await dialog.alert({
+          await alert({
             title: "Couldn't save photo",
             message: 'The photo could not be saved. Please try again.',
           });
@@ -75,12 +74,12 @@ export default function ClientFormScreen() {
         }
       }
     } catch (e) {
-      await dialog.alert({ title: 'Error', message: 'Could not open camera or library.' });
+      await alert({ title: 'Error', message: 'Could not open camera or library.' });
     }
   };
 
   const promptPhoto = async () => {
-    const idx = await dialog.actionSheet({
+    const idx = await actionSheet({
       title: 'Photo',
       actions: [
         { label: 'Take Photo' },
@@ -134,7 +133,7 @@ export default function ClientFormScreen() {
     const apptNote = clientAppts.length > 0
       ? ` This also removes ${clientAppts.length} appointment${clientAppts.length === 1 ? '' : 's'} (${completed} completed, ${upcoming} upcoming).`
       : '';
-    const ok = await dialog.confirm({
+    const ok = await confirm({
       title: 'Delete client',
       message: `Remove ${existing.name} permanently?${apptNote}`,
       confirmLabel: 'Delete',
@@ -282,6 +281,7 @@ export default function ClientFormScreen() {
       </ScrollView>
       </View>
     </SafeAreaView>
+    {dialog}
     </KeyboardAvoidingView>
   );
 }

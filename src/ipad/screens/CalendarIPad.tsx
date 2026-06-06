@@ -77,7 +77,7 @@ export function CalendarIPad() {
         ))}
       </View>
       {!isSameDay(selectedDate, new Date()) && <Btn compact onPress={() => setSelectedDate(new Date())}>Today</Btn>}
-      <RoundBtn filled size={40} onPress={() => nav.navigate('NewAppointment', {})}><Icons.plus size={18} color={theme.bg} /></RoundBtn>
+      <RoundBtn filled size={40} onPress={() => nav.navigate('NewAppointment', { date: selectedDate.toISOString() })}><Icons.plus size={18} color={theme.bg} /></RoundBtn>
     </View>
   );
 

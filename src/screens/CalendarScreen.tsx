@@ -71,7 +71,7 @@ export default function CalendarScreen() {
             <Text style={[styles.todayBtnText, { color: theme.accent }]}>Today</Text>
           </Pressable>
         )}
-        <RoundBtn onPress={() => nav.navigate('NewAppointment', {})} filled size={40}>
+        <RoundBtn onPress={() => nav.navigate('NewAppointment', { date: selectedDate.toISOString() })} filled size={40}>
           <Icons.plus size={18} color={theme.bg} />
         </RoundBtn>
       </View>

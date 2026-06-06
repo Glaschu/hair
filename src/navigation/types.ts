@@ -3,7 +3,7 @@ export type RootStackParamList = {
   ClientDetail: { clientId: string };
   ProductDetail: { productId: string };
   AppointmentDetail: { appointmentId: string };
-  NewAppointment: { clientId?: string; prefillService?: string };
+  NewAppointment: { clientId?: string; prefillService?: string; date?: string };
   Settings: undefined;
   Reports: undefined;
   ScanModal: undefined;

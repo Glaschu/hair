@@ -8,7 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../../data/AppContext';
 import { useDialog } from '../../data/DialogContext';
 import { useResponsive } from '../../hooks/useResponsive';
-import { savePhoto } from '../../db/photos';
+import { savePhoto, getPhotoUri } from '../../db/photos';
 import { RootStackParamList } from '../../navigation/types';
 import { Avatar, Icons, Chip, RoundBtn } from '../../components';
 import { fmt, groupByLetter, clientMatchesQuery } from '../../data/utils';
@@ -231,15 +231,15 @@ function ClientDetailPanel({ clientId }: { clientId: string }) {
 
       <ScrollView contentContainerStyle={{ padding: 28 }} showsVerticalScrollIndicator={false}>
         {tab === 'hair' && <HairTab client={client} upcoming={upcoming} lastFinishedAppt={completed[0]} onOpenAppt={(id) => nav.navigate('AppointmentDetail', { appointmentId: id })} />}
-        {tab === 'history' && <HistoryTab history={history} products={products} onOpenAppt={(id) => nav.navigate('AppointmentDetail', { appointmentId: id })} />}
+        {tab === 'history' && <HistoryTab client={client} history={history} products={products} onOpenAppt={(id) => nav.navigate('AppointmentDetail', { appointmentId: id })} onViewPhoto={setViewing} />}
         {tab === 'photos' && <PhotosTab client={client} onAdd={addPhotos} onView={setViewing} saving={saving} />}
       </ScrollView>
 
       {viewing && (
         <Modal visible animationType="fade" onRequestClose={() => setViewing(null)}>
           <Pressable style={styles.photoViewer} onPress={() => setViewing(null)}>
-            <Image source={{ uri: viewing.url }} style={styles.photoViewerImg} resizeMode="contain" />
-            <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 12 }}>{fmt.rel(viewing.date)}</Text>
+            <Image source={{ uri: getPhotoUri(viewing.url) }} style={styles.photoViewerImg} resizeMode="contain" />
+            <Text style={styles.photoViewerDate}>{fmt.rel(viewing.date)}</Text>
           </Pressable>
         </Modal>
       )}
@@ -331,7 +331,7 @@ function HairTab({ client, upcoming, lastFinishedAppt, onOpenAppt }: { client: C
   );
 }
 
-function HistoryTab({ history, products, onOpenAppt }: { history: Appointment[]; products: any[]; onOpenAppt: (id: string) => void }) {
+function HistoryTab({ client, history, products, onOpenAppt, onViewPhoto }: { client: Client; history: Appointment[]; products: any[]; onOpenAppt: (id: string) => void; onViewPhoto: (p: ClientPhoto) => void }) {
   const { theme } = useApp();
   if (history.length === 0) return <Text style={{ color: theme.ink3, fontStyle: 'italic', paddingVertical: 20 }}>No history yet.</Text>;
   return (
@@ -382,6 +382,19 @@ function HistoryTab({ history, products, onOpenAppt }: { history: Appointment[];
                   </View>
                 </>
               )}
+              {client.photos?.some((p) => p.appointmentId === a.id) && (
+                <>
+                  <View style={{ height: 0.5, backgroundColor: theme.line, marginVertical: 12 }} />
+                  <Eyebrow style={{ marginBottom: 6 }}>PHOTOS</Eyebrow>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    {client.photos.filter((p) => p.appointmentId === a.id).map((p) => (
+                      <Pressable key={p.id} onPress={() => onViewPhoto(p)} style={{ width: 64, height: 64, borderRadius: 8, overflow: 'hidden' }}>
+                        <Image source={{ uri: getPhotoUri(p.url) }} style={{ flex: 1 }} resizeMode="cover" />
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
+              )}
             </View>
           </Pressable>
         );
@@ -407,9 +420,9 @@ function PhotosTab({ client, onAdd, onView, saving }: { client: Client; onAdd: (
       ) : (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
           {photos.map((p) => (
-            <Pressable key={p.id} onPress={() => onView(p)} style={styles.photoTile}>
-              <Image source={{ uri: p.url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-              <View style={styles.photoDate}><Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 9, fontWeight: '500' }}>{fmt.rel(p.date)}</Text></View>
+            <Pressable key={p.id} onPress={() => onView(p)} style={[styles.photoTile, { overflow: 'hidden' }]}>
+              <Image source={{ uri: getPhotoUri(p.url) }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+              <View style={styles.photoDateOverlay}><Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 9, fontWeight: '500' }}>{fmt.rel(p.date)}</Text></View>
             </Pressable>
           ))}
         </View>
@@ -445,7 +458,7 @@ const styles = StyleSheet.create({
   upcoming: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 16, borderWidth: 0.5 },
   panel: { borderRadius: 16, borderWidth: 0.5, padding: 18 },
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
-  addPhoto: { borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', padding: 48, alignItems: 'center' },
+  addPhoto: { borderRadius: 14, borderWidth: 1, padding: 48, alignItems: 'center' },
   photoTile: { width: 132, height: 132, borderRadius: 12, overflow: 'hidden', backgroundColor: '#0002' },
   photoDate: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 8, paddingTop: 18 },
   photoViewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: 20 },

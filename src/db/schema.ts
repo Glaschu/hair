@@ -44,6 +44,8 @@ export const products = sqliteTable('products', {
   cost:     real('cost').notNull().default(0),
   status:   text('status', { enum: ['ok', 'low', 'out'] }).notNull().default('ok'),
   barcode:  text('barcode'),
+  hasVat:   integer('has_vat', { mode: 'boolean' }).notNull().default(false),
+  baseCost: real('base_cost'),
   updatedAt: integer('updated_at').$defaultFn(() => Date.now()).$onUpdateFn(() => Date.now()),
 });
 

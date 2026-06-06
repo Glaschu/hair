@@ -11,11 +11,22 @@ import { CalendarIPad } from './screens/CalendarIPad';
 import { InventoryIPad } from './screens/InventoryIPad';
 import { ReportsIPad } from './screens/ReportsIPad';
 import { SettingsIPad } from './screens/SettingsIPad';
+import { RoomMode } from './screens/RoomMode';
 
 function ShellInner() {
   const { theme } = useApp();
   const { isLandscape } = useResponsive();
-  const { section } = useShell();
+  const { section, clientMode } = useShell();
+
+  // Client mode replaces the whole UI with the room-safe layout — no sidebar,
+  // no section content, just RoomMode. The lock in RoomMode is the only exit.
+  if (clientMode) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }} edges={['top', 'bottom']}>
+        <RoomMode />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }} edges={['top', 'bottom']}>

@@ -9,7 +9,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../data/AppContext';
 import { useLocalDialog } from '../components/Dialog';
-import { savePhoto, deletePhoto } from '../db/photos';
+import { savePhoto, deletePhoto, getPhotoUri } from '../db/photos';
 import { RootStackParamList } from '../navigation/types';
 import { Avatar, Card, Icons, RoundBtn, EmptyState } from '../components';
 import { fmt } from '../data/utils';
@@ -227,7 +227,7 @@ export default function ClientDetailScreen() {
       {viewingPhoto && (
         <Modal visible animationType="fade" onRequestClose={() => setViewingPhoto(null)}>
           <Pressable style={styles.photoViewer} onPress={() => setViewingPhoto(null)}>
-            <Image source={{ uri: viewingPhoto.url }} style={styles.photoViewerImg} resizeMode="contain" />
+            <Image source={{ uri: getPhotoUri(viewingPhoto.url) }} style={styles.photoViewerImg} resizeMode="contain" />
             <Text style={styles.photoViewerDate}>{fmt.rel(viewingPhoto.date)}</Text>
           </Pressable>
         </Modal>
@@ -397,7 +397,7 @@ function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
                   <View style={{ marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
                     {client.photos.filter((p: any) => p.appointmentId === appt.id).map((p: any) => (
                       <Pressable key={p.id} onPress={() => onViewPhoto(p)} style={{ width: 48, height: 48, borderRadius: 8, overflow: 'hidden' }}>
-                        <Image source={{ uri: p.url }} style={{ flex: 1 }} resizeMode="cover" />
+                        <Image source={{ uri: getPhotoUri(p.url) }} style={{ flex: 1 }} resizeMode="cover" />
                       </Pressable>
                     ))}
                   </View>
@@ -435,7 +435,7 @@ function PhotosTab({ client, onAdd, onView }: {
             if (item.type === 'add') {
               return (
                 <Pressable key="add" onPress={onAdd}
-                  style={[styles.photoTile, { backgroundColor: theme.bg2, borderColor: theme.ink3 + '60', borderStyle: 'dashed', borderWidth: 1 }]}>
+                  style={[styles.photoTile, { backgroundColor: theme.bg2, borderColor: theme.ink3 + '60', borderWidth: 1 }]}>
                   <Icons.camera size={22} color={theme.ink3} />
                   <Text style={[styles.addPhotoLabel, { color: theme.ink2 }]}>Add photo</Text>
                 </Pressable>
@@ -445,7 +445,7 @@ function PhotosTab({ client, onAdd, onView }: {
               const p = item.data as ClientPhoto;
               return (
                 <Pressable key={p.id} onPress={() => onView(p)} style={[styles.photoTile, { overflow: 'hidden' }]}>
-                  <Image source={{ uri: p.url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                  <Image source={{ uri: getPhotoUri(p.url) }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                   <View style={styles.photoDateOverlay}>
                     <Text style={styles.photoDateText}>{fmt.rel(p.date)}</Text>
                   </View>
@@ -560,7 +560,7 @@ const styles = StyleSheet.create({
 
   photoRow: { flexDirection: 'row', gap: 10 },
   photoTile: { flex: 1, aspectRatio: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center', gap: 6 },
-  addPhotoFullTile: { borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', padding: 40, alignItems: 'center', gap: 8 },
+  addPhotoFullTile: { borderRadius: 14, borderWidth: 1, padding: 40, alignItems: 'center', gap: 8 },
   addPhotoLabel: { fontSize: 11, fontWeight: '500' },
   photoDateOverlay: {
     position: 'absolute', left: 0, right: 0, bottom: 0,

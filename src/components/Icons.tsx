@@ -162,4 +162,10 @@ export const Icons = {
       <Circle cx={19} cy={12} r={1}/>
     </Icon>
   ),
+  lock: (p: IconProps) => (
+    <Icon {...p}>
+      <Rect x={5} y={11} width={14} height={9} rx={2}/>
+      <Path d="M8 11V8a4 4 0 0 1 8 0v3"/>
+    </Icon>
+  ),
 };

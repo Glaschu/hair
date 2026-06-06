@@ -6,9 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
-import { Icons, RoundBtn, ProductPicker } from '../components';
+import { Icons, RoundBtn, ProductPicker, useLocalDialog } from '../components';
 import { numberFieldError } from '../data/utils';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -16,7 +15,7 @@ type Route = RouteProp<RootStackParamList, 'ServiceForm'>;
 
 export default function ServiceFormScreen() {
   const { theme, services, setServices, products } = useApp();
-  const dialog = useDialog();
+  const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -60,7 +59,7 @@ export default function ServiceFormScreen() {
   };
 
   const deleteService = async () => {
-    const ok = await dialog.confirm({
+    const ok = await confirm({
       title: 'Delete service',
       message: 'Remove this service?',
       confirmLabel: 'Delete',
@@ -199,6 +198,7 @@ export default function ServiceFormScreen() {
           }
         }}
       />
+      {dialog}
     </SafeAreaView>
   );
 }

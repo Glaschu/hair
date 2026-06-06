@@ -15,8 +15,8 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Range = 'week' | 'month' | 'all';
 
 const RANGE_OPTIONS: { id: Range; label: string }[] = [
-  { id: 'week', label: '7 days' },
-  { id: 'month', label: '30 days' },
+  { id: 'week', label: 'This week' },
+  { id: 'month', label: 'This month' },
   { id: 'all', label: 'All time' },
 ];
 
@@ -24,32 +24,42 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function getRangeBounds(range: Range): { start: Date; end: Date; prevStart: Date; prevEnd: Date } {
   const now = new Date();
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
 
   if (range === 'week') {
     const start = new Date(now);
-    start.setDate(start.getDate() - 6);
+    const day = start.getDay();
+    const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+    start.setDate(diff);
     start.setHours(0, 0, 0, 0);
-    const prevEnd = new Date(start);
-    prevEnd.setMilliseconds(-1);
-    const prevStart = new Date(prevEnd);
-    prevStart.setDate(prevStart.getDate() - 6);
-    prevStart.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+
+    const prevStart = new Date(start);
+    prevStart.setDate(prevStart.getDate() - 7);
+
+    const prevEnd = new Date(end);
+    prevEnd.setDate(prevEnd.getDate() - 7);
+
     return { start, end, prevStart, prevEnd };
   }
   if (range === 'month') {
-    const start = new Date(now);
-    start.setDate(start.getDate() - 29);
-    start.setHours(0, 0, 0, 0);
-    const prevEnd = new Date(start);
-    prevEnd.setMilliseconds(-1);
-    const prevStart = new Date(prevEnd);
-    prevStart.setDate(prevStart.getDate() - 29);
-    prevStart.setHours(0, 0, 0, 0);
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    end.setHours(23, 59, 59, 999);
+
+    const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    
+    const prevEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+    prevEnd.setHours(23, 59, 59, 999);
+
     return { start, end, prevStart, prevEnd };
   }
   // all
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
   return {
     start: new Date(0),
     end,
@@ -67,8 +77,16 @@ export default function ReportsScreen() {
   const { theme, appointments, clients, products } = useApp();
   const nav = useNavigation<Nav>();
   const [range, setRange] = useState<Range>('week');
+  const [marginMode, setMarginMode] = useState<'completed' | 'projected'>('completed');
 
   const { start, end, prevStart, prevEnd } = useMemo(() => getRangeBounds(range), [range]);
+
+  const rangeStr = useMemo(() => {
+    if (range === 'all') return '';
+    const s = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const e = end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return ` · ${s.toUpperCase()} - ${e.toUpperCase()}`;
+  }, [range, start, end]);
 
   const completed = useMemo(
     () => appointments.filter((a) => a.status === 'completed' && inRange(a.start, start, end)),
@@ -86,7 +104,7 @@ export default function ReportsScreen() {
   const revenue = completed.reduce((s, a) => s + a.price, 0);
   const projectedRevenue = upcoming.reduce((s, a) => s + a.price, 0);
   const prevRevenue = previous.reduce((s, a) => s + a.price, 0);
-  const revChange = prevRevenue > 0 && range !== 'all'
+  const revChange = prevRevenue > 0 && revenue > 0 && range !== 'all'
     ? Math.round(((revenue - prevRevenue) / prevRevenue) * 100)
     : null;
 
@@ -105,7 +123,8 @@ export default function ReportsScreen() {
   // Product usage by cost
   const productUsage = useMemo(() => {
     const m: Record<string, number> = {};
-    [...completed, ...upcoming].forEach((a) => {
+    const appts = marginMode === 'completed' ? completed : [...completed, ...upcoming];
+    appts.forEach((a) => {
       (a.products || []).forEach((up) => {
         m[up.productId] = (m[up.productId] || 0) + up.amount;
       });
@@ -118,13 +137,13 @@ export default function ReportsScreen() {
       })
       .filter((x): x is { product: Product; amount: number; cost: number } => x !== null)
       .sort((a, b) => b.cost - a.cost);
-  }, [completed, upcoming, products]);
+  }, [completed, upcoming, products, marginMode]);
 
   const productCost = productUsage.reduce((s, p) => s + p.cost, 0);
-  const margin = revenue + projectedRevenue - productCost;
-  const totalRevProj = revenue + projectedRevenue;
-  const marginPct = totalRevProj > 0 ? Math.round((margin / totalRevProj) * 100) : 0;
-  const costPct = totalRevProj > 0 ? Math.min(100, (productCost / totalRevProj) * 100) : 0;
+  const mRevenue = marginMode === 'completed' ? revenue : revenue + projectedRevenue;
+  const margin = mRevenue - productCost;
+  const marginPct = mRevenue > 0 ? Math.round((margin / mRevenue) * 100) : 0;
+  const costPct = mRevenue > 0 ? Math.min(100, (productCost / mRevenue) * 100) : 0;
 
   // Day of week analysis
   const dayOfWeek = useMemo(() => {
@@ -190,7 +209,7 @@ export default function ReportsScreen() {
         {/* Revenue hero card */}
         <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
           <View style={[styles.revenueCard, { backgroundColor: theme.heroBg }]}>
-            <Text style={styles.revenueEyebrow}>REVENUE</Text>
+            <Text style={styles.revenueEyebrow}>REVENUE{rangeStr}</Text>
             <View style={styles.revenueRow}>
               <Text style={styles.revenueAmount}>{fmt.currency(revenue)}</Text>
               {revChange !== null && (
@@ -239,10 +258,13 @@ export default function ReportsScreen() {
 
         {/* Margin */}
         <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
-          <Card>
-            <View style={styles.marginTop}>
-              <View>
-                <Text style={[styles.cardEye, { color: theme.ink3 }]}>MARGIN</Text>
+          <Pressable onPress={() => setMarginMode(m => m === 'completed' ? 'projected' : 'completed')}>
+            <Card>
+              <View style={styles.marginTop}>
+                <View>
+                  <Text style={[styles.cardEye, { color: theme.ink3 }]}>
+                    {marginMode === 'completed' ? 'MARGIN · COMPLETED' : 'MARGIN · WITH PROJECTED'}
+                  </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
                   <Text style={[styles.marginAmount, { color: theme.ink }]}>{fmt.currency(margin)}</Text>
                   <Text style={[styles.marginPct, { color: theme.ink2 }]}>({marginPct}%)</Text>
@@ -267,7 +289,8 @@ export default function ReportsScreen() {
               </View>
             </View>
           </Card>
-        </View>
+        </Pressable>
+      </View>
 
         {/* Top services */}
         <View style={styles.sectionHead}>

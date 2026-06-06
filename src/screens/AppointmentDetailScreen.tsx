@@ -13,7 +13,7 @@ import { Avatar, Icons, RoundBtn, useLocalDialog, ProductPicker } from '../compo
 import { fmt } from '../data/utils';
 import { deductStock, restoreStock } from '../data/stock';
 import { notifyLowStock } from '../data/notifications';
-import { savePhoto } from '../db/photos';
+import { savePhoto, deletePhoto, getPhotoUri } from '../db/photos';
 import { Appointment, Product, ClientPhoto } from '../data/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -435,7 +435,7 @@ export default function AppointmentDetailScreen() {
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
             {client?.photos?.filter(p => p.appointmentId === apptId).map(p => (
               <Pressable key={p.id} onPress={() => setViewingPhoto(p)} style={{ width: 80, height: 80, borderRadius: 10, overflow: 'hidden' }}>
-                <Image source={{ uri: p.url }} style={{ flex: 1 }} resizeMode="cover" />
+                <Image source={{ uri: getPhotoUri(p.url) }} style={{ flex: 1 }} resizeMode="cover" />
               </Pressable>
             ))}
             {(!client?.photos || client.photos.filter(p => p.appointmentId === apptId).length === 0) && (
@@ -449,7 +449,7 @@ export default function AppointmentDetailScreen() {
       {viewingPhoto && (
         <Modal visible animationType="fade" onRequestClose={() => setViewingPhoto(null)}>
           <Pressable style={styles.photoViewer} onPress={() => setViewingPhoto(null)}>
-            <Image source={{ uri: viewingPhoto.url }} style={styles.photoViewerImg} resizeMode="contain" />
+            <Image source={{ uri: getPhotoUri(viewingPhoto.url) }} style={styles.photoViewerImg} resizeMode="contain" />
             <Text style={styles.photoViewerDate}>{fmt.rel(viewingPhoto.date)}</Text>
           </Pressable>
         </Modal>

@@ -16,6 +16,11 @@ interface IPadShellState {
   goToProduct: (id: string) => void;
   setSelectedClientId: (id: string | null) => void;
   setSelectedProductId: (id: string | null) => void;
+
+  /** Client mode: iPad locked to Today, sidebar hidden, money masked.
+   *  Toggled by the lock corner button on the Today screen. */
+  clientMode: boolean;
+  setClientMode: (v: boolean) => void;
 }
 
 const IPadShellContext = createContext<IPadShellState | null>(null);
@@ -24,6 +29,7 @@ export function IPadShellProvider({ children }: { children: React.ReactNode }) {
   const [section, setSection] = useState<Section>('today');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const [clientMode, setClientMode] = useState(false);
 
   const value = useMemo<IPadShellState>(() => ({
     section,
@@ -34,7 +40,9 @@ export function IPadShellProvider({ children }: { children: React.ReactNode }) {
     setSelectedProductId,
     goToClient: (id) => { setSelectedClientId(id); setSection('clients'); },
     goToProduct: (id) => { setSelectedProductId(id); setSection('inventory'); },
-  }), [section, selectedClientId, selectedProductId]);
+    clientMode,
+    setClientMode,
+  }), [section, selectedClientId, selectedProductId, clientMode]);
 
   return <IPadShellContext.Provider value={value}>{children}</IPadShellContext.Provider>;
 }

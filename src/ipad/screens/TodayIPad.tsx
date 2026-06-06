@@ -27,7 +27,7 @@ function greetingFor(): string {
 export function TodayIPad() {
   const { theme, appointments, products, studioName } = useApp();
   const { isLandscape } = useResponsive();
-  const { setSection } = useShell();
+  const { setSection, setClientMode } = useShell();
   const nav = useNavigation<Nav>();
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
@@ -98,6 +98,10 @@ export function TodayIPad() {
         </Title>
       </View>
       <View style={{ flexDirection: 'row', gap: 8 }}>
+        {/* Lock toggle — enters Room mode (rendered by IPadShell when clientMode). */}
+        <RoundBtn size={40} onPress={() => setClientMode(true)}>
+          <Icons.lock size={18} color={theme.ink2} />
+        </RoundBtn>
         <RoundBtn size={40} onPress={() => setSection('settings')}><Icons.settings size={18} color={theme.ink2} /></RoundBtn>
         <Btn variant="primary" icon={<Icons.plus size={16} color="#fff" />} onPress={() => nav.navigate('NewAppointment', {})}>New booking</Btn>
       </View>
@@ -385,10 +389,10 @@ const styles = StyleSheet.create({
   restockIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   card: { flex: 1, borderRadius: 16, borderWidth: 0.5, padding: 18 },
   bigStat: { fontSize: 32, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5, lineHeight: 34 },
-  emptyDay: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 14, padding: 24 },
+  emptyDay: { borderWidth: 1, borderRadius: 14, padding: 24 },
   upRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14, borderWidth: 0.5 },
   apptRow: { borderRadius: 16, borderWidth: 0.5, overflow: 'hidden' },
   apptMain: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14 },
   nextBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 0.5 },
-  actionBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingBottom: 14, paddingTop: 10, borderTopWidth: 1, borderStyle: 'dashed' },
+  actionBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingBottom: 14, paddingTop: 10, borderTopWidth: 1 },
 });
