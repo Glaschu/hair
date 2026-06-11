@@ -29,11 +29,16 @@ export default function AppointmentEditScreen() {
 
   const handleSave = () => {
     if (!isValid) return;
-    setAppointments((prev) => prev.map((a) =>
-      a.id === appt.id
-        ? { ...a, service: selectedService, price: parseFloat(priceInput) || a.price, notes: notesInput }
-        : a
-    ));
+    const svc = services.find((s) => s.name === selectedService);
+    setAppointments((prev) => prev.map((a) => {
+      if (a.id !== appt.id) return a;
+      const next = { ...a, service: selectedService, price: parseFloat(priceInput) || a.price, notes: notesInput };
+      // A different service means a different duration — recompute the end time.
+      if (svc && selectedService !== appt.service) {
+        next.end = new Date(new Date(a.start).getTime() + svc.duration * 60000).toISOString();
+      }
+      return next;
+    }));
     nav.goBack();
   };
 

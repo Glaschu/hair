@@ -57,6 +57,20 @@ export async function getOrCreateIrisCalendar(): Promise<string | null> {
   }
 }
 
+/**
+ * Best-effort removal of calendar events whose appointments no longer exist
+ * (e.g. deleted along with a client). Events already gone are ignored.
+ */
+export async function deleteCalendarEvents(eventIds: string[]): Promise<void> {
+  for (const id of eventIds) {
+    try {
+      await Calendar.deleteEventAsync(id);
+    } catch {
+      // already deleted, or calendar permission revoked — nothing to clean up
+    }
+  }
+}
+
 export async function deleteIrisCalendar(calendarId: string): Promise<void> {
   try {
     await Calendar.deleteCalendarAsync(calendarId);

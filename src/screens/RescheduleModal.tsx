@@ -5,7 +5,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
 import { RootStackParamList } from '../navigation/types';
-import { Icons, RoundBtn, CustomTimeRow } from '../components';
+import { Icons, RoundBtn, CustomTimeRow, useLocalDialog } from '../components';
 import { fmt, isSameDay, addDays, checkSchedule, fmtHHMM, DAY_NAMES, generateTimeSlots } from '../data/utils';
 import { hasConflict } from '../data/booking';
 
@@ -14,6 +14,7 @@ type Route = RouteProp<RootStackParamList, 'RescheduleModal'>;
 
 export default function RescheduleModal() {
   const { theme, appointments, setAppointments, services, schedule, bookingWindowDays } = useApp();
+  const { confirm, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -72,12 +73,22 @@ export default function RescheduleModal() {
 
   const canSave = selectedTime !== null;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!selectedTime) return;
     const newStart = new Date(selectedDate);
     newStart.setHours(selectedTime.h, selectedTime.m, 0, 0);
     const newEnd = new Date(newStart);
     newEnd.setMinutes(newEnd.getMinutes() + durationMins);
+    // The slot grid greys out taken times, but a custom time can still overlap.
+    if (hasConflict(newStart, newEnd, takenSlots)) {
+      const ok = await confirm({
+        title: 'Time conflict',
+        message: 'This overlaps an existing appointment.',
+        confirmLabel: 'Move anyway',
+        tone: 'destructive',
+      });
+      if (!ok) return;
+    }
     setAppointments((prev) => prev.map((a) =>
       a.id === appt.id
         ? { ...a, start: newStart.toISOString(), end: newEnd.toISOString() }
@@ -210,6 +221,7 @@ export default function RescheduleModal() {
           </View>
         )}
       </ScrollView>
+      {dialog}
     </SafeAreaView>
   );
 }

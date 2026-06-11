@@ -59,10 +59,12 @@ export default function TodayScreen() {
   const lowStock = products.filter((p) => p.status === 'low' || p.status === 'out');
 
   const now = new Date();
-  const nextApptId = todayAppts.find((a) => new Date(a.start) > now)?.id;
+  const nextApptId = todayAppts.find((a) => a.status === 'upcoming' && new Date(a.start) > now)?.id;
 
-  const totalRevenue = todayAppts.reduce((s, a) => s + a.price, 0);
-  const totalHours = todayAppts.reduce((s, a) => {
+  // Cancelled and no-show bookings stay visible in the list but don't earn anything.
+  const activeAppts = todayAppts.filter((a) => a.status === 'upcoming' || a.status === 'completed');
+  const totalRevenue = activeAppts.reduce((s, a) => s + a.price, 0);
+  const totalHours = activeAppts.reduce((s, a) => {
     return s + (new Date(a.end).getTime() - new Date(a.start).getTime()) / 3600000;
   }, 0);
 
@@ -113,7 +115,7 @@ export default function TodayScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.heroEyebrow}>DAY AT A GLANCE</Text>
                 <Text style={styles.heroAppts}>
-                  {todayAppts.length}{' '}
+                  {activeAppts.length}{' '}
                   <Text style={{ fontStyle: 'italic', opacity: 0.7 }}>appointments</Text>
                 </Text>
               </View>
@@ -215,7 +217,7 @@ export default function TodayScreen() {
 }
 
 function ApptCard({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
-  const { theme, clients, products, setProducts, setAppointments, remindersEnabled } = useApp();
+  const { theme, clients, products, setProducts, setAppointments } = useApp();
   const dialog = useDialog();
   const nav = useNavigation<Nav>();
   const client = clients.find((c) => c.id === appt.clientId);
@@ -233,22 +235,20 @@ function ApptCard({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
       ));
       return;
     }
-    if (remindersEnabled) {
-      appt.products.forEach((ap) => {
-        const product = products.find((p) => p.id === ap.productId);
-        if (!product) return;
-        const after = deductStock(product, ap.amount);
-        if (after.status !== 'ok' && after.status !== product.status) {
-          notifyLowStock(product.name, after.status === 'out');
-        }
-      });
-    }
+    appt.products.forEach((ap) => {
+      const product = products.find((p) => p.id === ap.productId);
+      if (!product) return;
+      const after = deductStock(product, ap.amount);
+      if (after.status !== 'ok' && after.status !== product.status) {
+        notifyLowStock(product.name, after.status === 'out');
+      }
+    });
     setProducts((prev) => prev.map((p) => {
       const used = appt.products.find((ap) => ap.productId === p.id);
       return used ? deductStock(p, used.amount) : p;
     }));
     setAppointments((prev) => prev.map((a) =>
-      a.id === appt.id ? { ...a, status: 'completed' } : a
+      a.id === appt.id ? { ...a, status: 'completed', paid: true } : a
     ));
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
@@ -297,6 +297,12 @@ function ApptCard({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
         <Text style={[styles.apptService, { color: theme.ink2 }]} numberOfLines={1}>{appt.service}</Text>
         {appt.status === 'completed' && !appt.paid && (
           <Text style={[styles.unpaidTag, { color: theme.warn }]}>UNPAID</Text>
+        )}
+        {appt.status === 'cancelled' && (
+          <Text style={[styles.unpaidTag, { color: theme.ink3 }]}>CANCELLED</Text>
+        )}
+        {appt.status === 'no-show' && (
+          <Text style={[styles.unpaidTag, { color: theme.danger }]}>NO-SHOW</Text>
         )}
       </View>
       {/* Next badge */}

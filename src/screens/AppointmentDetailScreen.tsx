@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, Modal, FlatList, StyleSheet, Linking, Platform, Image, KeyboardAvoidingView
 } from 'react-native';
@@ -20,7 +20,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AppointmentDetail'>;
 
 export default function AppointmentDetailScreen() {
-  const { theme, appointments, setAppointments, clients, setClients, products, setProducts, services, remindersEnabled } = useApp();
+  const { theme, appointments, setAppointments, clients, setClients, products, setProducts, services } = useApp();
   const { confirm, alert, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
@@ -29,6 +29,8 @@ export default function AppointmentDetailScreen() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceDraft, setPriceDraft] = useState('');
+  const priceEditRef = useRef({ editing: false, draft: '' });
+  priceEditRef.current = { editing: editingPrice, draft: priceDraft };
   const [markPaid, setMarkPaid] = useState(true);
   const [viewingPhoto, setViewingPhoto] = useState<ClientPhoto | null>(null);
 
@@ -142,14 +144,12 @@ export default function AppointmentDetailScreen() {
       setConfirmOpen(false);
       return;
     }
-    if (remindersEnabled) {
-      usedProducts.forEach((up) => {
-        const after = deductStock(up.product, up.amount);
-        if (after.status !== 'ok' && after.status !== up.product.status) {
-          notifyLowStock(up.product.name, after.status === 'out');
-        }
-      });
-    }
+    usedProducts.forEach((up) => {
+      const after = deductStock(up.product, up.amount);
+      if (after.status !== 'ok' && after.status !== up.product.status) {
+        notifyLowStock(up.product.name, after.status === 'out');
+      }
+    });
     setProducts((prods) =>
       prods.map((p) => {
         const used = usedProducts.find((up) => up.productId === p.id);
@@ -176,6 +176,18 @@ export default function AppointmentDetailScreen() {
     }
     setEditingPrice(false);
   };
+
+  // The decimal-pad keyboard has no return key and navigating back unmounts
+  // the screen without firing onBlur, so commit any pending edit on unmount.
+  useEffect(() => () => {
+    const { editing, draft } = priceEditRef.current;
+    if (!editing) return;
+    const n = parseFloat(draft);
+    if (Number.isFinite(n) && n >= 0) {
+      setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, price: n } : a));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleUndo = () => {
     if (isCompleted) {
@@ -361,7 +373,7 @@ export default function AppointmentDetailScreen() {
         <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
           <Pressable
             onPress={() => {
-              if (appt.status === 'upcoming') {
+              if (appt.status === 'upcoming' && !editingPrice) {
                 setPriceDraft(String(appt.price));
                 setEditingPrice(true);
               }

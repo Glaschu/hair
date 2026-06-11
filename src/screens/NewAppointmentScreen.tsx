@@ -184,6 +184,25 @@ export default function NewAppointmentScreen() {
       };
     });
 
+    // The slot grid greys out taken times, but a custom time or the later visits
+    // of a repeat series can still land on an existing booking — warn first.
+    const busy = appointments
+      .filter((a) => a.status !== 'cancelled')
+      .map((a) => ({ start: new Date(a.start), end: new Date(a.end) }));
+    const clashes = series.filter((s) => hasConflict(new Date(s.start), new Date(s.end), busy));
+    if (clashes.length > 0) {
+      const when = clashes.map((s) => `${fmt.day(s.start)} at ${fmt.timeShort(s.start)}`).join(', ');
+      const ok = await confirm({
+        title: 'Time conflict',
+        message: count > 1
+          ? `${clashes.length} of ${count} visits overlap existing appointments: ${when}.`
+          : `This overlaps an existing appointment (${when}).`,
+        confirmLabel: 'Book anyway',
+        tone: 'destructive',
+      });
+      if (!ok) return;
+    }
+
     setAppointments((prev) => [...prev, ...series]);
     setConfirmed(true);
   };

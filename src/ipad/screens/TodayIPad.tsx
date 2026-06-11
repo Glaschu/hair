@@ -43,8 +43,10 @@ export function TodayIPad() {
   const lowStock = products.filter((p) => p.status === 'low' || p.status === 'out');
   const nextApptId = todayAppts.find((a) => a.status === 'upcoming' && new Date(a.start) > now)?.id;
 
-  const totalRevenue = todayAppts.reduce((s, a) => s + a.price, 0);
-  const totalHours = todayAppts.reduce((s, a) =>
+  // Cancelled and no-show bookings stay visible in the list but don't earn anything.
+  const activeAppts = todayAppts.filter((a) => a.status === 'upcoming' || a.status === 'completed');
+  const totalRevenue = activeAppts.reduce((s, a) => s + a.price, 0);
+  const totalHours = activeAppts.reduce((s, a) =>
     s + (new Date(a.end).getTime() - new Date(a.start).getTime()) / 3600000, 0);
 
   const weekEnd = useMemo(() => addDays(today, 7), [today]);
@@ -110,7 +112,7 @@ export function TodayIPad() {
 
   const hero = (
     <DayHero
-      count={todayAppts.length}
+      count={activeAppts.length}
       revenue={fmt.currency(totalRevenue)}
       hours={`${totalHours.toFixed(1)}h`}
       bookedAhead={fmt.currency(bookedAhead)}
@@ -306,7 +308,7 @@ function UpcomingRow({ appt, onPress }: { appt: Appointment; onPress: () => void
 
 // ──────────────── Schedule row with action bar ────────────────
 function IPadApptRow({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
-  const { theme, clients, products, setProducts, setAppointments, remindersEnabled } = useApp();
+  const { theme, clients, products, setProducts, setAppointments } = useApp();
   const dialog = useDialog();
   const nav = useNavigation<Nav>();
   const client = clients.find((c) => c.id === appt.clientId);
@@ -320,19 +322,17 @@ function IPadApptRow({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
 
   const complete = () => {
     if (appt.status !== 'upcoming') return;
-    if (remindersEnabled) {
-      appt.products.forEach((ap) => {
-        const product = products.find((p) => p.id === ap.productId);
-        if (!product) return;
-        const after = deductStock(product, ap.amount);
-        if (after.status !== 'ok' && after.status !== product.status) notifyLowStock(product.name, after.status === 'out');
-      });
-    }
+    appt.products.forEach((ap) => {
+      const product = products.find((p) => p.id === ap.productId);
+      if (!product) return;
+      const after = deductStock(product, ap.amount);
+      if (after.status !== 'ok' && after.status !== product.status) notifyLowStock(product.name, after.status === 'out');
+    });
     setProducts((prev) => prev.map((p) => {
       const used = appt.products.find((ap) => ap.productId === p.id);
       return used ? deductStock(p, used.amount) : p;
     }));
-    setAppointments((prev) => prev.map((a) => a.id === appt.id ? { ...a, status: 'completed' } : a));
+    setAppointments((prev) => prev.map((a) => a.id === appt.id ? { ...a, status: 'completed', paid: true } : a));
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
@@ -362,6 +362,7 @@ function IPadApptRow({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
           <Text style={{ fontWeight: '600', fontSize: 15, color: theme.ink }}>{fmt.currency(appt.price)}</Text>
           {completed ? <Icons.check size={20} color={theme.sage} strokeWidth={2} />
             : noShow ? <Text style={{ fontSize: 10, fontWeight: '700', color: theme.danger, letterSpacing: 0.5 }}>NO SHOW</Text>
+            : appt.status === 'cancelled' ? <Text style={{ fontSize: 10, fontWeight: '700', color: theme.ink3, letterSpacing: 0.5 }}>CANCELLED</Text>
             : <Icons.chevronRight size={18} color={theme.ink3} />}
         </View>
       </Pressable>

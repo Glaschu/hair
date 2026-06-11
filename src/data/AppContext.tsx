@@ -15,7 +15,7 @@ import {
   rowsToSchedule,
 } from '../db/helpers';
 import { syncAppointmentReminders, setupNotificationChannel } from './notifications';
-import { getOrCreateIrisCalendar, syncAppointmentsToCalendar } from './calendarSync';
+import { getOrCreateIrisCalendar, syncAppointmentsToCalendar, deleteCalendarEvents } from './calendarSync';
 import { pullSync, pushSync, syncPhotos } from './syncEngine';
 import { writeAutoBackup } from './backup';
 
@@ -423,6 +423,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         });
       }
       registerTombstones(prev, next);
+      // Appointments removed outright (client delete, sync tombstones) skip the
+      // calendar-sync effect, so their Apple Calendar events must be cleaned up here.
+      const removedEventIds = prev
+        .filter(p => p.appleEventId && !next.some(n => n.id === p.id))
+        .map(p => p.appleEventId!);
+      if (removedEventIds.length > 0) deleteCalendarEvents(removedEventIds);
       if (loadedRef.current) {
         db.transaction((tx) => {
           tx.delete(schema.appointmentProducts).run();

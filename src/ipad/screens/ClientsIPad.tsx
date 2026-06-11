@@ -142,19 +142,19 @@ const ClientListRow = React.memo(function ClientListRow({ client, selected, onPr
 });
 
 // ──────────────── Detail panel ────────────────
-type Tab = 'hair' | 'history' | 'photos';
+type DetailView = 'visits' | 'photos';
 
 function ClientDetailPanel({ clientId }: { clientId: string }) {
   const { theme, clients, setClients, appointments, products } = useApp();
   const dialog = useDialog();
   const nav = useNavigation<Nav>();
-  const [tab, setTab] = useState<Tab>('hair');
+  const [view, setView] = useState<DetailView>('visits');
   const [viewing, setViewing] = useState<ClientPhoto | null>(null);
   const [saving, setSaving] = useState(false);
 
   const client = clients.find((c) => c.id === clientId);
-  // Reset to the Hair tab whenever the focused client changes.
-  useEffect(() => { setTab('hair'); }, [clientId]);
+  // Snap back to the visit timeline whenever the focused client changes.
+  useEffect(() => { setView('visits'); }, [clientId]);
   if (!client) return null;
 
   const clientAppts = appointments.filter((a) => a.clientId === client.id);
@@ -184,56 +184,34 @@ function ClientDetailPanel({ clientId }: { clientId: string }) {
   };
 
   return (
-    <View style={{ flex: 1, minWidth: 0 }}>
-      {/* Header band */}
-      <View style={[styles.detailHeader, { backgroundColor: theme.accent + '14', borderBottomColor: theme.line }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-          <View style={{ flexDirection: 'row', gap: 18, flex: 1, minWidth: 0 }}>
-            <Avatar name={client.name} tone={client.tone} photo={client.photo} size={84} />
-            <View style={{ flex: 1, minWidth: 0, paddingTop: 6 }}>
-              <Title size={36}>{client.name}</Title>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
-                {client.vip && <View style={[styles.vip, { borderColor: theme.accent, paddingHorizontal: 8 }]}><Text style={{ color: theme.accent, fontSize: 10, fontWeight: '700', letterSpacing: 1 }}>VIP CLIENT</Text></View>}
-                <Eyebrow>CLIENT SINCE {client.since} · {totalVisits} VISIT{totalVisits === 1 ? '' : 'S'}</Eyebrow>
-              </View>
-              <View style={{ flexDirection: 'row', gap: 20, marginTop: 16 }}>
-                <Stat label="Total spend" value={totalSpend > 0 ? fmt.currency(totalSpend) : '—'} />
-                <Divider />
-                <Stat label="Last visit" value={completed[0] ? fmt.ago(completed[0].start) : '—'} />
-                <Divider />
-                <Stat label="Avg / visit" value={totalVisits > 0 ? fmt.currency(avg) : '—'} />
-              </View>
-            </View>
-          </View>
-          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 230 }}>
-            <Btn compact icon={<Icons.phone size={15} color={theme.ink} />} onPress={() => Linking.openURL(`tel:${client.phone}`)}>Call</Btn>
-            <Btn compact icon={<Icons.message size={15} color={theme.ink} />} onPress={() => Linking.openURL(`sms:${client.phone}`)}>Message</Btn>
-            {client.instagram && (
-              <Btn compact icon={<Icons.instagram size={15} color={theme.ink} />} onPress={() => {
-                const handle = client.instagram?.replace('@', '');
-                Linking.openURL(`https://ig.me/m/${handle}`).catch(() => Linking.openURL(`https://instagram.com/${handle}`));
-              }}>Insta</Btn>
-            )}
-            <Btn compact variant="primary" icon={<Icons.plus size={15} color="#fff" />} onPress={() => nav.navigate('NewAppointment', { clientId: client.id, prefillService: completed[0]?.service })}>Book</Btn>
-            <RoundBtn size={36} onPress={() => nav.navigate('ClientForm', { clientId: client.id })}><Icons.edit size={15} color={theme.ink} /></RoundBtn>
-          </View>
-        </View>
-        {/* Tabs */}
-        <View style={{ flexDirection: 'row', gap: 24, marginTop: 18, borderBottomColor: theme.line }}>
-          {(['hair', 'history', 'photos'] as Tab[]).map((t) => (
-            <Pressable key={t} onPress={() => setTab(t)} style={{ paddingBottom: 10 }}>
-              <Text style={{ fontSize: 14, fontWeight: '500', textTransform: 'capitalize', color: tab === t ? theme.ink : theme.ink3 }}>{t}</Text>
-              {tab === t && <View style={{ height: 2, borderRadius: 1, backgroundColor: theme.accent, marginTop: 8, marginHorizontal: -2 }} />}
-            </Pressable>
-          ))}
-        </View>
-      </View>
+    <View style={{ flex: 1, minWidth: 0, flexDirection: 'row' }}>
+      {/* Docked profile — formula and allergies stay visible beside the timeline */}
+      <ProfileDock
+        client={client}
+        totalVisits={totalVisits}
+        totalSpend={totalSpend}
+        avg={avg}
+        lastFinishedAppt={completed[0]}
+        onEdit={() => nav.navigate('ClientForm', { clientId: client.id })}
+        onBook={() => nav.navigate('NewAppointment', { clientId: client.id, prefillService: completed[0]?.service })}
+      />
 
-      <ScrollView contentContainerStyle={{ padding: 28 }} showsVerticalScrollIndicator={false}>
-        {tab === 'hair' && <HairTab client={client} upcoming={upcoming} lastFinishedAppt={completed[0]} onOpenAppt={(id) => nav.navigate('AppointmentDetail', { appointmentId: id })} />}
-        {tab === 'history' && <HistoryTab client={client} history={history} products={products} onOpenAppt={(id) => nav.navigate('AppointmentDetail', { appointmentId: id })} onViewPhoto={setViewing} />}
-        {tab === 'photos' && <PhotosTab client={client} onAdd={addPhotos} onView={setViewing} saving={saving} />}
-      </ScrollView>
+      {/* Timeline pane */}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={[styles.timelineHead, { borderBottomColor: theme.line }]}>
+          <View style={{ flex: 1 }}>
+            <Eyebrow>THE STORY SO FAR</Eyebrow>
+            <Title size={26} style={{ marginTop: 2 }}>{view === 'visits' ? 'Visits' : 'Photos'}</Title>
+          </View>
+          <Chip active={view === 'visits'} onPress={() => setView('visits')}>Visits {upcoming.length + history.length}</Chip>
+          <Chip active={view === 'photos'} onPress={() => setView('photos')}>Photos {(client.photos ?? []).length}</Chip>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: 28, paddingTop: 20 }} showsVerticalScrollIndicator={false}>
+          {view === 'visits'
+            ? <VisitTimeline client={client} upcoming={upcoming} history={history} products={products} onOpenAppt={(id) => nav.navigate('AppointmentDetail', { appointmentId: id })} onViewPhoto={setViewing} />
+            : <PhotosTab client={client} onAdd={addPhotos} onView={setViewing} saving={saving} />}
+        </ScrollView>
+      </View>
 
       {viewing && (
         <Modal visible animationType="fade" onRequestClose={() => setViewing(null)}>
@@ -258,93 +236,143 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 function Divider() { const { theme } = useApp(); return <View style={{ width: 0.5, backgroundColor: theme.line }} />; }
 
-function HairTab({ client, upcoming, lastFinishedAppt, onOpenAppt }: { client: Client; upcoming: Appointment[]; lastFinishedAppt?: Appointment; onOpenAppt: (id: string) => void }) {
+function ProfileDock({ client, totalVisits, totalSpend, avg, lastFinishedAppt, onEdit, onBook }: {
+  client: Client; totalVisits: number; totalSpend: number; avg: number;
+  lastFinishedAppt?: Appointment; onEdit: () => void; onBook: () => void;
+}) {
   const { theme } = useApp();
   return (
-    <View style={{ flexDirection: 'row', gap: 22 }}>
-      <View style={{ flex: 1.4, gap: 16 }}>
-        {upcoming.length > 0 && (
-          <View style={{ gap: 8 }}>
-            <Eyebrow>UPCOMING</Eyebrow>
-            {upcoming.map((a) => (
-              <Pressable key={a.id} onPress={() => onOpenAppt(a.id)} style={[styles.upcoming, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '33' }]}>
-                <View style={{ alignItems: 'center', minWidth: 48 }}>
-                  <Text style={{ fontSize: 10, letterSpacing: 1, fontWeight: '600', color: theme.accent }}>{new Date(a.start).toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}</Text>
-                  <Text style={{ fontSize: 28, fontWeight: '500', fontStyle: 'italic', color: theme.ink, lineHeight: 30 }}>{new Date(a.start).getDate()}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '600', fontSize: 16, color: theme.ink }}>{a.service}</Text>
-                  <Text style={{ color: theme.ink2, fontSize: 13, marginTop: 2 }}>{fmt.time(a.start)} · {fmt.currency(a.price)}</Text>
-                </View>
-                <Btn variant="dark" compact onPress={() => onOpenAppt(a.id)}>Open</Btn>
-              </Pressable>
-            ))}
+    <ScrollView
+      style={[styles.dock, { borderRightColor: theme.line, backgroundColor: theme.accent + '0A' }]}
+      contentContainerStyle={{ padding: 18, gap: 14 }}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={{ alignItems: 'center' }}>
+        <Avatar name={client.name} tone={client.tone} photo={client.photo} size={76} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
+          <Title size={22} style={{ textAlign: 'center', flexShrink: 1 }}>{client.name}</Title>
+          <RoundBtn size={28} onPress={onEdit}><Icons.edit size={13} color={theme.ink} /></RoundBtn>
+        </View>
+        {client.vip && (
+          <View style={[styles.vip, { borderColor: theme.accent, marginTop: 6, paddingHorizontal: 8 }]}>
+            <Text style={{ color: theme.accent, fontSize: 9, fontWeight: '700', letterSpacing: 1 }}>VIP CLIENT</Text>
           </View>
         )}
-        <Panel>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <Icons.flask size={16} color={theme.accent} />
-            <Eyebrow color={theme.accent}>HAIR PROFILE</Eyebrow>
-          </View>
-          <ProfileRow label="Type" value={client.hair.type} />
-          <ProfileRow label="Length" value={client.hair.length} />
-          <ProfileRow label="Natural" value={client.hair.natural} />
-          <Eyebrow style={{ marginTop: 14 }}>
-            {lastFinishedAppt ? `FORMULA (LAST APPT: ${new Date(lastFinishedAppt.start).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }).toUpperCase()})` : 'FORMULA'}
+        <Eyebrow style={{ marginTop: 8 }}>SINCE {client.since} · {totalVisits} VISIT{totalVisits === 1 ? '' : 'S'}</Eyebrow>
+      </View>
+
+      <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center' }}>
+        <RoundBtn size={38} onPress={() => Linking.openURL(`tel:${client.phone}`)}><Icons.phone size={16} color={theme.ink} /></RoundBtn>
+        <RoundBtn size={38} onPress={() => Linking.openURL(`sms:${client.phone}`)}><Icons.message size={16} color={theme.ink} /></RoundBtn>
+        {client.instagram && (
+          <RoundBtn size={38} onPress={() => {
+            const handle = client.instagram?.replace('@', '');
+            Linking.openURL(`https://ig.me/m/${handle}`).catch(() => Linking.openURL(`https://instagram.com/${handle}`));
+          }}><Icons.instagram size={16} color={theme.ink} /></RoundBtn>
+        )}
+      </View>
+      <Btn variant="primary" icon={<Icons.plus size={15} color="#fff" />} onPress={onBook}>Book appointment</Btn>
+
+      <Panel>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Icons.flask size={14} color={theme.accent} />
+          <Eyebrow color={theme.accent}>
+            {lastFinishedAppt ? `FORMULA · ${new Date(lastFinishedAppt.start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase()}` : 'FORMULA'}
           </Eyebrow>
-          <View style={{ backgroundColor: theme.accent + '14', borderRadius: 10, padding: 12, marginTop: 6 }}>
-            <Text style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 18, color: theme.ink }}>
-              {(lastFinishedAppt?.formula) || client.formula || 'Not recorded'}
-            </Text>
-          </View>
-        </Panel>
+        </View>
+        <View style={{ backgroundColor: theme.accent + '14', borderRadius: 10, padding: 12, marginTop: 8 }}>
+          <Text style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 18, color: theme.ink }}>
+            {(lastFinishedAppt?.formula) || client.formula || 'Not recorded'}
+          </Text>
+        </View>
+      </Panel>
+
+      <Panel>
+        <Eyebrow color={theme.warn}>ALLERGIES & SENSITIVITIES</Eyebrow>
+        <Text style={{ color: theme.ink, fontSize: 13, marginTop: 6, lineHeight: 18 }}>{client.allergies}</Text>
+      </Panel>
+
+      <Panel>
+        <Eyebrow>HAIR</Eyebrow>
+        <ProfileRow label="Type" value={client.hair.type} />
+        <ProfileRow label="Length" value={client.hair.length} />
+        <ProfileRow label="Natural" value={client.hair.natural} />
+      </Panel>
+
+      {client.notes ? (
         <Panel>
-          <Eyebrow color={theme.warn}>ALLERGIES & SENSITIVITIES</Eyebrow>
-          <Text style={{ color: theme.ink, fontSize: 14, marginTop: 6 }}>{client.allergies}</Text>
-          <Eyebrow style={{ marginTop: 14 }}>PREFERENCES / CLIENT NOTES</Eyebrow>
-          <Text style={{ color: theme.ink, fontSize: 14, marginTop: 6, lineHeight: 20 }}>{client.notes || '—'}</Text>
-          {lastFinishedAppt?.notes && (
-            <>
-              <Eyebrow style={{ marginTop: 14 }}>LATEST APPOINTMENT NOTES</Eyebrow>
-              <Text style={{ color: theme.ink, fontSize: 14, marginTop: 6, lineHeight: 20 }}>{lastFinishedAppt.notes}</Text>
-            </>
-          )}
+          <Eyebrow>PREFERENCES / NOTES</Eyebrow>
+          <Text style={{ color: theme.ink, fontSize: 13, marginTop: 6, lineHeight: 18 }}>{client.notes}</Text>
         </Panel>
+      ) : null}
+
+      <Panel>
+        <Eyebrow>CONTACT</Eyebrow>
+        <Pressable onPress={() => Linking.openURL(`tel:${client.phone}`)} style={styles.contactRow}>
+          <Icons.phone size={16} color={theme.accent} />
+          <Text style={{ flex: 1, color: theme.ink, fontSize: 13 }} numberOfLines={1}>{client.phone || '—'}</Text>
+          <Icons.arrowRight size={14} color={theme.ink3} />
+        </Pressable>
+        <View style={{ height: 0.5, backgroundColor: theme.line }} />
+        <Pressable onPress={() => Linking.openURL(`mailto:${client.email}`)} style={styles.contactRow}>
+          <Icons.message size={16} color={theme.accent} />
+          <Text style={{ flex: 1, color: theme.ink, fontSize: 13 }} numberOfLines={1}>{client.email || '—'}</Text>
+          <Icons.arrowRight size={14} color={theme.ink3} />
+        </Pressable>
+      </Panel>
+
+      <View style={{ flexDirection: 'row', gap: 16, justifyContent: 'center', paddingBottom: 8 }}>
+        <Stat label="Total spend" value={totalSpend > 0 ? fmt.currency(totalSpend) : '—'} />
+        <Divider />
+        <Stat label="Avg / visit" value={totalVisits > 0 ? fmt.currency(avg) : '—'} />
       </View>
-      <View style={{ flex: 1, gap: 16 }}>
-        <Panel>
-          <Eyebrow>CONTACT</Eyebrow>
-          <Pressable onPress={() => Linking.openURL(`tel:${client.phone}`)} style={styles.contactRow}>
-            <Icons.phone size={16} color={theme.accent} />
-            <Text style={{ flex: 1, color: theme.ink, fontSize: 14 }}>{client.phone || '—'}</Text>
-            <Icons.arrowRight size={14} color={theme.ink3} />
-          </Pressable>
-          <View style={{ height: 0.5, backgroundColor: theme.line }} />
-          <Pressable onPress={() => Linking.openURL(`mailto:${client.email}`)} style={styles.contactRow}>
-            <Icons.message size={16} color={theme.accent} />
-            <Text style={{ flex: 1, color: theme.ink, fontSize: 14 }} numberOfLines={1}>{client.email || '—'}</Text>
-            <Icons.arrowRight size={14} color={theme.ink3} />
-          </Pressable>
-        </Panel>
-      </View>
+    </ScrollView>
+  );
+}
+
+function TimelineDate({ iso, tone }: { iso: string; tone?: string }) {
+  const { theme } = useApp();
+  const d = new Date(iso);
+  return (
+    <View style={{ width: 56, alignItems: 'flex-start', paddingTop: 4 }}>
+      <Text style={{ fontSize: 10, letterSpacing: 0.8, fontWeight: '500', color: tone ?? theme.ink3 }}>{d.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}</Text>
+      <Text style={{ fontSize: 28, fontWeight: '500', fontStyle: 'italic', color: tone ?? theme.ink, lineHeight: 30 }}>{d.getDate()}</Text>
+      <Text style={{ fontSize: 11, color: theme.ink3 }}>{d.getFullYear()}</Text>
     </View>
   );
 }
 
-function HistoryTab({ client, history, products, onOpenAppt, onViewPhoto }: { client: Client; history: Appointment[]; products: any[]; onOpenAppt: (id: string) => void; onViewPhoto: (p: ClientPhoto) => void }) {
+function VisitTimeline({ client, upcoming, history, products, onOpenAppt, onViewPhoto }: { client: Client; upcoming: Appointment[]; history: Appointment[]; products: any[]; onOpenAppt: (id: string) => void; onViewPhoto: (p: ClientPhoto) => void }) {
   const { theme } = useApp();
-  if (history.length === 0) return <Text style={{ color: theme.ink3, fontStyle: 'italic', paddingVertical: 20 }}>No history yet.</Text>;
+  if (upcoming.length === 0 && history.length === 0) {
+    return <Text style={{ color: theme.ink3, fontStyle: 'italic', paddingVertical: 20 }}>No visits yet — book the first one from the left.</Text>;
+  }
   return (
     <View style={{ gap: 16 }}>
+      {/* What's booked, soonest first */}
+      {upcoming.map((a) => (
+        <Pressable key={a.id} onPress={() => onOpenAppt(a.id)} style={{ flexDirection: 'row', gap: 16 }}>
+          <TimelineDate iso={a.start} tone={theme.accent} />
+          <View style={[styles.panel, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '33', flex: 1 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ flex: 1 }}>
+                <Eyebrow color={theme.accent}>UPCOMING · {fmt.rel(a.start).toUpperCase()}</Eyebrow>
+                <Text style={{ fontWeight: '600', fontSize: 16, color: theme.ink, marginTop: 6 }}>{a.service}</Text>
+                <Text style={{ color: theme.ink2, fontSize: 13, marginTop: 2 }}>{fmt.time(a.start)} · {fmt.currency(a.price)}</Text>
+              </View>
+              <Btn variant="dark" compact onPress={() => onOpenAppt(a.id)}>Open</Btn>
+            </View>
+          </View>
+        </Pressable>
+      ))}
+
+      {/* Past visits, newest first */}
       {history.map((a) => {
         const noShow = a.status === 'no-show';
+        const cancelled = a.status === 'cancelled';
         return (
           <Pressable key={a.id} onPress={() => onOpenAppt(a.id)} style={{ flexDirection: 'row', gap: 16 }}>
-            <View style={{ width: 56, alignItems: 'flex-start', paddingTop: 4 }}>
-              <Text style={{ fontSize: 10, letterSpacing: 0.8, fontWeight: '500', color: noShow ? theme.danger : theme.ink3 }}>{new Date(a.start).toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}</Text>
-              <Text style={{ fontSize: 28, fontWeight: '500', fontStyle: 'italic', color: noShow ? theme.danger : theme.ink, lineHeight: 30 }}>{new Date(a.start).getDate()}</Text>
-              <Text style={{ fontSize: 11, color: theme.ink3 }}>{new Date(a.start).getFullYear()}</Text>
-            </View>
+            <TimelineDate iso={a.start} tone={noShow ? theme.danger : undefined} />
             <View style={[styles.panel, { backgroundColor: theme.card, borderColor: theme.line, flex: 1 }]}>
               <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
                 <View style={{ flex: 1 }}>
@@ -353,6 +381,8 @@ function HistoryTab({ client, history, products, onOpenAppt, onViewPhoto }: { cl
                 </View>
                 {noShow
                   ? <View style={[styles.vip, { borderColor: theme.danger }]}><Text style={{ color: theme.danger, fontSize: 9, fontWeight: '700', letterSpacing: 0.6 }}>NO SHOW</Text></View>
+                  : cancelled
+                  ? <View style={[styles.vip, { borderColor: theme.ink3 }]}><Text style={{ color: theme.ink3, fontSize: 9, fontWeight: '700', letterSpacing: 0.6 }}>CANCELLED</Text></View>
                   : <Text style={{ fontSize: 20, fontWeight: '500', fontStyle: 'italic', color: theme.ink }}>{fmt.currency(a.price)}</Text>}
               </View>
               {!noShow && a.formula && (
@@ -454,13 +484,14 @@ const styles = StyleSheet.create({
   listRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 0.5 },
   vip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2 },
   emptyDetail: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  detailHeader: { paddingHorizontal: 28, paddingTop: 24, paddingBottom: 0, borderBottomWidth: 0.5 },
-  upcoming: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 16, borderWidth: 0.5 },
+  dock: { width: 264, borderRightWidth: 0.5 },
+  timelineHead: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 28, paddingTop: 20, paddingBottom: 14, borderBottomWidth: 0.5 },
   panel: { borderRadius: 16, borderWidth: 0.5, padding: 18 },
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   addPhoto: { borderRadius: 14, borderWidth: 1, padding: 48, alignItems: 'center' },
   photoTile: { width: 132, height: 132, borderRadius: 12, overflow: 'hidden', backgroundColor: '#0002' },
-  photoDate: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 8, paddingTop: 18 },
+  photoDateOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 8, paddingTop: 18 },
   photoViewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   photoViewerImg: { width: '100%', flex: 1, borderRadius: 12 },
+  photoViewerDate: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 12 },
 });
