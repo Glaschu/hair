@@ -10,9 +10,9 @@ import { useDialog } from '../../data/DialogContext';
 import { useResponsive } from '../../hooks/useResponsive';
 import { DEFAULT_SCHEDULE } from '../../data/mockData';
 import { RootStackParamList } from '../../navigation/types';
-import { Icons, RoundBtn } from '../../components';
-import { accentOptions } from '../../theme';
-import { fmt } from '../../data/utils';
+import { Icons, RoundBtn, PrivacyPolicyModal, appVersionLabel } from '../../components';
+import { accentOptions, SERIF } from '../../theme';
+import { fmt, CURRENCY_OPTIONS } from '../../data/utils';
 import { requestNotificationPermission } from '../../data/notifications';
 import { getOrCreateIrisCalendar, deleteIrisCalendar } from '../../data/calendarSync';
 import { readAutoBackup } from '../../data/backup';
@@ -131,6 +131,7 @@ export function SettingsIPad() {
   const [timePicker, setTimePicker] = useState<{ day: number; field: 'start' | 'end' } | null>(null);
   const [busy, setBusy] = useState<'' | 'export' | 'import'>('');
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
 
   const handleExport = async () => {
     if (busy) return;
@@ -259,7 +260,7 @@ export function SettingsIPad() {
                 </View>
               ) : (
                 <Pressable onPress={() => { setEditingName(true); setNameInput(app.studioName); }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 22, fontWeight: '500', fontStyle: 'italic', color: theme.ink }}>{app.studioName}</Text>
+                  <Text style={{ fontSize: 22, fontFamily: SERIF, color: theme.ink }}>{app.studioName}</Text>
                   <Icons.edit size={16} color={theme.ink3} />
                 </Pressable>
               )}
@@ -298,6 +299,14 @@ export function SettingsIPad() {
               <ColRow label="Booking window" hint="How far ahead clients can book">
                 <ChipGroup options={['14', '30', '60', '90']} value={String(app.bookingWindowDays)} labels={{ '14': '2 wks', '30': '1 mo', '60': '2 mo', '90': '3 mo' }} onChange={(v) => app.setBookingWindowDays(Number(v))} />
               </ColRow>
+              <Divider />
+              <ColRow label="Currency" hint="Shown on prices and reports">
+                <ChipGroup options={CURRENCY_OPTIONS} value={app.currency} labels={Object.fromEntries(CURRENCY_OPTIONS.map((c) => [c, c.trim()]))} onChange={app.setCurrency} />
+              </ColRow>
+              <Divider />
+              <Row label="24-hour time" sub="Show times as 14:30 instead of 2:30pm">
+                <Toggle on={app.hour24} onPress={() => app.setHour24(!app.hour24)} />
+              </Row>
               <Divider />
               <ColRow label="Accent colour">
                 <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
@@ -401,8 +410,13 @@ export function SettingsIPad() {
               <Divider />
               <DataRow icon={<Icons.clipboardCheck size={16} color={theme.ink2} />} bg={theme.ink3 + '22'} label="Restore automatic backup" sub="Recover from Iris's latest on-device snapshot" onPress={handleRestoreAuto} />
               <Divider />
+              <DataRow icon={<Icons.lock size={16} color={theme.sage} />} bg={theme.sage + '22'} label="Privacy policy" sub="Your data stays on your device" onPress={() => setPrivacyOpen(true)} />
+              <Divider />
               <DataRow icon={<Icons.alert size={16} color={theme.danger} />} bg={theme.danger + '18'} label="Reset / wipe data" labelColor={theme.danger} sub="Reset to demo or wipe everything" onPress={handleReset} />
             </Card>
+            <Text style={{ fontSize: 12, color: theme.ink3, textAlign: 'center', marginTop: 14 }}>
+              Iris · Version {appVersionLabel()}
+            </Text>
           </Block>
         );
     }
@@ -466,6 +480,8 @@ export function SettingsIPad() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <PrivacyPolicyModal visible={privacyOpen} onClose={() => setPrivacyOpen(false)} />
 
       {/* What's New modal */}
       <Modal visible={whatsNewOpen} transparent animationType="slide" onRequestClose={() => setWhatsNewOpen(false)}>

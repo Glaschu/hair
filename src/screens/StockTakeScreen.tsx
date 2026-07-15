@@ -9,6 +9,7 @@ import { useApp } from '../data/AppContext';
 import { RootStackParamList } from '../navigation/types';
 import { Chip, Icons } from '../components';
 import { Product } from '../data/types';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -203,7 +204,7 @@ const styles = StyleSheet.create({
   changeCount: { fontSize: 11, letterSpacing: 1, fontWeight: '500' },
   header: { paddingHorizontal: 20, paddingBottom: 12 },
   eyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '400', marginBottom: 4 },
-  title: { fontSize: 28, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5 },
+  title: { fontSize: 28, fontFamily: SERIF, letterSpacing: -0.5 },
   desc: { fontSize: 13, lineHeight: 19 },
   chipRow: { paddingHorizontal: 20, paddingBottom: 14 },
 

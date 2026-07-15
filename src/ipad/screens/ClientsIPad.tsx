@@ -15,6 +15,7 @@ import { fmt, groupByLetter, clientMatchesQuery } from '../../data/utils';
 import { Client, ClientPhoto, Appointment } from '../../data/types';
 import { Eyebrow, Title, Btn } from '../ui';
 import { useShell } from '../shellContext';
+import { SERIF } from '../../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Filter = 'all' | 'recent' | 'upcoming' | 'vip';
@@ -133,7 +134,7 @@ const ClientListRow = React.memo(function ClientListRow({ client, selected, onPr
           {client.vip && <View style={[styles.vip, { borderColor: theme.accent }]}><Text style={{ color: theme.accent, fontSize: 9, fontWeight: '700', letterSpacing: 0.6 }}>VIP</Text></View>}
         </View>
         <Text style={{ color: theme.ink3, fontSize: 12, marginTop: 1 }} numberOfLines={1}>
-          {nextAppt ? `Next: ${new Date(nextAppt.start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : `${visits} visit${visits === 1 ? '' : 's'} · Since ${client.since}`}
+          {nextAppt ? `Next: ${new Date(nextAppt.start).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}` : `${visits} visit${visits === 1 ? '' : 's'} · Since ${client.since}`}
         </Text>
       </View>
       {selected && <Icons.chevronRight size={16} color={theme.accent} />}
@@ -229,7 +230,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   const { theme } = useApp();
   return (
     <View>
-      <Text style={{ fontSize: 24, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5, color: theme.ink }}>{value}</Text>
+      <Text style={{ fontSize: 24, fontFamily: SERIF, letterSpacing: -0.5, color: theme.ink }}>{value}</Text>
       <Text style={{ fontSize: 10, letterSpacing: 1.2, fontWeight: '500', color: theme.ink3, marginTop: 4 }}>{label.toUpperCase()}</Text>
     </View>
   );
@@ -277,11 +278,11 @@ function ProfileDock({ client, totalVisits, totalSpend, avg, lastFinishedAppt, o
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Icons.flask size={14} color={theme.accent} />
           <Eyebrow color={theme.accent}>
-            {lastFinishedAppt ? `FORMULA · ${new Date(lastFinishedAppt.start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase()}` : 'FORMULA'}
+            {lastFinishedAppt ? `FORMULA · ${new Date(lastFinishedAppt.start).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }).toUpperCase()}` : 'FORMULA'}
           </Eyebrow>
         </View>
         <View style={{ backgroundColor: theme.accent + '14', borderRadius: 10, padding: 12, marginTop: 8 }}>
-          <Text style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 18, color: theme.ink }}>
+          <Text style={{ fontFamily: 'DMMono_400Regular', fontSize: 12, lineHeight: 18, color: theme.ink }}>
             {(lastFinishedAppt?.formula) || client.formula || 'Not recorded'}
           </Text>
         </View>
@@ -335,8 +336,8 @@ function TimelineDate({ iso, tone }: { iso: string; tone?: string }) {
   const d = new Date(iso);
   return (
     <View style={{ width: 56, alignItems: 'flex-start', paddingTop: 4 }}>
-      <Text style={{ fontSize: 10, letterSpacing: 0.8, fontWeight: '500', color: tone ?? theme.ink3 }}>{d.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}</Text>
-      <Text style={{ fontSize: 28, fontWeight: '500', fontStyle: 'italic', color: tone ?? theme.ink, lineHeight: 30 }}>{d.getDate()}</Text>
+      <Text style={{ fontSize: 10, letterSpacing: 0.8, fontWeight: '500', color: tone ?? theme.ink3 }}>{d.toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}</Text>
+      <Text style={{ fontSize: 28, fontFamily: SERIF, color: tone ?? theme.ink, lineHeight: 30 }}>{d.getDate()}</Text>
       <Text style={{ fontSize: 11, color: theme.ink3 }}>{d.getFullYear()}</Text>
     </View>
   );
@@ -383,7 +384,7 @@ function VisitTimeline({ client, upcoming, history, products, onOpenAppt, onView
                   ? <View style={[styles.vip, { borderColor: theme.danger }]}><Text style={{ color: theme.danger, fontSize: 9, fontWeight: '700', letterSpacing: 0.6 }}>NO SHOW</Text></View>
                   : cancelled
                   ? <View style={[styles.vip, { borderColor: theme.ink3 }]}><Text style={{ color: theme.ink3, fontSize: 9, fontWeight: '700', letterSpacing: 0.6 }}>CANCELLED</Text></View>
-                  : <Text style={{ fontSize: 20, fontWeight: '500', fontStyle: 'italic', color: theme.ink }}>{fmt.currency(a.price)}</Text>}
+                  : <Text style={{ fontSize: 20, fontFamily: SERIF, color: theme.ink }}>{fmt.currency(a.price)}</Text>}
               </View>
               {!noShow && a.formula && (
                 <>
@@ -484,7 +485,9 @@ const styles = StyleSheet.create({
   listRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 0.5 },
   vip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2 },
   emptyDetail: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  dock: { width: 264, borderRightWidth: 0.5 },
+  // ScrollView's base style has flexGrow/flexShrink 1, which turns `width` into a
+  // flex basis and lets the dock balloon in the row — pin it to exactly 264.
+  dock: { width: 264, flexGrow: 0, flexShrink: 0, borderRightWidth: 0.5 },
   timelineHead: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 28, paddingTop: 20, paddingBottom: 14, borderBottomWidth: 0.5 },
   panel: { borderRadius: 16, borderWidth: 0.5, padding: 18 },
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },

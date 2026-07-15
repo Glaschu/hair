@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { View, Text, Pressable, StyleSheet, Modal, FlatList, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useApp } from '../data/AppContext';
 import { Icons } from './Icons';
+import { SERIF } from '../theme';
 
 interface ProductPickerProps {
   visible: boolean;
@@ -186,7 +187,7 @@ const styles = StyleSheet.create({
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12 },
   sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(150,150,150,0.3)', alignSelf: 'center', marginBottom: 12 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 16 },
-  sheetTitle: { fontSize: 18, fontWeight: '600', fontStyle: 'italic' },
+  sheetTitle: { fontSize: 18, fontFamily: SERIF },
   closeBtn: { padding: 4 },
   
   searchBox: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, height: 44, borderRadius: 12, gap: 10 },

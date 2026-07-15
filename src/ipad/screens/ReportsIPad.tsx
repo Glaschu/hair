@@ -8,6 +8,7 @@ import { Avatar, Icons } from '../../components';
 import { fmt } from '../../data/utils';
 import { Product } from '../../data/types';
 import { Eyebrow, Title, Btn, StatTile } from '../ui';
+import { SERIF } from '../../theme';
 
 type Range = 'week' | 'month' | 'all';
 const RANGES: { id: Range; label: string }[] = [
@@ -53,8 +54,8 @@ export function ReportsIPad() {
 
   const rangeStr = useMemo(() => {
     if (range === 'all') return '';
-    const s = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    const e = end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const s = start.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    const e = end.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
     return ` · ${s.toUpperCase()} - ${e.toUpperCase()}`;
   }, [range, start, end]);
 
@@ -162,7 +163,7 @@ export function ReportsIPad() {
               <View style={{ flex: 1 }}>
                 <Eyebrow>{marginMode === 'completed' ? 'MARGIN · COMPLETED' : 'MARGIN · WITH PROJECTED'}</Eyebrow>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
-                  <Text style={{ fontSize: 40, fontWeight: '500', fontStyle: 'italic', color: theme.ink, letterSpacing: -1 }}>{fmt.currency(margin)}</Text>
+                  <Text style={{ fontSize: 40, fontFamily: SERIF, color: theme.ink, letterSpacing: -1 }}>{fmt.currency(margin)}</Text>
                   <Text style={{ color: theme.sage, fontSize: 14, fontWeight: '600' }}>({marginPct}%)</Text>
                 </View>
               </View>

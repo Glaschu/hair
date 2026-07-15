@@ -3,7 +3,7 @@ import { View, Text, ActivityIndicator, AppState as RNAppState } from 'react-nat
 import { Client, Product, Appointment, Service, Schedule, ExportPayload } from './types';
 import { lightTheme, darkTheme, Theme, accentOptions } from '../theme';
 import { db } from '../db';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { seedIfEmpty } from '../db/seed';
 import { CLIENTS, PRODUCTS, WEEK_APPOINTMENTS, SERVICES, DEFAULT_SCHEDULE } from './mockData';
@@ -15,9 +15,12 @@ import {
   rowsToSchedule,
 } from '../db/helpers';
 import { syncAppointmentReminders, setupNotificationChannel } from './notifications';
+import { configureFormats, deviceUses24HourClock } from './utils';
 import { getOrCreateIrisCalendar, syncAppointmentsToCalendar, deleteCalendarEvents } from './calendarSync';
 import { pullSync, pushSync, syncPhotos } from './syncEngine';
+import { sanitizePayload } from './sanitize';
 import { writeAutoBackup } from './backup';
+import { diffById } from './diff';
 
 interface AppState {
   theme: Theme;
@@ -61,6 +64,10 @@ interface AppState {
 
   vatRate: number;
   setVatRate: (n: number) => void;
+  currency: string;
+  setCurrency: (c: string) => void;
+  hour24: boolean;
+  setHour24: (v: boolean) => void;
 
   tombstones: Record<string, number>;
   setTombstones: React.Dispatch<React.SetStateAction<Record<string, number>>>;
@@ -101,6 +108,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [remindersEnabled, setRemindersEnabledState] = useState(false);
   const [reminderLeadMinutes, setReminderLeadMinutesState] = useState(60);
   const [vatRate, setVatRateState] = useState(20);
+  const [currency, setCurrencyState] = useState('£');
+  const [hour24, setHour24State] = useState(false);
   const [calendarSyncEnabled, setCalendarSyncEnabledState] = useState(false);
   const [iCloudSyncEnabled, setICloudSyncEnabledState] = useState(false);
   const [appleCalendarId, setAppleCalendarIdState] = useState<string | null>(null);
@@ -139,6 +148,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (get('remindersEnabled'))    setRemindersEnabledState(get('remindersEnabled') === 'true');
       if (get('reminderLeadMinutes')) setReminderLeadMinutesState(Number(get('reminderLeadMinutes')));
       if (get('vatRate'))             setVatRateState(Number(get('vatRate')));
+      // Display formats: currency symbol and clock convention. The clock defaults to
+      // the device's own preference until the user picks one explicitly.
+      const savedCurrency = get('currency') ?? '£';
+      const savedHour24 = get('hour24') !== undefined ? get('hour24') === 'true' : deviceUses24HourClock();
+      configureFormats({ currency: savedCurrency, hour24: savedHour24 });
+      setCurrencyState(savedCurrency);
+      setHour24State(savedHour24);
       if (get('calendarSyncEnabled')) setCalendarSyncEnabledState(get('calendarSyncEnabled') === 'true');
       if (get('iCloudSyncEnabled'))   setICloudSyncEnabledState(get('iCloudSyncEnabled') === 'true');
       if (get('appleCalendarId'))     setAppleCalendarIdState(get('appleCalendarId')!);
@@ -166,6 +182,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setRemindersEnabled = (v: boolean) => { setRemindersEnabledState(v); setSetting('remindersEnabled', String(v)); };
   const setReminderLeadMinutes = (n: number) => { setReminderLeadMinutesState(n); setSetting('reminderLeadMinutes', String(n)); };
   const setVatRate = (n: number) => { setVatRateState(n); setSetting('vatRate', String(n)); };
+  const setCurrency = (c: string) => { configureFormats({ currency: c }); setCurrencyState(c); setSetting('currency', c); };
+  const setHour24 = (v: boolean) => { configureFormats({ hour24: v }); setHour24State(v); setSetting('hour24', String(v)); };
   const setCalendarSyncEnabled = (v: boolean) => { setCalendarSyncEnabledState(v); setSetting('calendarSyncEnabled', String(v)); };
   const setICloudSyncEnabled = (v: boolean) => { setICloudSyncEnabledState(v); setSetting('iCloudSyncEnabled', String(v)); };
   const setAppleCalendarId = (v: string | null) => { setAppleCalendarIdState(v); if (v) setSetting('appleCalendarId', v); };
@@ -254,7 +272,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (state === 'background' && loadedRef.current) {
         writeAutoBackup(snapshotRef.current);
         if (iCloudSyncEnabled) {
-          pushSync(snapshotRef.current);
+          pushSync(snapshotRef.current).catch(() => {});
           const allPhotos = clients.flatMap(c => c.photos ?? []);
           syncPhotos(allPhotos).catch(() => {});
         }
@@ -269,7 +287,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const allPhotos = merged.clients.flatMap(c => c.photos ?? []);
             syncPhotos(allPhotos).catch(() => {});
           }
-        });
+        }).catch(() => {});
       }
     });
     return () => sub.remove();
@@ -277,14 +295,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (iCloudSyncEnabled && loadedRef.current) {
-      forceSync();
+      forceSync().catch(() => {});
     }
   }, [iCloudSyncEnabled]);
 
   useEffect(() => {
     if (!iCloudSyncEnabled || !loadedRef.current) return;
     const timer = setTimeout(() => {
-      pushSync(snapshotRef.current);
+      pushSync(snapshotRef.current).catch(() => {});
       const allPhotos = clients.flatMap(c => c.photos ?? []);
       syncPhotos(allPhotos).catch(() => {});
     }, 5000);
@@ -297,14 +315,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!iCloudSyncEnabled || !loadedRef.current) return;
     const interval = setInterval(() => {
-      pullSync(snapshotRef.current).then(merged => {
+      pullSync(snapshotRef.current).catch(() => null).then(merged => {
         if (merged) {
           setClients(merged.clients);
           setProducts(merged.products);
           setAppointments(merged.appointments);
           setServices(merged.services);
           setSchedule(merged.schedule);
-          
+
           snapshotRef.current = {
             version: 1,
             exported: new Date().toISOString(),
@@ -313,6 +331,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             appointments: merged.appointments,
             services: merged.services,
             schedule: merged.schedule,
+            tombstones: merged.tombstones,
           };
         }
       });
@@ -341,6 +360,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         appointments: merged.appointments,
         services: merged.services,
         schedule: merged.schedule,
+        tombstones: merged.tombstones,
       };
     }
     
@@ -349,36 +369,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return didPull;
   };
 
-  const registerTombstones = (prev: {id: string}[], next: {id: string}[]) => {
-    const removed = prev.filter(p => !next.some(n => n.id === p.id));
-    if (removed.length > 0) {
-      setTombstonesState(curr => {
-        const up = { ...curr };
-        const now = Date.now();
-        removed.forEach(r => up[r.id] = now);
-        setSetting('tombstones', JSON.stringify(up));
-        return up;
-      });
-    }
+  const registerTombstones = (removed: { id: string }[]) => {
+    if (removed.length === 0) return;
+    setTombstonesState(curr => {
+      const up = { ...curr };
+      const now = Date.now();
+      removed.forEach(r => up[r.id] = now);
+      setSetting('tombstones', JSON.stringify(up));
+      return up;
+    });
   };
 
   const setClients: React.Dispatch<React.SetStateAction<Client[]>> = (action) => {
     setClientsState(prev => {
       let next = typeof action === 'function' ? action(prev) : action;
       if (typeof action === 'function') {
+        const prevById = new Map(prev.map(p => [p.id, p]));
         next = next.map(item => {
-          const prevItem = prev.find(p => p.id === item.id);
+          const prevItem = prevById.get(item.id);
           return prevItem !== item ? { ...item, updatedAt: Date.now() } : item;
         });
       }
-      registerTombstones(prev, next);
-      if (loadedRef.current) {
+      const { removed, changed } = diffById(prev, next);
+      registerTombstones(removed);
+      if (loadedRef.current && (removed.length > 0 || changed.length > 0)) {
         db.transaction((tx) => {
-          tx.delete(schema.clientPhotos).run();
-          tx.delete(schema.clients).run();
-          next.forEach(c => {
+          if (removed.length > 0) {
+            const ids = removed.map(c => c.id);
+            tx.delete(schema.clientPhotos).where(inArray(schema.clientPhotos.clientId, ids)).run();
+            tx.delete(schema.clients).where(inArray(schema.clients.id, ids)).run();
+          }
+          changed.forEach(c => {
             tx.insert(schema.clients).values(clientToRow(c))
               .onConflictDoUpdate({ target: schema.clients.id, set: clientToRow(c) }).run();
+            tx.delete(schema.clientPhotos).where(eq(schema.clientPhotos.clientId, c.id)).run();
             (c.photos ?? []).forEach(p =>
               tx.insert(schema.clientPhotos).values({ ...p, clientId: c.id })
                 .onConflictDoUpdate({ target: schema.clientPhotos.id, set: { ...p, clientId: c.id } }).run()
@@ -394,16 +418,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setProductsState(prev => {
       let next = typeof action === 'function' ? action(prev) : action;
       if (typeof action === 'function') {
+        const prevById = new Map(prev.map(p => [p.id, p]));
         next = next.map(item => {
-          const prevItem = prev.find(p => p.id === item.id);
+          const prevItem = prevById.get(item.id);
           return prevItem !== item ? { ...item, updatedAt: Date.now() } : item;
         });
       }
-      registerTombstones(prev, next);
-      if (loadedRef.current) {
+      const { removed, changed } = diffById(prev, next);
+      registerTombstones(removed);
+      if (loadedRef.current && (removed.length > 0 || changed.length > 0)) {
         db.transaction((tx) => {
-          tx.delete(schema.products).run();
-          next.forEach(p =>
+          if (removed.length > 0) {
+            tx.delete(schema.products).where(inArray(schema.products.id, removed.map(p => p.id))).run();
+          }
+          changed.forEach(p =>
             tx.insert(schema.products).values(productToRow(p))
               .onConflictDoUpdate({ target: schema.products.id, set: productToRow(p) }).run()
           );
@@ -417,25 +445,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAppointmentsState(prev => {
       let next = typeof action === 'function' ? action(prev) : action;
       if (typeof action === 'function') {
+        const prevById = new Map(prev.map(p => [p.id, p]));
         next = next.map(item => {
-          const prevItem = prev.find(p => p.id === item.id);
+          const prevItem = prevById.get(item.id);
           return prevItem !== item ? { ...item, updatedAt: Date.now() } : item;
         });
       }
-      registerTombstones(prev, next);
+      const { removed, changed } = diffById(prev, next);
+      registerTombstones(removed);
       // Appointments removed outright (client delete, sync tombstones) skip the
       // calendar-sync effect, so their Apple Calendar events must be cleaned up here.
-      const removedEventIds = prev
-        .filter(p => p.appleEventId && !next.some(n => n.id === p.id))
+      const removedEventIds = removed
+        .filter(p => p.appleEventId)
         .map(p => p.appleEventId!);
       if (removedEventIds.length > 0) deleteCalendarEvents(removedEventIds);
-      if (loadedRef.current) {
+      if (loadedRef.current && (removed.length > 0 || changed.length > 0)) {
         db.transaction((tx) => {
-          tx.delete(schema.appointmentProducts).run();
-          tx.delete(schema.appointments).run();
-          next.forEach(a => {
+          if (removed.length > 0) {
+            const ids = removed.map(a => a.id);
+            tx.delete(schema.appointmentProducts).where(inArray(schema.appointmentProducts.appointmentId, ids)).run();
+            tx.delete(schema.appointments).where(inArray(schema.appointments.id, ids)).run();
+          }
+          changed.forEach(a => {
             tx.insert(schema.appointments).values(appointmentToRow(a))
               .onConflictDoUpdate({ target: schema.appointments.id, set: appointmentToRow(a) }).run();
+            tx.delete(schema.appointmentProducts).where(eq(schema.appointmentProducts.appointmentId, a.id)).run();
             a.products.forEach(ap =>
               tx.insert(schema.appointmentProducts).values({ appointmentId: a.id, ...ap }).run()
             );
@@ -450,19 +484,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setServicesState(prev => {
       let next = typeof action === 'function' ? action(prev) : action;
       if (typeof action === 'function') {
+        const prevById = new Map(prev.map(p => [p.id, p]));
         next = next.map(item => {
-          const prevItem = prev.find(p => p.id === item.id);
+          const prevItem = prevById.get(item.id);
           return prevItem !== item ? { ...item, updatedAt: Date.now() } : item;
         });
       }
-      registerTombstones(prev, next);
-      if (loadedRef.current) {
+      const { removed, changed } = diffById(prev, next);
+      registerTombstones(removed);
+      if (loadedRef.current && (removed.length > 0 || changed.length > 0)) {
         db.transaction((tx) => {
-          tx.delete(schema.serviceProducts).run();
-          tx.delete(schema.services).run();
-          next.forEach(s => {
+          if (removed.length > 0) {
+            const ids = removed.map(s => s.id);
+            tx.delete(schema.serviceProducts).where(inArray(schema.serviceProducts.serviceId, ids)).run();
+            tx.delete(schema.services).where(inArray(schema.services.id, ids)).run();
+          }
+          changed.forEach(s => {
             tx.insert(schema.services).values(serviceToRow(s))
               .onConflictDoUpdate({ target: schema.services.id, set: serviceToRow(s) }).run();
+            tx.delete(schema.serviceProducts).where(eq(schema.serviceProducts.serviceId, s.id)).run();
             s.defaults.forEach(pid =>
               tx.insert(schema.serviceProducts).values({ serviceId: s.id, productId: pid, type: 'default' }).run()
             );
@@ -499,7 +539,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSchedule(DEFAULT_SCHEDULE);
   };
 
-  const loadFromExport = async (data: ExportPayload) => {
+  const loadFromExport = async (raw: ExportPayload) => {
+    const data = sanitizePayload(raw);
     setClients(data.clients);
     setProducts(data.products);
     setAppointments(data.appointments);
@@ -553,6 +594,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       remindersEnabled, setRemindersEnabled,
       reminderLeadMinutes, setReminderLeadMinutes,
       vatRate, setVatRate,
+      currency, setCurrency,
+      hour24, setHour24,
       calendarSyncEnabled, setCalendarSyncEnabled,
       iCloudSyncEnabled, setICloudSyncEnabled,
       appleCalendarId, setAppleCalendarId,

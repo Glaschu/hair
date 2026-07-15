@@ -11,6 +11,7 @@ import { Avatar, Card, Icons, RoundBtn, StatusBadge, CustomTimeRow, ProductPicke
 import { Client, Service, Product } from '../data/types';
 import { fmt, isSameDay, addDays, checkSchedule, fmtHHMM, DAY_NAMES, generateTimeSlots, createClient, clientMatchesQuery } from '../data/utils';
 import { hasConflict } from '../data/booking';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'NewAppointment'>;
@@ -220,10 +221,10 @@ export default function NewAppointmentScreen() {
               {selectedClient?.name} · {selectedService?.name}{'\n'}
               {repeatWeeks > 0
                 ? `${repeatTimes} visits · every ${repeatWeeks} weeks`
-                : `${fmt.rel(selectedDate.toISOString())} at ${selectedTime.h % 12 || 12}:${selectedTime.m.toString().padStart(2, '0')}${selectedTime.h >= 12 ? 'pm' : 'am'}`}
+                : `${fmt.rel(selectedDate.toISOString())} at ${fmt.clock(selectedTime.h, selectedTime.m)}`}
             </Text>
             <Pressable
-              style={[styles.doneBtn, { backgroundColor: theme.accent }]}
+              style={({ pressed }) => [styles.doneBtn, { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 }]}
               onPress={() => nav.goBack()}
             >
               <Text style={styles.doneBtnText}>Done</Text>
@@ -399,7 +400,7 @@ export default function NewAppointmentScreen() {
                       {showMonth && (
                         <View style={styles.monthDivider}>
                           <Text style={[styles.monthDividerText, { color: theme.ink3 }]}>
-                            {day.toLocaleDateString('en-GB', { month: 'long' })}
+                            {day.toLocaleDateString(undefined, { month: 'long' })}
                           </Text>
                         </View>
                       )}
@@ -410,7 +411,7 @@ export default function NewAppointmentScreen() {
                         }]}
                       >
                         <Text style={[styles.datePillDay, { color: isSelected ? '#fff' : theme.ink3 }]}>
-                          {day.toLocaleDateString('en-GB', { weekday: 'short' })}
+                          {day.toLocaleDateString(undefined, { weekday: 'short' })}
                         </Text>
                         <Text style={[styles.datePillNum, { color: isSelected ? '#fff' : theme.ink }]}>
                           {day.getDate()}
@@ -427,7 +428,7 @@ export default function NewAppointmentScreen() {
               {timeSlots.map(({ h, m }) => {
                 const taken = isSlotTaken(h, m);
                 const selected = selectedTime.h === h && selectedTime.m === m;
-                const label = `${h % 12 || 12}:${m.toString().padStart(2, '0')}${h >= 12 ? 'pm' : 'am'}`;
+                const label = fmt.clock(h, m);
                 return (
                   <Pressable
                     key={`${h}${m}`}
@@ -475,7 +476,7 @@ export default function NewAppointmentScreen() {
             )}
 
             <Pressable
-              style={[styles.nextBtn, { backgroundColor: theme.accent }]}
+              style={({ pressed }) => [styles.nextBtn, { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 }]}
               onPress={goNext}
             >
               <Text style={styles.nextBtnText}>Continue</Text>
@@ -546,7 +547,7 @@ export default function NewAppointmentScreen() {
             />
 
             <Pressable
-              style={[styles.nextBtn, { backgroundColor: theme.accent }]}
+              style={({ pressed }) => [styles.nextBtn, { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 }]}
               onPress={goNext}
             >
               <Text style={styles.nextBtnText}>Review</Text>
@@ -594,7 +595,7 @@ export default function NewAppointmentScreen() {
             <Card style={{ marginBottom: 16 }}>
               <ReviewRow icon={<Icons.users size={16} color={theme.accent} />} label="Client" value={selectedClient.name} theme={theme} />
               <ReviewRow icon={<Icons.scissors size={16} color={theme.accent} />} label="Service" value={selectedService.name} theme={theme} />
-              <ReviewRow icon={<Icons.clock size={16} color={theme.accent} />} label="Time" value={`${fmt.rel(selectedDate.toISOString())} at ${selectedTime.h % 12 || 12}:${selectedTime.m.toString().padStart(2, '0')}${selectedTime.h >= 12 ? 'pm' : 'am'}`} theme={theme} />
+              <ReviewRow icon={<Icons.clock size={16} color={theme.accent} />} label="Time" value={`${fmt.rel(selectedDate.toISOString())} at ${fmt.clock(selectedTime.h, selectedTime.m)}`} theme={theme} />
               <ReviewRow icon={<Icons.clock size={16} color={theme.accent} />} label="Duration" value={fmt.duration(selectedService.duration)} theme={theme} />
               <ReviewRow icon={<Icons.trend size={16} color={theme.accent} />} label="Price" value={fmt.currency(selectedService.price)} theme={theme} />
             </Card>
@@ -655,7 +656,7 @@ export default function NewAppointmentScreen() {
             </Card>
 
             <Pressable
-              style={[styles.nextBtn, { backgroundColor: theme.accent }]}
+              style={({ pressed }) => [styles.nextBtn, { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 }]}
               onPress={submit}
             >
               <Icons.check size={18} color="#fff" />
@@ -717,7 +718,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12,
   },
-  headerTitle: { fontSize: 17, fontWeight: '600', fontStyle: 'italic' },
+  headerTitle: { fontSize: 17, fontFamily: SERIF },
   progress: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 6 },
   progressDot: {
     width: 20, height: 20, borderRadius: 10,
@@ -726,7 +727,7 @@ const styles = StyleSheet.create({
   },
   progressLine: { flex: 1, height: 2, borderRadius: 1, marginHorizontal: 4 },
   stepLabel: { fontSize: 11, letterSpacing: 0.5, paddingHorizontal: 20, paddingBottom: 16, fontWeight: '500' },
-  stepTitle: { fontSize: 24, fontWeight: '600', fontStyle: 'italic', marginBottom: 20, letterSpacing: -0.3 },
+  stepTitle: { fontSize: 24, fontFamily: SERIF, marginBottom: 20, letterSpacing: -0.3 },
   selectRow: {
     flexDirection: 'row', alignItems: 'center',
     borderWidth: 0.5, borderRadius: 14, padding: 14, marginBottom: 10,
@@ -822,7 +823,7 @@ const styles = StyleSheet.create({
     width: 96, height: 96, borderRadius: 48,
     alignItems: 'center', justifyContent: 'center', marginBottom: 24,
   },
-  confirmedTitle: { fontSize: 34, fontWeight: '600', fontStyle: 'italic', marginBottom: 12 },
+  confirmedTitle: { fontSize: 34, fontFamily: SERIF, marginBottom: 12 },
   confirmedSub: { fontSize: 15, textAlign: 'center', lineHeight: 22, marginBottom: 32 },
   doneBtn: { paddingHorizontal: 40, paddingVertical: 16, borderRadius: 16 },
   doneBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },

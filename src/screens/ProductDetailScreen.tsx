@@ -9,6 +9,7 @@ import { useApp } from '../data/AppContext';
 import { RootStackParamList } from '../navigation/types';
 import { Avatar, Card, Icons, RoundBtn, StockBar } from '../components';
 import { fmt } from '../data/utils';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'ProductDetail'>;
@@ -81,7 +82,7 @@ export default function ProductDetailScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 140 }} showsVerticalScrollIndicator={false}>
         {/* Nav */}
         <View style={styles.navRow}>
-          <RoundBtn onPress={() => nav.goBack()} size={38}>
+          <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
             <Icons.chevronLeft size={18} color={theme.ink} />
           </RoundBtn>
           <RoundBtn size={38} onPress={() => nav.navigate('ProductForm', { productId: product.id })}>
@@ -295,7 +296,7 @@ const styles = StyleSheet.create({
   },
   heroSwatchText: { fontSize: 14, fontWeight: '700', letterSpacing: 2 },
   heroEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '500', marginBottom: 6 },
-  heroName: { fontSize: 28, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.3, lineHeight: 32 },
+  heroName: { fontSize: 28, fontFamily: SERIF, letterSpacing: -0.3, lineHeight: 32 },
 
   // Stock card
   stockHeader: {
@@ -319,7 +320,7 @@ const styles = StyleSheet.create({
   stockMetaText: { fontSize: 11 },
 
   sectionEye: { fontSize: 10, letterSpacing: 1.4, fontWeight: '400' },
-  sectionTitle: { fontSize: 22, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.3 },
+  sectionTitle: { fontSize: 22, fontFamily: SERIF, letterSpacing: -0.3 },
 
   // Forecast
   forecastRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },

@@ -5,6 +5,7 @@ import { useApp } from '../data/AppContext';
 import { Icons } from '../components';
 import { initials } from '../data/utils';
 import { Section, useShell } from './shellContext';
+import { SERIF } from '../theme';
 
 interface NavDef {
   id: Section;
@@ -42,6 +43,8 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
       <Pressable
         key={n.id}
         onPress={() => go(n.id)}
+        accessibilityRole="button"
+        accessibilityLabel={n.label}
         style={[
           styles.item,
           collapsed && styles.itemCollapsed,
@@ -108,7 +111,7 @@ const styles = StyleSheet.create({
   },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 22 },
   logoDot: { width: 10, height: 10, borderRadius: 5 },
-  logo: { fontSize: 26, fontWeight: '600', fontStyle: 'italic', letterSpacing: -0.5 },
+  logo: { fontSize: 26, fontFamily: SERIF, letterSpacing: -0.5 },
   sectionLabel: { fontSize: 10, letterSpacing: 1.4, fontWeight: '600', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 },
   item: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -122,7 +125,7 @@ const styles = StyleSheet.create({
   footer: { borderTopWidth: 0.5, paddingTop: 10, gap: 2 },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingTop: 14 },
   userAvatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  userAvatarText: { color: '#fff', fontSize: 12, fontWeight: '500', fontStyle: 'italic' },
+  userAvatarText: { color: '#fff', fontSize: 12, fontFamily: SERIF },
   userName: { fontSize: 13, fontWeight: '600' },
   userRole: { fontSize: 11, marginTop: 1 },
 });

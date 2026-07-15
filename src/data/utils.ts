@@ -1,10 +1,40 @@
 import { Client, Schedule } from './types';
 
+// Display preferences, set once from Settings via configureFormats so a stylist
+// anywhere can see her own currency and clock convention.
+let CURRENCY = '£';
+let HOUR24 = false;
+
+export function configureFormats(opts: { currency?: string; hour24?: boolean }): void {
+  if (opts.currency !== undefined) CURRENCY = opts.currency;
+  if (opts.hour24 !== undefined) HOUR24 = opts.hour24;
+}
+
+export const is24Hour = (): boolean => HOUR24;
+
+/** Symbols offered in Settings. Multi-letter codes keep a trailing space so "CHF 85" reads right. */
+export const CURRENCY_OPTIONS = ['£', '$', '€', '¥', 'CHF ', 'kr ', 'R$ ', '₹'];
+
+/** Best guess at the device's clock convention — used as the first-run default. */
+export function deviceUses24HourClock(): boolean {
+  try {
+    return new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hour12 === false;
+  } catch {
+    return false;
+  }
+}
+
 export const fmt = {
+  /** Formats an hour+minute pair in the user's clock convention ("2:30pm" / "14:30"). */
+  clock: (h: number, m: number): string => {
+    if (HOUR24) return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    return `${h % 12 || 12}:${m.toString().padStart(2, '0')}${h >= 12 ? 'pm' : 'am'}`;
+  },
   time: (iso: string): string => {
     const d = new Date(iso);
     let h = d.getHours();
     const m = d.getMinutes();
+    if (HOUR24) return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
     const ap = h >= 12 ? 'pm' : 'am';
     h = h % 12 || 12;
     return `${h}:${m.toString().padStart(2, '0')} ${ap}`;
@@ -13,16 +43,17 @@ export const fmt = {
     const d = new Date(iso);
     let h = d.getHours();
     const m = d.getMinutes();
+    if (HOUR24) return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
     const ap = h >= 12 ? 'pm' : 'am';
     h = h % 12 || 12;
     return m === 0 ? `${h}${ap}` : `${h}:${m.toString().padStart(2, '0')}${ap}`;
   },
   day: (iso: string): string => {
     const d = new Date(iso);
-    return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   },
   monthYr: (d: Date): string =>
-    d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+    d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
   rel: (iso: string): string => {
     const d = new Date(iso);
     const today = new Date();
@@ -33,8 +64,8 @@ export const fmt = {
     if (diff === 0) return 'Today';
     if (diff === 1) return 'Tomorrow';
     if (diff === -1) return 'Yesterday';
-    if (diff > 1 && diff < 7) return d.toLocaleDateString('en-GB', { weekday: 'long' });
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    if (diff > 1 && diff < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
+    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   },
   ago: (iso: string): string => {
     const d = new Date(iso);
@@ -49,7 +80,7 @@ export const fmt = {
     const fixed = Math.abs(amount).toFixed(decimals);
     const [int, dec] = fixed.split('.');
     const intFormatted = int.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    return dec !== undefined ? `£${intFormatted}.${dec}` : `£${intFormatted}`;
+    return dec !== undefined ? `${CURRENCY}${intFormatted}.${dec}` : `${CURRENCY}${intFormatted}`;
   },
   duration: (mins: number): string => {
     if (mins < 60) return `${mins}m`;
@@ -62,6 +93,7 @@ export const fmt = {
 export function initials(name: string): string {
   return name
     .split(' ')
+    .filter(Boolean)
     .slice(0, 2)
     .map((p) => p[0])
     .join('');
@@ -70,7 +102,8 @@ export function initials(name: string): string {
 export function groupByLetter<T extends { name: string }>(items: T[]): { letter: string; data: T[] }[] {
   const map = new Map<string, T[]>();
   for (const item of items) {
-    const letter = item.name[0].toUpperCase();
+    // Imported or synced records can arrive with blank names — never crash on them.
+    const letter = (item.name?.trim()[0] ?? '#').toUpperCase();
     if (!map.has(letter)) map.set(letter, []);
     map.get(letter)!.push(item);
   }
@@ -103,6 +136,7 @@ export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'
 
 export function fmtHHMM(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number);
+  if (HOUR24) return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
   const ap = h >= 12 ? 'pm' : 'am';
   const h12 = h % 12 || 12;
   return m === 0 ? `${h12}${ap}` : `${h12}:${m.toString().padStart(2, '0')}${ap}`;

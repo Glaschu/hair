@@ -63,12 +63,16 @@ export const accentOptions = [
   '#2A201A',
 ];
 
+/** The display serif. Use via `typography.serif` — never pair with fontWeight/fontStyle,
+ *  Android falls back to a synthesized system font when they conflict with a custom family. */
+export const SERIF = 'CormorantGaramond_500Medium_Italic';
+
 export const typography = {
-  serif: (size: number, weight: TextStyle['fontWeight'] = '500'): TextStyle => ({
-    fontFamily: 'CormorantGaramond_500Medium_Italic',
+  serif: (size: number): TextStyle => ({
+    fontFamily: SERIF,
     fontSize: size,
-    fontWeight: weight,
-    letterSpacing: -0.015 * size,
+    lineHeight: size * 1.1,
+    letterSpacing: -0.01 * size,
   }),
   sans: (size: number, weight: TextStyle['fontWeight'] = '400'): TextStyle => ({
     fontFamily: 'DMSans_400Regular',

@@ -10,6 +10,7 @@ import { fmt } from '../../data/utils';
 import { Product } from '../../data/types';
 import { Eyebrow, Title, Btn } from '../ui';
 import { useShell } from '../shellContext';
+import { SERIF } from '../../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -114,7 +115,7 @@ function StockRow({ product, projected, selected, onPress }: { product: Product;
           <Text style={{ color: theme.ink2, fontSize: 12 }} numberOfLines={1}>{product.brand} · {product.category}</Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Text style={{ fontSize: 22, fontWeight: '500', fontStyle: 'italic', color: theme.ink, lineHeight: 24 }}>{product.stock}</Text>
+          <Text style={{ fontSize: 22, fontFamily: SERIF, color: theme.ink, lineHeight: 24 }}>{product.stock}</Text>
           <Text style={{ color: theme.ink3, fontSize: 11 }}>× {product.size}{product.unit}</Text>
         </View>
       </View>
@@ -185,13 +186,13 @@ function ProductDetailPanel({ productId }: { productId: string }) {
             <Eyebrow>ON HAND</Eyebrow>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 8 }}>
               <RoundBtn size={34} onPress={() => setStock(product.stock - 1)}><Icons.close size={14} color={theme.ink2} /></RoundBtn>
-              <Text style={{ fontSize: 34, fontWeight: '500', fontStyle: 'italic', color: theme.ink, minWidth: 36, textAlign: 'center' }}>{product.stock}</Text>
+              <Text style={{ fontSize: 34, fontFamily: SERIF, color: theme.ink, minWidth: 36, textAlign: 'center' }}>{product.stock}</Text>
               <RoundBtn size={34} onPress={() => setStock(product.stock + 1)}><Icons.plus size={14} color={theme.ink2} /></RoundBtn>
             </View>
           </View>
           <View style={[styles.box, { backgroundColor: theme.bg2 }]}>
             <Eyebrow>REORDER AT</Eyebrow>
-            <Text style={{ fontSize: 34, fontWeight: '500', fontStyle: 'italic', color: theme.ink, marginTop: 8 }}>{product.reorder}<Text style={{ fontSize: 12, color: theme.ink3, fontStyle: 'normal' }}>  {product.unit}</Text></Text>
+            <Text style={{ fontSize: 34, fontFamily: SERIF, color: theme.ink, marginTop: 8 }}>{product.reorder}<Text style={{ fontSize: 12, color: theme.ink3, fontFamily: 'DMSans_400Regular' }}>  {product.unit}</Text></Text>
           </View>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 }}>
@@ -232,7 +233,7 @@ function ProductDetailPanel({ productId }: { productId: string }) {
               const amt = a.products.find((p) => p.productId === product.id)?.amount ?? 0;
               return (
                 <Pressable key={a.id} onPress={() => nav.navigate('AppointmentDetail', { appointmentId: a.id })} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <Text style={{ width: 56, color: theme.ink3, fontSize: 12 }}>{new Date(a.start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</Text>
+                  <Text style={{ width: 56, color: theme.ink3, fontSize: 12 }}>{new Date(a.start).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</Text>
                   {c && <Avatar name={c.name} tone={c.tone} size={28} />}
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={{ fontWeight: '500', fontSize: 13, color: theme.ink }} numberOfLines={1}>{c?.name}</Text>

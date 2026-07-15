@@ -12,7 +12,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
 import { RootStackParamList } from '../navigation/types';
 import { Avatar, Icons, RoundBtn } from '../components';
-import { fmt, isSameDay, addDays, startOfWeek } from '../data/utils';
+import { fmt, isSameDay, addDays, startOfWeek, is24Hour } from '../data/utils';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CalView = 'day' | 'week' | 'month';
@@ -160,7 +161,7 @@ export default function CalendarScreen() {
                     isCurrentMonth && !isSelected && { borderWidth: 1.5, borderColor: theme.accent },
                   ]}>
                     <Text style={[styles.dayNumText, { fontSize: 12, color: isSelected ? '#fff' : isCurrentMonth ? theme.accent : theme.ink }]}>
-                      {mDate.toLocaleDateString('en-GB', { month: 'short' })}
+                      {mDate.toLocaleDateString(undefined, { month: 'short' })}
                     </Text>
                   </View>
                 </Pressable>
@@ -217,7 +218,7 @@ function DayHourGrid({ appts, date, density }: { appts: any[]; date: Date; densi
         {hours.map((h) => (
           <View key={h} style={{ height: HOUR_HEIGHT, flexDirection: 'row', alignItems: 'flex-start' }}>
             <Text style={[styles.hourLabel, { color: theme.ink3 }]}>
-              {h % 12 || 12}{h < 12 ? 'am' : 'pm'}
+              {is24Hour() ? `${h.toString().padStart(2, '0')}:00` : `${h % 12 || 12}${h < 12 ? 'am' : 'pm'}`}
             </Text>
             <View style={[styles.hourLine, { backgroundColor: theme.line }]} />
           </View>
@@ -285,7 +286,7 @@ function WeekView({ days, allAppts, selectedDate, onSelectDay, density: _density
             color: isToday ? theme.accent : theme.ink2,
             fontWeight: isToday ? '700' : '500',
           }]}>
-            {day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+            {day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
           </Text>
           {dayAppts.length > 0 && (
             <Text style={[styles.weekDayCount, { color: theme.ink3 }]}>{dayAppts.length} appt{dayAppts.length > 1 ? 's' : ''}</Text>
@@ -397,7 +398,7 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
       {/* Selected day appts */}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 30 }}>
         <Text style={[styles.monthDayTitle, { color: theme.ink3 }]}>
-          {selectedDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}
+          {selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}
         </Text>
         {dayAppts.length === 0 ? (
           <Text style={[styles.noAppts, { color: theme.ink3 }]}>No appointments</Text>
@@ -434,7 +435,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12 },
   eyebrow: { fontSize: 10, letterSpacing: 1.4, marginBottom: 4 },
-  title: { fontSize: 34, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5 },
+  title: { fontSize: 34, fontFamily: SERIF, letterSpacing: -0.5 },
   todayBtn: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, marginRight: 10 },
   todayBtnText: { fontSize: 13, fontWeight: '600' },
   toggleRow: { flexDirection: 'row', marginHorizontal: 20, marginBottom: 12, padding: 3, borderRadius: 12 },

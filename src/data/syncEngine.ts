@@ -1,6 +1,7 @@
 import { CloudStorage } from 'react-native-cloud-storage';
 import { File, Paths, Directory } from 'expo-file-system';
 import { ExportPayload, ClientPhoto } from './types';
+import { sanitizePayload } from './sanitize';
 
 const SYNC_FILE = '/iris-sync.json';
 
@@ -16,7 +17,9 @@ export async function pushSync(payload: ExportPayload): Promise<void> {
   if (exists) {
     try {
       const raw = await CloudStorage.readFile(SYNC_FILE);
-      const remote = JSON.parse(raw) as ExportPayload;
+      // The remote file may have been written by another app version or corrupted
+      // in transit — repair it before merging so bad records never reach the UI.
+      const remote = sanitizePayload(JSON.parse(raw) as ExportPayload);
       if (remote.version === 1) {
         finalPayload = {
           version: 1,
@@ -61,7 +64,7 @@ export async function pullSync(localPayload: ExportPayload): Promise<ExportPaylo
   if (!exists) return null; // Nothing to pull
 
   const raw = await CloudStorage.readFile(SYNC_FILE);
-  const remote = JSON.parse(raw) as ExportPayload;
+  const remote = sanitizePayload(JSON.parse(raw) as ExportPayload);
 
   if (remote.version !== 1) throw new Error('Unsupported sync version');
 

@@ -15,6 +15,7 @@ import { deductStock, restoreStock } from '../data/stock';
 import { notifyLowStock } from '../data/notifications';
 import { savePhoto, deletePhoto, getPhotoUri } from '../db/photos';
 import { Appointment, Product, ClientPhoto } from '../data/types';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AppointmentDetail'>;
@@ -210,7 +211,7 @@ export default function AppointmentDetailScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 140 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {/* Top bar */}
         <View style={styles.topBar}>
-          <RoundBtn onPress={() => nav.goBack()} size={38}>
+          <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
             <Icons.chevronLeft size={18} color={theme.ink} />
           </RoundBtn>
           <View style={{ width: 38 }} />
@@ -662,7 +663,7 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 9, letterSpacing: 1.2, fontWeight: '700' },
 
   dateEyebrow: { fontSize: 11, letterSpacing: 1.2, fontWeight: '500', marginBottom: 6 },
-  serviceTitle: { fontSize: 30, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5, lineHeight: 34 },
+  serviceTitle: { fontSize: 30, fontFamily: SERIF, letterSpacing: -0.5, lineHeight: 34 },
 
   clientCard: {
     flexDirection: 'row',
@@ -689,7 +690,7 @@ const styles = StyleSheet.create({
   allergyText: { fontSize: 13, lineHeight: 18 },
   formulaCard: { borderRadius: 12, borderWidth: 0.5, padding: 14 },
   formulaText: { fontFamily: 'DMMono_400Regular', fontSize: 12, lineHeight: 18 },
-  sectionTitle: { fontSize: 20, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.3 },
+  sectionTitle: { fontSize: 20, fontFamily: SERIF, letterSpacing: -0.3 },
   addProductBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingBottom: 2 },
   addProductText: { fontSize: 13, fontWeight: '500' },
 
@@ -824,7 +825,7 @@ const styles = StyleSheet.create({
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   sheet: { borderRadius: 24, padding: 20, paddingBottom: 40, maxHeight: '80%' },
   sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.15)', alignSelf: 'center', marginBottom: 16 },
-  sheetTitle: { fontSize: 20, fontWeight: '600', fontStyle: 'italic', marginBottom: 8 },
+  sheetTitle: { fontSize: 20, fontFamily: SERIF, marginBottom: 8 },
   sheetDesc: { fontSize: 13, lineHeight: 19, marginBottom: 18 },
 
   // Picker

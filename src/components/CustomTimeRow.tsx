@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useApp } from '../data/AppContext';
+import { is24Hour } from '../data/utils';
 
 interface Props {
   value: { h: number; m: number };
@@ -25,7 +26,7 @@ export function CustomTimeRow({ value, onChange }: Props) {
               style={[styles.chip, { backgroundColor: active ? theme.accent : theme.bg2 }]}
             >
               <Text style={[styles.chipText, { color: active ? '#fff' : theme.ink2 }]}>
-                {h % 12 || 12}{h >= 12 ? 'pm' : 'am'}
+                {is24Hour() ? h.toString().padStart(2, '0') : `${h % 12 || 12}${h >= 12 ? 'pm' : 'am'}`}
               </Text>
             </Pressable>
           );

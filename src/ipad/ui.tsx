@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet, StyleProp, ViewStyle, TextStyle } from 'react-native';
 import { useApp } from '../data/AppContext';
+import { SERIF } from '../theme';
 
 /** Uppercase tracked label used above headings throughout the iPad layouts. */
 export function Eyebrow({ children, color, style }: { children: React.ReactNode; color?: string; style?: StyleProp<TextStyle> }) {
@@ -12,7 +13,7 @@ export function Eyebrow({ children, color, style }: { children: React.ReactNode;
 export function Title({ children, size = 30, color, style }: { children: React.ReactNode; size?: number; color?: string; style?: StyleProp<TextStyle> }) {
   const { theme } = useApp();
   return (
-    <Text style={[styles.title, { fontSize: size, lineHeight: size * 1.04, color: color ?? theme.ink }, style]}>
+    <Text style={[styles.title, { fontSize: size, lineHeight: size * 1.12, color: color ?? theme.ink }, style]}>
       {children}
     </Text>
   );
@@ -43,6 +44,8 @@ export function Btn({
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !!disabled }}
       style={({ pressed }) => [
         styles.btn,
         compact && { paddingVertical: 8, paddingHorizontal: 14 },
@@ -90,7 +93,7 @@ export function StatTile({
 
 const styles = StyleSheet.create({
   eyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '600' },
-  title: { fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5 },
+  title: { fontFamily: SERIF, letterSpacing: -0.4 },
   btn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 10, paddingHorizontal: 16, borderRadius: 999, borderWidth: 0.5,
@@ -98,7 +101,7 @@ const styles = StyleSheet.create({
   btnText: { fontWeight: '500' },
   statTile: { flex: 1, borderRadius: 14, borderWidth: 0.5, paddingVertical: 14, paddingHorizontal: 16, minWidth: 0 },
   statLabel: { fontSize: 10, letterSpacing: 1.2, fontWeight: '500' },
-  statValue: { fontSize: 26, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5, marginTop: 5 },
+  statValue: { fontFamily: SERIF, fontSize: 26, lineHeight: 30, letterSpacing: -0.4, marginTop: 5 },
   statValueNode: { marginTop: 6, height: 30, justifyContent: 'center' },
   statSub: { fontSize: 12, marginTop: 6 },
 });

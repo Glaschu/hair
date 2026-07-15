@@ -10,6 +10,7 @@ import { RootStackParamList } from '../navigation/types';
 import { Card, Avatar, Icons, RoundBtn } from '../components';
 import { fmt } from '../data/utils';
 import { Appointment, Product } from '../data/types';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Range = 'week' | 'month' | 'all';
@@ -83,8 +84,8 @@ export default function ReportsScreen() {
 
   const rangeStr = useMemo(() => {
     if (range === 'all') return '';
-    const s = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    const e = end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const s = start.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    const e = end.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
     return ` · ${s.toUpperCase()} - ${e.toUpperCase()}`;
   }, [range, start, end]);
 
@@ -173,7 +174,7 @@ export default function ReportsScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <RoundBtn onPress={() => nav.goBack()} size={38}>
+          <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
             <Icons.chevronLeft size={18} color={theme.ink} />
           </RoundBtn>
           <View style={{ flex: 1, paddingHorizontal: 16 }}>
@@ -426,7 +427,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   headerEye: { fontSize: 10, letterSpacing: 1.4, fontWeight: '400', marginBottom: 4 },
-  headerTitle: { fontSize: 28, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5 },
+  headerTitle: { fontSize: 28, fontFamily: SERIF, letterSpacing: -0.5 },
 
   // Range toggle
   rangeTrack: { flexDirection: 'row', borderRadius: 12, padding: 3 },
@@ -489,7 +490,7 @@ const styles = StyleSheet.create({
   // Section head
   sectionHead: { paddingHorizontal: 20, marginBottom: 12 },
   sectionEye: { fontSize: 10, letterSpacing: 1.4, fontWeight: '400', marginBottom: 4 },
-  sectionTitle: { fontSize: 22, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.3 },
+  sectionTitle: { fontSize: 22, fontFamily: SERIF, letterSpacing: -0.3 },
   outstandingHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 },
   outstandingLabel: { fontSize: 10, letterSpacing: 1.2, fontWeight: '600' },
   outstandingAmount: { fontSize: 22, fontWeight: '600' },

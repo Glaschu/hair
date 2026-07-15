@@ -6,7 +6,7 @@ import { useApp } from '../../data/AppContext';
 import { useResponsive } from '../../hooks/useResponsive';
 import { RootStackParamList } from '../../navigation/types';
 import { Avatar, Icons, RoundBtn } from '../../components';
-import { fmt, isSameDay, addDays, startOfWeek } from '../../data/utils';
+import { fmt, isSameDay, addDays, startOfWeek, is24Hour } from '../../data/utils';
 import { Appointment, Schedule } from '../../data/types';
 
 /** Configured open hours for a date's weekday (0 when closed/unset). */
@@ -18,6 +18,7 @@ function dayOpenHours(schedule: Schedule, d: Date): number {
   return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
 }
 import { Eyebrow, Title, Btn } from '../ui';
+import { SERIF } from '../../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CalView = 'day' | 'week' | 'month';
@@ -26,7 +27,7 @@ const DAY_SHORT = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const HOUR_START = 8;
 const HOUR_END = 20;
 const HOURS = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i);
-const hourLabel = (h: number) => `${h % 12 || 12} ${h < 12 ? 'am' : 'pm'}`;
+const hourLabel = (h: number) => is24Hour() ? `${h.toString().padStart(2, '0')}:00` : `${h % 12 || 12} ${h < 12 ? 'am' : 'pm'}`;
 
 export function CalendarIPad() {
   const { theme, appointments, density, schedule } = useApp();
@@ -95,7 +96,7 @@ export function CalendarIPad() {
         <MiniMonth selectedDate={selectedDate} onSelect={setSelectedDate} appts={appointments} />
         <View>
           <Eyebrow style={{ marginBottom: 8 }}>
-            {selectedDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase()} · {dayAppts.length} APPT{dayAppts.length === 1 ? '' : 'S'}
+            {selectedDate.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase()} · {dayAppts.length} APPT{dayAppts.length === 1 ? '' : 'S'}
           </Eyebrow>
           {dayAppts.length === 0 ? (
             <Text style={{ color: theme.ink3, fontStyle: 'italic', fontSize: 13 }}>Nothing booked.</Text>
@@ -132,7 +133,7 @@ export function CalendarIPad() {
             <View key={d.toISOString()}>
               <Pressable onPress={() => setSelectedDate(d)} style={{ marginBottom: 8 }}>
                 <Eyebrow color={isToday ? theme.accent : undefined}>
-                  {d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }).toUpperCase()}{appts.length ? ` · ${appts.length}` : ''}
+                  {d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' }).toUpperCase()}{appts.length ? ` · ${appts.length}` : ''}
                 </Eyebrow>
               </Pressable>
               {appts.length === 0
@@ -143,14 +144,14 @@ export function CalendarIPad() {
         })}
       </View>
     );
-    const weekLabel = `${weekStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${addDays(weekStart, 6).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+    const weekLabel = `${weekStart.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${addDays(weekStart, 6).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
     return (
       <View style={{ flex: 1 }}>
         <View style={{ paddingHorizontal: 28 }}>{header}</View>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 28, paddingBottom: 28, gap: 16 }} showsVerticalScrollIndicator={false}>
           {view === 'day' && (
             <>
-              {stepHeader(selectedDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }), () => setSelectedDate(addDays(selectedDate, -1)), () => setSelectedDate(addDays(selectedDate, 1)))}
+              {stepHeader(selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }), () => setSelectedDate(addDays(selectedDate, -1)), () => setSelectedDate(addDays(selectedDate, 1)))}
               {dayList}
             </>
           )}
@@ -165,7 +166,7 @@ export function CalendarIPad() {
               <MiniMonth selectedDate={selectedDate} onSelect={setSelectedDate} appts={appointments} />
               <View>
                 <Eyebrow style={{ marginBottom: 8 }}>
-                  {selectedDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase()} · {dayAppts.length} APPT{dayAppts.length === 1 ? '' : 'S'}
+                  {selectedDate.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase()} · {dayAppts.length} APPT{dayAppts.length === 1 ? '' : 'S'}
                 </Eyebrow>
                 {dayList}
               </View>
@@ -208,7 +209,7 @@ function WeekGrid({ weekDays, weekAppts, selectedDate, onSelectDay, hourHeight, 
             <Pressable key={d.toISOString()} onPress={() => onSelectDay(d)} style={{ flex: 1, alignItems: 'center', paddingVertical: 12 }}>
               <Text style={{ fontSize: 11, letterSpacing: 1, color: isSel ? theme.accent : theme.ink3, fontWeight: '500' }}>{DAY_SHORT[d.getDay()]}</Text>
               <View style={{ width: 34, height: 34, borderRadius: 17, marginTop: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: isToday ? theme.accent : isSel ? theme.accent + '22' : 'transparent' }}>
-                <Text style={{ fontSize: 17, fontWeight: '500', fontStyle: 'italic', color: isToday ? '#fff' : theme.ink }}>{d.getDate()}</Text>
+                <Text style={{ fontSize: 17, fontFamily: SERIF, color: isToday ? '#fff' : theme.ink }}>{d.getDate()}</Text>
               </View>
               {has && !isToday && <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: theme.accent, marginTop: 3 }} />}
             </Pressable>
@@ -338,7 +339,7 @@ function MiniMonth({ selectedDate, onSelect, appts }: { selectedDate: Date; onSe
   return (
     <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-        <Eyebrow style={{ flex: 1 }}>{viewMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase()}</Eyebrow>
+        <Eyebrow style={{ flex: 1 }}>{viewMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }).toUpperCase()}</Eyebrow>
         <Pressable onPress={() => shift(-1)} hitSlop={8}><Icons.chevronLeft size={16} color={theme.ink3} /></Pressable>
         <Pressable onPress={() => shift(1)} hitSlop={8} style={{ marginLeft: 6 }}><Icons.chevronRight size={16} color={theme.ink3} /></Pressable>
       </View>
@@ -396,11 +397,11 @@ function PeriodSummary({ label, appts, openHours }: { label: string; appts: Appo
       <Eyebrow>{label.toUpperCase()}</Eyebrow>
       <View style={{ flexDirection: 'row', marginTop: 10 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 26, fontWeight: '500', fontStyle: 'italic', color: theme.ink }}>{booked.length}</Text>
+          <Text style={{ fontSize: 26, fontFamily: SERIF, color: theme.ink }}>{booked.length}</Text>
           <Text style={{ color: theme.ink3, fontSize: 11, marginTop: 2 }}>appointment{booked.length === 1 ? '' : 's'}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 26, fontWeight: '500', fontStyle: 'italic', color: theme.ink }}>{fmt.currency(revenue)}</Text>
+          <Text style={{ fontSize: 26, fontFamily: SERIF, color: theme.ink }}>{fmt.currency(revenue)}</Text>
           <Text style={{ color: theme.ink3, fontSize: 11, marginTop: 2 }}>revenue</Text>
         </View>
       </View>

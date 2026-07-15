@@ -11,6 +11,7 @@ import { savePhoto, deletePhoto } from '../db/photos';
 import { RootStackParamList } from '../navigation/types';
 import { Avatar, Icons, RoundBtn, useLocalDialog } from '../components';
 import { createClient } from '../data/utils';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'ClientForm'>;
@@ -150,7 +151,7 @@ export default function ClientFormScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
       {/* Header */}
       <View style={styles.header}>
-        <RoundBtn onPress={() => nav.goBack()} size={38}>
+        <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
           <Icons.chevronLeft size={18} color={theme.ink} />
         </RoundBtn>
         <Text style={[styles.headerTitle, { color: theme.ink }]}>
@@ -357,7 +358,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     gap: 12,
   },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: '600', fontStyle: 'italic' },
+  headerTitle: { flex: 1, fontSize: 18, fontFamily: SERIF },
   saveBtn: { paddingHorizontal: 18, paddingVertical: 9, borderRadius: 999 },
   saveBtnText: { fontSize: 14, fontWeight: '600' },
 

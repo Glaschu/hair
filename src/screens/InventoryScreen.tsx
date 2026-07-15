@@ -10,6 +10,7 @@ import { RootStackParamList } from '../navigation/types';
 import { Card, Icons, StockBar, RoundBtn } from '../components';
 import { Product } from '../data/types';
 import { fmt } from '../data/utils';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -285,7 +286,7 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
   },
   eyebrow: { fontSize: 10, letterSpacing: 1.4, marginBottom: 4 },
-  title: { fontSize: 34, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5 },
+  title: { fontSize: 34, fontFamily: SERIF, letterSpacing: -0.5 },
   headerBtns: { flexDirection: 'row', gap: 8 },
 
   alertCard: {
@@ -316,7 +317,7 @@ const styles = StyleSheet.create({
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
   listSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 40 },
   listHandle: { width: 36, height: 4, borderRadius: 2, opacity: 0.35, alignSelf: 'center', marginBottom: 16 },
-  listTitle: { fontSize: 18, fontWeight: '600', fontStyle: 'italic' },
+  listTitle: { fontSize: 18, fontFamily: SERIF },
   listSub: { fontSize: 12, marginTop: 2, marginBottom: 10 },
   listRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 0.5, gap: 10 },
   listName: { fontSize: 14, fontWeight: '600' },

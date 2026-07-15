@@ -11,9 +11,9 @@ import { File, Paths } from 'expo-file-system';
 import { useApp, ExportPayload } from '../data/AppContext';
 import { DEFAULT_SCHEDULE } from '../data/mockData';
 import { RootStackParamList } from '../navigation/types';
-import { Card, Icons, RoundBtn, useLocalDialog } from '../components';
-import { accentOptions } from '../theme';
-import { fmt } from '../data/utils';
+import { Card, Icons, RoundBtn, useLocalDialog, PrivacyPolicyModal, appVersionLabel } from '../components';
+import { accentOptions, SERIF } from '../theme';
+import { fmt, CURRENCY_OPTIONS } from '../data/utils';
 import { requestNotificationPermission } from '../data/notifications';
 import { getOrCreateIrisCalendar, deleteIrisCalendar } from '../data/calendarSync';
 import { readAutoBackup } from '../data/backup';
@@ -38,13 +38,14 @@ for (let h = 6; h <= 22; h++) {
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SettingsScreen() {
-  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, vatRate, setVatRate, calendarSyncEnabled, setCalendarSyncEnabled, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
+  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, vatRate, setVatRate, currency, setCurrency, hour24, setHour24, calendarSyncEnabled, setCalendarSyncEnabled, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
   const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(studioName);
   const [timePicker, setTimePicker] = useState<{ day: number; field: 'start' | 'end' } | null>(null);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   const [busy, setBusy] = useState<null | 'export' | 'import' | 'sync'>(null);
 
   const handleExport = async () => {
@@ -247,7 +248,7 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <RoundBtn onPress={() => nav.goBack()} size={38}>
+          <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
             <Icons.chevronLeft size={18} color={theme.ink} />
           </RoundBtn>
           <Text style={[styles.title, { color: theme.ink }]}>Settings</Text>
@@ -345,6 +346,49 @@ export default function SettingsScreen() {
                   );
                 })}
               </View>
+            </View>
+            <View style={[styles.divider, { backgroundColor: theme.line }]} />
+            {/* Currency */}
+            <View style={[styles.settingRow, { flexDirection: 'column', alignItems: 'flex-start' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 12 }}>
+                <Text style={[styles.settingLabel, { color: theme.ink }]}>Currency</Text>
+                <Text style={{ fontSize: 11, color: theme.ink3 }}>Shown on prices and reports</Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                {CURRENCY_OPTIONS.map((c) => {
+                  const active = currency === c;
+                  return (
+                    <Pressable
+                      key={c}
+                      onPress={() => setCurrency(c)}
+                      style={[styles.densityChip, {
+                        backgroundColor: active ? theme.accent + '20' : theme.bg2,
+                        borderColor: active ? theme.accent : 'transparent',
+                      }]}
+                    >
+                      <Text style={[styles.densityChipText, { color: active ? theme.accent : theme.ink2, fontWeight: active ? '700' : '500' }]}>
+                        {c.trim()}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+            <View style={[styles.divider, { backgroundColor: theme.line }]} />
+            {/* Clock convention */}
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.settingLabel, { color: theme.ink }]}>24-hour time</Text>
+                <Text style={{ fontSize: 11, color: theme.ink3, marginTop: 2 }}>
+                  Show times as 14:30 instead of 2:30pm
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setHour24(!hour24)}
+                style={[styles.toggleTrack, { backgroundColor: hour24 ? theme.accent : theme.bg2 }]}
+              >
+                <View style={[styles.toggleThumb, { transform: [{ translateX: hour24 ? 22 : 2 }] }]} />
+              </Pressable>
             </View>
             <View style={[styles.divider, { backgroundColor: theme.line }]} />
             {/* Accent */}
@@ -642,9 +686,25 @@ export default function SettingsScreen() {
               </View>
               <Icons.chevronRight size={16} color={theme.ink3} />
             </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.line }]} />
+            <Pressable style={styles.dataRow} onPress={() => setPrivacyOpen(true)}>
+              <View style={[styles.dataIcon, { backgroundColor: theme.sage + '22' }]}>
+                <Icons.lock size={16} color={theme.sage} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.dataLabel, { color: theme.ink }]}>Privacy policy</Text>
+                <Text style={[styles.dataSub, { color: theme.ink3 }]}>Your data stays on your device</Text>
+              </View>
+              <Icons.chevronRight size={16} color={theme.ink3} />
+            </Pressable>
           </Card>
+          <Text style={[styles.dataNote, { color: theme.ink3, textAlign: 'center' }]}>
+            Iris · Version {appVersionLabel()}
+          </Text>
         </View>
       </ScrollView>
+
+      <PrivacyPolicyModal visible={privacyOpen} onClose={() => setPrivacyOpen(false)} />
 
       {/* Time picker modal */}
       <Modal visible={timePicker !== null} transparent animationType="slide" onRequestClose={() => setTimePicker(null)}>
@@ -743,7 +803,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20,
   },
-  title: { fontSize: 20, fontWeight: '600', fontStyle: 'italic' },
+  title: { fontSize: 20, fontFamily: SERIF },
   section: { marginBottom: 24 },
   sectionHead: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -751,7 +811,7 @@ const styles = StyleSheet.create({
   },
   label: { fontSize: 10, letterSpacing: 1.4, fontWeight: '600', marginBottom: 10 },
   nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  nameValue: { fontSize: 17, fontWeight: '500', fontStyle: 'italic' },
+  nameValue: { fontSize: 17, fontFamily: SERIF },
   nameEditRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   nameInput: { flex: 1, fontSize: 17, borderWidth: 0.5, borderRadius: 10, padding: 10 },
   saveBtn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },

@@ -12,3 +12,4 @@ export { ErrorBoundary } from './ErrorBoundary';
 export { CustomTimeRow } from './CustomTimeRow';
 export { DialogHost, useLocalDialog } from './Dialog';
 export { ProductPicker } from './ProductPicker';
+export { PrivacyPolicyModal, appVersionLabel } from './PrivacyPolicy';

@@ -8,6 +8,7 @@ import { RootStackParamList } from '../navigation/types';
 import { Icons, RoundBtn, CustomTimeRow, useLocalDialog } from '../components';
 import { fmt, isSameDay, addDays, checkSchedule, fmtHHMM, DAY_NAMES, generateTimeSlots } from '../data/utils';
 import { hasConflict } from '../data/booking';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'RescheduleModal'>;
@@ -101,7 +102,7 @@ export default function RescheduleModal() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <RoundBtn onPress={() => nav.goBack()} size={38}>
+        <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
           <Icons.chevronLeft size={18} color={theme.ink} />
         </RoundBtn>
         <Text style={[styles.headerTitle, { color: theme.ink }]}>Reschedule</Text>
@@ -138,7 +139,7 @@ export default function RescheduleModal() {
                   {showMonth && (
                     <View style={styles.monthDivider}>
                       <Text style={[styles.monthDividerText, { color: theme.ink3 }]}>
-                        {day.toLocaleDateString('en-GB', { month: 'long' })}
+                        {day.toLocaleDateString(undefined, { month: 'long' })}
                       </Text>
                     </View>
                   )}
@@ -147,7 +148,7 @@ export default function RescheduleModal() {
                     style={[styles.datePill, { backgroundColor: isSelected ? theme.accent : theme.bg2 }]}
                   >
                     <Text style={[styles.datePillDay, { color: isSelected ? '#fff' : theme.ink3 }]}>
-                      {day.toLocaleDateString('en-GB', { weekday: 'short' })}
+                      {day.toLocaleDateString(undefined, { weekday: 'short' })}
                     </Text>
                     <Text style={[styles.datePillNum, { color: isSelected ? '#fff' : theme.ink }]}>
                       {day.getDate()}
@@ -166,7 +167,7 @@ export default function RescheduleModal() {
           {timeSlots.map(({ h, m }) => {
             const taken = isSlotTaken(h, m);
             const sel = selectedTime?.h === h && selectedTime?.m === m;
-            const label = `${h % 12 || 12}:${m.toString().padStart(2, '0')}${h >= 12 ? 'pm' : 'am'}`;
+            const label = fmt.clock(h, m);
             return (
               <Pressable
                 key={`${h}${m}`}
@@ -236,7 +237,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 16,
   },
-  headerTitle: { fontSize: 20, fontWeight: '500', fontStyle: 'italic' },
+  headerTitle: { fontSize: 20, fontFamily: SERIF },
   saveBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 10 },
   saveBtnText: { fontSize: 15, fontWeight: '600' },
   summaryStrip: {

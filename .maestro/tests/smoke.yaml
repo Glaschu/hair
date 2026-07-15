@@ -1,0 +1,67 @@
+appId: com.glaschu.iris
+name: Smoke test — seed demo data, browse every tab, book an appointment
+---
+# Selectors note: RN Pressables group child text into ONE accessibility
+# element joined with ", ", and Maestro matches full-string regex — hence
+# the .* patterns on tabs and rows.
+
+# ---- Seed: clean install → demo dataset via Settings ----
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "Reset / wipe data.*"
+    direction: DOWN
+- tapOn: "Reset / wipe data.*"
+- tapOn: "Reset to demo data"
+- tapOn: "OK"
+- launchApp
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+
+# ---- Every tab renders demo content ----
+- tapOn: "Calendar, tab.*"
+- waitForAnimationToEnd
+- tapOn: "Clients, tab.*"
+- assertVisible: ".*Margot Lebreton.*"
+# Low-stock items list first; fully stocked ones can sit below the fold,
+# so match any Koleston colour product.
+- tapOn: "Inventory, tab.*"
+- assertVisible: ".*Koleston.*"
+- tapOn: "Today, tab.*"
+
+# ---- Book an appointment end to end ----
+- tapOn: "New"
+- assertVisible: "Select Client"
+- tapOn: ".*Margot Lebreton.*"
+- assertVisible: "Select Service"
+- tapOn: "Deep Treatment.*"
+- assertVisible: "Pick a Time"
+
+# Pick tomorrow in the date strip. Pills read "<Weekday>, <day>"; the first
+# match for tomorrow's day number is the nearest date. Default time is 10:00.
+- evalScript: ${output.day = String(new Date(Date.now() + 86400000).getDate())}
+- tapOn:
+    text: ".*, ${output.day}"
+    index: 0
+- tapOn: "Continue"
+- assertVisible: "Products"
+- tapOn: "Review"
+- assertVisible: "Confirm Booking"
+- tapOn: "Confirm Booking"
+
+# Demo data may already occupy tomorrow 10:00 — accept the conflict warning.
+- runFlow:
+    when:
+      visible: "Book anyway"
+    commands:
+      - tapOn: "Book anyway"
+
+- assertVisible: "Booked!"
+- tapOn: "Done"
+- assertVisible: "DAY AT A GLANCE.*"

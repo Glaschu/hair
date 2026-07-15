@@ -8,12 +8,13 @@ import { useDialog } from '../../data/DialogContext';
 import { useResponsive } from '../../hooks/useResponsive';
 import { RootStackParamList } from '../../navigation/types';
 import { Avatar, Icons, RoundBtn } from '../../components';
-import { fmt, addDays } from '../../data/utils';
+import { fmt, addDays, is24Hour } from '../../data/utils';
 import { deductStock } from '../../data/stock';
 import { notifyLowStock } from '../../data/notifications';
 import { Appointment } from '../../data/types';
 import { Eyebrow, Title, Btn, StatTile } from '../ui';
 import { useShell } from '../shellContext';
+import { SERIF } from '../../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -94,17 +95,17 @@ export function TodayIPad() {
   const greeting = (
     <View style={styles.headerRow}>
       <View style={{ flex: 1 }}>
-        <Eyebrow>{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}</Eyebrow>
+        <Eyebrow>{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}</Eyebrow>
         <Title size={isLandscape ? 40 : 34} style={{ marginTop: 4 }}>
           {greetingFor()}, <Text style={{ fontWeight: '400' }}>{studioName}</Text>
         </Title>
       </View>
       <View style={{ flexDirection: 'row', gap: 8 }}>
         {/* Lock toggle — enters Room mode (rendered by IPadShell when clientMode). */}
-        <RoundBtn size={40} onPress={() => setClientMode(true)}>
+        <RoundBtn size={40} label="Room mode" onPress={() => setClientMode(true)}>
           <Icons.lock size={18} color={theme.ink2} />
         </RoundBtn>
-        <RoundBtn size={40} onPress={() => setSection('settings')}><Icons.settings size={18} color={theme.ink2} /></RoundBtn>
+        <RoundBtn size={40} label="Settings" onPress={() => setSection('settings')}><Icons.settings size={18} color={theme.ink2} /></RoundBtn>
         <Btn variant="primary" icon={<Icons.plus size={16} color="#fff" />} onPress={() => nav.navigate('NewAppointment', {})}>New booking</Btn>
       </View>
     </View>
@@ -189,9 +190,9 @@ export function TodayIPad() {
         <Eyebrow style={{ flex: 1 }}>BUSIEST DAY</Eyebrow>
         <Icons.trend size={16} color={theme.sage} />
       </View>
-      <Text style={{ marginTop: 6, fontSize: 22, fontWeight: '500', fontStyle: 'italic', color: theme.ink }}>
+      <Text style={{ marginTop: 6, fontSize: 22, fontFamily: SERIF, color: theme.ink }}>
         {maxBar > 0 ? DAY_FULL[busiestIdx] : '—'}
-        <Text style={{ fontStyle: 'normal', fontWeight: '500', fontSize: 14, color: theme.ink3 }}>
+        <Text style={{ fontFamily: 'DMSans_500Medium', fontSize: 14, color: theme.ink3 }}>
           {maxBar > 0 ? ` · ${weekBars[busiestIdx]} appt${weekBars[busiestIdx] > 1 ? 's' : ''}` : ' · quiet week'}
         </Text>
       </Text>
@@ -255,7 +256,7 @@ function DayHero({ count, revenue, hours, bookedAhead, onReports }: {
         <View style={{ flex: 1 }}>
           <Text style={styles.heroEyebrow}>DAY AT A GLANCE</Text>
           <Text style={styles.heroTitle}>
-            {count} <Text style={{ fontWeight: '400', fontStyle: 'italic', opacity: 0.7 }}>appointment{count === 1 ? '' : 's'}</Text>
+            {count} <Text style={{ fontFamily: SERIF, opacity: 0.7 }}>appointment{count === 1 ? '' : 's'}</Text>
           </Text>
         </View>
         <View style={[styles.heroIcon, { backgroundColor: theme.accent }]}>
@@ -313,8 +314,8 @@ function IPadApptRow({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
   const nav = useNavigation<Nav>();
   const client = clients.find((c) => c.id === appt.clientId);
   const d = new Date(appt.start);
-  const hour = d.getHours() % 12 || 12;
-  const ampm = d.getHours() >= 12 ? 'PM' : 'AM';
+  const hour = is24Hour() ? d.getHours() : d.getHours() % 12 || 12;
+  const ampm = is24Hour() ? `:${d.getMinutes().toString().padStart(2, '0')}` : d.getHours() >= 12 ? 'PM' : 'AM';
   const completed = appt.status === 'completed';
   const noShow = appt.status === 'no-show';
   const pale = isNext || completed;
@@ -345,7 +346,7 @@ function IPadApptRow({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
     <View style={[styles.apptRow, { backgroundColor: pale ? theme.accent + '14' : theme.card, borderColor: isNext ? theme.accent + '40' : theme.line }]}>
       <Pressable onPress={() => nav.navigate('AppointmentDetail', { appointmentId: appt.id })} style={[styles.apptMain, { backgroundColor: 'transparent' }]}>
         <View style={{ width: 54 }} pointerEvents="none">
-          <Text style={{ fontSize: 22, fontWeight: '500', fontStyle: 'italic', color: theme.ink, lineHeight: 24 }}>{hour}</Text>
+          <Text style={{ fontSize: 22, fontFamily: SERIF, color: theme.ink, lineHeight: 24 }}>{hour}</Text>
           <Text style={{ fontSize: 11, letterSpacing: 1, color: theme.ink3, fontWeight: '500' }}>{ampm}</Text>
         </View>
         <View pointerEvents="none">{client && <Avatar name={client.name} tone={client.tone} size={38} />}</View>
@@ -389,7 +390,7 @@ const styles = StyleSheet.create({
   restock: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 16, padding: 16 },
   restockIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   card: { flex: 1, borderRadius: 16, borderWidth: 0.5, padding: 18 },
-  bigStat: { fontSize: 32, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5, lineHeight: 34 },
+  bigStat: { fontSize: 32, fontFamily: SERIF, letterSpacing: -0.5, lineHeight: 34 },
   emptyDay: { borderWidth: 1, borderRadius: 14, padding: 24 },
   upRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14, borderWidth: 0.5 },
   apptRow: { borderRadius: 16, borderWidth: 0.5, overflow: 'hidden' },

@@ -8,6 +8,7 @@ import { Avatar, Icons, RoundBtn } from '../../components';
 import { fmt, addDays } from '../../data/utils';
 import { Appointment, Client } from '../../data/types';
 import { Eyebrow } from '../ui';
+import { SERIF } from '../../theme';
 
 /**
  * Room mode (variant D) — a client-safe screen Jessie can leave on the desk
@@ -67,11 +68,11 @@ export function RoomMode() {
     <View style={styles.topbar}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.accent }} />
-        <Text style={{ fontSize: 16, fontStyle: 'italic', fontWeight: '500', color: theme.ink }}>{studioName.toLowerCase()}</Text>
+        <Text style={{ fontSize: 16, fontFamily: SERIF, color: theme.ink }}>{studioName.toLowerCase()}</Text>
       </View>
       <View style={{ flex: 1 }} />
       <Text style={{ color: theme.ink2, fontSize: 13, fontWeight: '500' }}>
-        {now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} · {fmt.timeShort(now.toISOString())}
+        {now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} · {fmt.timeShort(now.toISOString())}
       </Text>
       <View style={[styles.modePill, { backgroundColor: theme.bg2 }]}>
         <Icons.lock size={12} color={theme.ink2} />
@@ -127,7 +128,7 @@ export function RoomMode() {
           <Ring pct={pct} accent={theme.accent} />
           <View style={styles.ringInner}>
             <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10, letterSpacing: 1.4, fontWeight: '600' }}>REMAINING</Text>
-            <Text style={styles.ringValue}>{remainingMin} <Text style={{ fontWeight: '500', fontStyle: 'italic', fontSize: 22 }}>min</Text></Text>
+            <Text style={styles.ringValue}>{remainingMin} <Text style={{ fontFamily: SERIF, fontSize: 22 }}>min</Text></Text>
             <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12 }}>ends {endLabel}</Text>
           </View>
         </View>
@@ -135,7 +136,7 @@ export function RoomMode() {
     </View>
   ) : (
     <View style={[styles.hero, { backgroundColor: theme.heroBg, justifyContent: 'center' }]}>
-      <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 18, fontStyle: 'italic', textAlign: 'center' }}>
+      <Text style={{ color: 'rgba(255,255,255,0.75)', fontFamily: SERIF, fontSize: 20, lineHeight: 24, textAlign: 'center' }}>
         No one in the chair right now.
       </Text>
     </View>
@@ -164,7 +165,7 @@ export function RoomMode() {
                   </Text>
                 )}
                 <View style={[styles.laterRow, { borderTopColor: theme.line }]}>
-                  <Text style={{ width: 64, fontSize: 18, fontStyle: 'italic', fontWeight: '500', color: theme.ink }}>
+                  <Text style={{ width: 64, fontSize: 18, fontFamily: SERIF, color: theme.ink }}>
                     {fmt.timeShort(a.start).replace('am', '').replace('pm', '')}
                   </Text>
                   {c && <Avatar name={c.name} tone={c.tone} photo={c.photo} size={40} />}
@@ -206,7 +207,7 @@ export function RoomMode() {
       <View style={[styles.glanceCard, { backgroundColor: theme.card, borderColor: theme.line, flexDirection: 'column', alignItems: 'flex-start', gap: 0 }]}>
         <Eyebrow>TODAY</Eyebrow>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
-          <Text style={{ fontSize: 28, fontWeight: '500', fontStyle: 'italic', color: theme.ink, letterSpacing: -0.5 }}>{totalToday}</Text>
+          <Text style={{ fontSize: 28, fontFamily: SERIF, color: theme.ink, letterSpacing: -0.5 }}>{totalToday}</Text>
           <Text style={{ color: theme.ink2, fontSize: 14 }}>
             appointment{totalToday === 1 ? '' : 's'} · {doneCount} done
           </Text>
@@ -223,11 +224,11 @@ export function RoomMode() {
         <View style={[styles.glanceCard, { backgroundColor: theme.card, borderColor: theme.line, flexDirection: 'column', alignItems: 'flex-start', gap: 0 }]}>
           <Eyebrow>NEXT FREE MOMENT</Eyebrow>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
-            <Text style={{ fontSize: 22, fontWeight: '500', fontStyle: 'italic', color: theme.ink }}>
+            <Text style={{ fontSize: 22, fontFamily: SERIF, color: theme.ink }}>
               {fmt.timeShort(nextFreeStart.toISOString())}
             </Text>
             <Text style={{ color: theme.ink3, fontSize: 14 }}>—</Text>
-            <Text style={{ fontSize: 22, fontWeight: '500', fontStyle: 'italic', color: theme.ink }}>
+            <Text style={{ fontSize: 22, fontFamily: SERIF, color: theme.ink }}>
               {fmt.timeShort(nextFreeEnd.toISOString())}
             </Text>
           </View>
@@ -314,15 +315,15 @@ function fmtGap(mins: number): string {
 const styles = StyleSheet.create({
   topbar: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 36, paddingTop: 12, paddingBottom: 4 },
   modePill: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 },
-  welcome: { fontSize: 52, fontWeight: '500', fontStyle: 'italic', letterSpacing: -1, lineHeight: 56, marginTop: 8 },
+  welcome: { fontSize: 52, fontFamily: SERIF, letterSpacing: -1, lineHeight: 56, marginTop: 8 },
   hero: { flexDirection: 'row', alignItems: 'center', gap: 24, borderRadius: 28, padding: 28, minHeight: 240 },
-  heroName: { fontSize: 32, fontWeight: '500', fontStyle: 'italic', color: '#fff', letterSpacing: -0.5 },
-  heroService: { color: '#fff', fontStyle: 'italic', fontSize: 28, fontWeight: '500', marginTop: 18, letterSpacing: -0.3 },
+  heroName: { fontSize: 32, fontFamily: SERIF, color: '#fff', letterSpacing: -0.5 },
+  heroService: { color: '#fff', fontFamily: SERIF, fontSize: 28, lineHeight: 32, marginTop: 18, letterSpacing: -0.3 },
   statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
   heroChip: { backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
   ringInner: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  ringValue: { color: '#fff', fontSize: 44, fontWeight: '500', fontStyle: 'italic', letterSpacing: -1, marginVertical: 2 },
+  ringValue: { color: '#fff', fontSize: 44, fontFamily: SERIF, letterSpacing: -1, marginVertical: 2 },
   laterRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12, borderTopWidth: 0.5 },
   dashed: { borderWidth: 1, borderRadius: 14, padding: 16 },
   glanceCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16, borderWidth: 0.5 },

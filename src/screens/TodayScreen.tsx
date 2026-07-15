@@ -10,10 +10,11 @@ import { useApp } from '../data/AppContext';
 import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
 import { Avatar, Icons, RoundBtn } from '../components';
-import { fmt, addDays, isSameDay } from '../data/utils';
+import { fmt, addDays, isSameDay, is24Hour } from '../data/utils';
 import { deductStock, restoreStock } from '../data/stock';
 import { notifyLowStock } from '../data/notifications';
 import { Appointment } from '../data/types';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -24,14 +25,16 @@ function greetingFor(): string {
   return 'Good evening';
 }
 
+// The schedule card's big hour column: "2 / PM" on a 12-hour clock, "14 / :30" on 24-hour.
 function timeHour(iso: string): string {
   const d = new Date(iso);
-  const h = d.getHours() % 12 || 12;
-  return String(h);
+  return String(is24Hour() ? d.getHours() : d.getHours() % 12 || 12);
 }
 
 function timeAmPm(iso: string): string {
-  return new Date(iso).getHours() >= 12 ? 'PM' : 'AM';
+  const d = new Date(iso);
+  if (is24Hour()) return `:${d.getMinutes().toString().padStart(2, '0')}`;
+  return d.getHours() >= 12 ? 'PM' : 'AM';
 }
 
 export default function TodayScreen() {
@@ -92,14 +95,14 @@ export default function TodayScreen() {
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.eyebrow, { color: theme.ink3 }]}>
-              {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}
+              {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}
             </Text>
             <Text style={[styles.greeting, { color: theme.ink }]}>
-              {greetingFor()},{'\n'}<Text style={{ fontStyle: 'italic', fontWeight: '400' }}>{studioName}</Text>
+              {greetingFor()},{'\n'}<Text style={{ fontFamily: SERIF }}>{studioName}</Text>
             </Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <RoundBtn onPress={() => nav.navigate('Settings')} size={40}>
+            <RoundBtn label="Settings" onPress={() => nav.navigate('Settings')} size={40}>
               <Icons.settings size={18} color={theme.ink2} />
             </RoundBtn>
           </View>
@@ -116,7 +119,7 @@ export default function TodayScreen() {
                 <Text style={styles.heroEyebrow}>DAY AT A GLANCE</Text>
                 <Text style={styles.heroAppts}>
                   {activeAppts.length}{' '}
-                  <Text style={{ fontStyle: 'italic', opacity: 0.7 }}>appointments</Text>
+                  <Text style={{ fontFamily: SERIF, opacity: 0.7 }}>appointments</Text>
                 </Text>
               </View>
               <View style={[styles.heroIcon, { backgroundColor: theme.accent }]}>
@@ -384,7 +387,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   heroEyebrow: {
-    fontFamily: 'System',
+
     fontSize: 10,
     letterSpacing: 1.4,
     color: 'rgba(255,255,255,0.55)',
@@ -456,7 +459,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sectionEye: { fontSize: 10, letterSpacing: 1.4, fontWeight: '400', marginBottom: 4 },
-  sectionTitle: { fontSize: 22, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.3 },
+  sectionTitle: { fontSize: 22, fontFamily: SERIF, letterSpacing: -0.3 },
   newBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingBottom: 2 },
   newBtnText: { fontSize: 13, fontWeight: '500' },
   seeAll: { fontSize: 13, paddingBottom: 2 },

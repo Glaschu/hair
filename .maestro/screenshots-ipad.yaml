@@ -1,0 +1,54 @@
+appId: com.glaschu.iris
+name: App Store screenshots — iPad
+env:
+  OUTPUT_DIR: screenshots/ipad-13
+---
+# The sidebar is icon-only in portrait; its items carry accessibility labels
+# ("Today", "Clients", …) so they match exactly. Row content is grouped by
+# RN Pressables (joined with ", "), hence the .* regex selectors.
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "Reset / wipe data.*"
+    direction: DOWN
+- tapOn: "Reset / wipe data.*"
+- tapOn: "Reset to demo data"
+- tapOn: "OK"
+
+- launchApp
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- takeScreenshot: ${OUTPUT_DIR}/01-today
+
+- tapOn: "Calendar"
+- waitForAnimationToEnd
+- takeScreenshot: ${OUTPUT_DIR}/02-calendar
+
+- tapOn: "Clients"
+- extendedWaitUntil:
+    visible: ".*Margot Lebreton.*"
+    timeout: 10000
+- takeScreenshot: ${OUTPUT_DIR}/03-clients
+
+- tapOn: "Inventory"
+- waitForAnimationToEnd
+- takeScreenshot: ${OUTPUT_DIR}/04-inventory
+
+- tapOn: "Reports"
+- waitForAnimationToEnd
+- takeScreenshot: ${OUTPUT_DIR}/05-reports
+
+# Room mode — the client-safe screen; a strong marketing shot.
+- tapOn: "Today"
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 10000
+- tapOn: "Room mode"
+- waitForAnimationToEnd
+- takeScreenshot: ${OUTPUT_DIR}/06-room-mode

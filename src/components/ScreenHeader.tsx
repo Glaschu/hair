@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useApp } from '../data/AppContext';
+import { SERIF } from '../theme';
 
 interface Props {
   eyebrow?: string;
@@ -55,10 +56,9 @@ const styles = StyleSheet.create({
     fontWeight: '400',
   },
   title: {
+    fontFamily: SERIF,
     fontSize: 34,
-    fontWeight: '500',
-    letterSpacing: -0.5,
-    fontStyle: 'italic',
-    lineHeight: 36,
+    letterSpacing: -0.4,
+    lineHeight: 38,
   },
 });

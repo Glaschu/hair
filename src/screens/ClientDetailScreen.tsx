@@ -14,6 +14,7 @@ import { RootStackParamList } from '../navigation/types';
 import { Avatar, Card, Icons, RoundBtn, EmptyState } from '../components';
 import { fmt } from '../data/utils';
 import { ClientPhoto, Appointment } from '../data/types';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'ClientDetail'>;
@@ -135,7 +136,7 @@ export default function ClientDetailScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top']}>
       {/* Nav bar */}
       <View style={styles.navRow}>
-        <RoundBtn onPress={() => nav.goBack()} size={38}>
+        <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
           <Icons.chevronLeft size={18} color={theme.ink} />
         </RoundBtn>
         <RoundBtn onPress={() => nav.navigate('ClientForm', { clientId: client.id })} size={38}>
@@ -251,7 +252,7 @@ function OverviewTab({ client, upcomingAppts, lastFinishedAppt, nav }: { client:
               style={[styles.upcomingCard, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '40' }]}>
               <View style={[styles.upcomingDate, { borderRightColor: theme.accent + '60' }]}>
                 <Text style={[styles.upcomingMonth, { color: theme.accent }]}>
-                  {new Date(appt.start).toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}
+                  {new Date(appt.start).toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}
                 </Text>
                 <Text style={[styles.upcomingDay, { color: theme.accent }]}>
                   {new Date(appt.start).getDate()}
@@ -280,7 +281,7 @@ function OverviewTab({ client, upcomingAppts, lastFinishedAppt, nav }: { client:
         <HairRow label="Natural" value={client.hair.natural} theme={theme} />
         <View style={[styles.divider, { backgroundColor: theme.line }]} />
         <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>
-          {lastFinishedAppt ? `FORMULA (LAST APPT: ${new Date(lastFinishedAppt.start).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }).toUpperCase()})` : 'FORMULA'}
+          {lastFinishedAppt ? `FORMULA (LAST APPT: ${new Date(lastFinishedAppt.start).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toUpperCase()})` : 'FORMULA'}
         </Text>
         <View style={[styles.formulaBox, { backgroundColor: theme.bg2 }]}>
           <Text style={[styles.formulaText, { color: theme.ink }]}>
@@ -341,7 +342,7 @@ function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
             <View style={styles.timelineRow}>
               <View style={styles.timelineDateCol}>
                 <Text style={[styles.timelineMon, { color: isNoShow ? theme.danger : theme.ink3 }]}>
-                  {new Date(appt.start).toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}
+                  {new Date(appt.start).toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}
                 </Text>
                 <Text style={[styles.timelineDay, { color: isNoShow ? theme.danger : theme.ink }]}>
                   {new Date(appt.start).getDate()}
@@ -495,7 +496,7 @@ const styles = StyleSheet.create({
     width: 30, height: 30, borderRadius: 15, borderWidth: 0.5,
     alignItems: 'center', justifyContent: 'center',
   },
-  heroName: { fontSize: 30, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.4, lineHeight: 34, textAlign: 'center' },
+  heroName: { fontSize: 30, fontFamily: SERIF, letterSpacing: -0.4, lineHeight: 34, textAlign: 'center' },
   vipBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   vipText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
   heroSince: { fontSize: 10, letterSpacing: 1.4, fontWeight: '500', textAlign: 'center' },
@@ -510,7 +511,7 @@ const styles = StyleSheet.create({
 
   statsStrip: { flexDirection: 'row', borderTopWidth: 0.5, borderBottomWidth: 0.5, marginVertical: 4 },
   statCell: { flex: 1, alignItems: 'center', paddingVertical: 14 },
-  statValue: { fontSize: 20, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.3 },
+  statValue: { fontSize: 20, fontFamily: SERIF, letterSpacing: -0.3 },
   statLabel: { fontSize: 9, letterSpacing: 1, fontWeight: '500', marginTop: 2 },
 
   tabBar: { flexDirection: 'row', borderBottomWidth: 0.5, paddingHorizontal: 6 },
@@ -526,7 +527,7 @@ const styles = StyleSheet.create({
   hairLabel: { fontSize: 13 },
   hairValue: { fontSize: 13, fontWeight: '500' },
   formulaBox: { borderRadius: 10, padding: 12 },
-  formulaText: { fontFamily: 'monospace', fontSize: 12, lineHeight: 18 },
+  formulaText: { fontFamily: 'DMMono_400Regular', fontSize: 12, lineHeight: 18 },
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
   contactLabel: { flex: 1, fontSize: 14 },
 
@@ -536,19 +537,19 @@ const styles = StyleSheet.create({
   },
   upcomingDate: { width: 46, alignItems: 'center', borderRightWidth: 0.5, paddingRight: 14 },
   upcomingMonth: { fontSize: 9, letterSpacing: 0.8, fontWeight: '600' },
-  upcomingDay: { fontSize: 24, fontWeight: '500', fontStyle: 'italic', lineHeight: 26 },
+  upcomingDay: { fontSize: 24, fontFamily: SERIF, lineHeight: 26 },
   upcomingService: { fontSize: 14, fontWeight: '600' },
   upcomingTime: { fontSize: 12, marginTop: 2 },
 
   timelineRow: { flexDirection: 'row', gap: 14 },
   timelineDateCol: { width: 44, flexShrink: 0, paddingTop: 4, alignItems: 'flex-start' },
   timelineMon: { fontSize: 9, letterSpacing: 0.8, fontWeight: '500' },
-  timelineDay: { fontSize: 24, fontWeight: '500', fontStyle: 'italic', lineHeight: 26, marginTop: 2 },
+  timelineDay: { fontSize: 24, fontFamily: SERIF, lineHeight: 26, marginTop: 2 },
   timelineYear: { fontSize: 10, marginTop: 2 },
   histCardHead: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 },
   histService: { fontSize: 14, fontWeight: '600' },
   histAgo: { fontSize: 11, marginTop: 2 },
-  histPrice: { fontSize: 18, fontWeight: '500', fontStyle: 'italic' },
+  histPrice: { fontSize: 18, fontFamily: SERIF },
   noShowBadge: {
     paddingHorizontal: 8, paddingVertical: 4,
     borderRadius: 6, borderWidth: 0.5,

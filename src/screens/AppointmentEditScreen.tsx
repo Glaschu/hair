@@ -7,6 +7,7 @@ import { useApp } from '../data/AppContext';
 import { RootStackParamList } from '../navigation/types';
 import { Icons, RoundBtn } from '../components';
 import { numberFieldError } from '../data/utils';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AppointmentEdit'>;
@@ -47,7 +48,7 @@ export default function AppointmentEditScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <RoundBtn onPress={() => nav.goBack()} size={38}>
+        <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
           <Icons.chevronLeft size={18} color={theme.ink} />
         </RoundBtn>
         <Text style={[styles.headerTitle, { color: theme.ink }]}>Edit Appointment</Text>
@@ -148,7 +149,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 16,
   },
-  headerTitle: { fontSize: 20, fontWeight: '500', fontStyle: 'italic' },
+  headerTitle: { fontSize: 20, fontFamily: SERIF },
   saveBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 10 },
   saveBtnText: { fontSize: 15, fontWeight: '600' },
   priceError: { fontSize: 11, marginTop: 6 },

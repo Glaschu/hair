@@ -98,7 +98,7 @@ export function DialogHost({ request, theme, onResolve }: DialogHostProps) {
             )}
 
             {(req.kind !== 'actionSheet' || req.opts.title) && (
-              <Text style={[styles.title, typography.serif(21, '600'), { color: theme.ink }]}>
+              <Text style={[styles.title, typography.serif(21), { color: theme.ink }]}>
                 {req.opts.title}
               </Text>
             )}
