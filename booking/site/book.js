@@ -9,10 +9,14 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
 let link = null;
 let chosenSlot = null;
 
+// Formatted in the salon's zone, never the reader's. Without this a client
+// abroad books 12:00 for an 11:00 slot and both sides hold written proof they
+// were right.
+const zone = () => (link && link.tz) || 'Europe/London';
 const fmtDay = (iso) => new Date(iso).toLocaleDateString('en-GB',
-  { weekday: 'long', day: 'numeric', month: 'long' });
+  { weekday: 'long', day: 'numeric', month: 'long', timeZone: zone() });
 const fmtTime = (iso) => new Date(iso).toLocaleTimeString('en-GB',
-  { hour: '2-digit', minute: '2-digit' });
+  { hour: '2-digit', minute: '2-digit', timeZone: zone() });
 const money = (n) => '£' + (Number(n) % 1 === 0 ? Number(n) : Number(n).toFixed(2));
 
 /* --- the sealed envelope: ephemeral key ‖ nonce ‖ ciphertext --- */
@@ -87,7 +91,8 @@ function renderTimes() {
           <div style="font-size:15.5px;font-weight:600">${esc(link.serviceName)}</div>
           <div style="font-size:13px;color:var(--ink2);margin-top:3px">${link.durationMins} min</div>
         </div>
-        <div class="serif" style="font-size:24px">${money(link.price)}</div>
+        <div class="serif" style="font-size:24px">${money(link.priceMinor / 100)}</div>
+        <div style="font-size:12.5px;color:var(--ink3);margin-top:2px">All times UK</div>
       </div>
 
       <div style="display:flex;flex-direction:column;gap:18px" id="days">
@@ -152,6 +157,10 @@ function renderTimes() {
   document.getElementById('form').addEventListener('submit', onSubmit);
 }
 
+const requestId = (crypto.randomUUID
+  ? crypto.randomUUID()
+  : String(Date.now()) + Math.random().toString(36).slice(2));
+
 async function onSubmit(event) {
   event.preventDefault();
   if (!chosenSlot) return;
@@ -174,7 +183,9 @@ async function onSubmit(event) {
       headers: { 'content-type': 'application/json' },
       // Recorded beside the booking rather than inside the envelope: she can
       // see they agreed without having to open the booking on her phone.
-      body: JSON.stringify({ slotId: chosenSlot.id, sealed, agreed: !!data.get('agreed') }),
+      body: JSON.stringify({
+        slotId: chosenSlot.id, sealed, agreed: !!data.get('agreed'), requestId,
+      }),
     });
 
     if (res.status === 409) {
@@ -182,7 +193,8 @@ async function onSubmit(event) {
       return load();
     }
     if (!res.ok) throw new Error('failed');
-    renderBooked(data.get('name'));
+    const done = await res.json().catch(() => ({}));
+    renderBooked(data.get('name'), done.cancelToken);
   } catch {
     submit.disabled = false;
     submit.textContent = 'Try again';
@@ -193,7 +205,7 @@ async function onSubmit(event) {
   }
 }
 
-function renderBooked(name) {
+function renderBooked(name, cancelToken) {
   const first = String(name || '').trim().split(' ')[0];
   view.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:22px;align-items:center;text-align:center;padding-top:20px">
@@ -207,7 +219,43 @@ function renderBooked(name) {
          <strong style="color:var(--ink)">${esc(fmtDay(chosenSlot.startsAt))} at
          ${esc(fmtTime(chosenSlot.startsAt))}</strong>.
          ${esc(link.salonName)} will text you to confirm.</p>
+      ${cancelToken ? `
+      <button class="ghostlink" id="cancel" type="button">Need to cancel?</button>
+      <div id="cancelbox" class="hidden" style="width:100%"></div>` : ''}
     </div>`;
+
+  // Somewhere to cancel, from the same page, without an account. Burying this
+  // behind "message the salon" is how a no-show happens instead of a cancellation
+  // — and a freed hour is worth more to her than an awkward conversation avoided.
+  const btn = document.getElementById('cancel');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const box = document.getElementById('cancelbox');
+    btn.classList.add('hidden');
+    box.classList.remove('hidden');
+    box.innerHTML = '<div class="policy"><div class="policy-text">Checking…</div></div>';
+    try {
+      const res = await fetch(`/api/c/${cancelToken}`);
+      const q = await res.json();
+      const back = q.refundPct === 100 ? 'Your deposit comes back in full.'
+                 : q.refundPct === 0 ? "Your deposit isn't refunded at this notice."
+                 : `${q.refundPct}% of your deposit comes back.`;
+      box.innerHTML = `
+        <div class="policy">
+          <div class="policy-text">${esc(back)}</div>
+          <button class="primary" id="reallycancel" type="button"
+                  style="margin-top:14px">Cancel my appointment</button>
+        </div>`;
+      document.getElementById('reallycancel').addEventListener('click', async () => {
+        const done = await fetch(`/api/c/${cancelToken}`, { method: 'POST' });
+        box.innerHTML = done.ok
+          ? '<div class="policy"><div class="policy-text">Cancelled. Thanks for letting us know.</div></div>'
+          : '<div class="error">That didn\'t go through — message the salon instead.</div>';
+      });
+    } catch (e) {
+      box.innerHTML = '<div class="error">Couldn\'t reach the salon just now.</div>';
+    }
+  });
 }
 
 load();

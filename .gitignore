@@ -42,3 +42,9 @@ yarn-error.*
 
 # Maestro screenshot/test output
 screenshots/
+
+# Firebase rules tooling — heavy, and reinstallable from firebase/package.json
+/firebase/node_modules
+/firebase/.firebase
+firestore-debug.log
+firebase-debug.log

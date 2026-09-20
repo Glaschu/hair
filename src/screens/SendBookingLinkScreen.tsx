@@ -24,7 +24,7 @@ type Route = RouteProp<RootStackParamList, 'SendBookingLink'>;
 const DAYS_AHEAD = 28;
 
 export default function SendBookingLinkScreen() {
-  const { theme, clients, services, appointments, schedule, studioName } = useApp();
+  const { theme, clients, services, appointments, schedule, studioName, backend } = useApp();
   const { alert, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
@@ -77,10 +77,10 @@ export default function SendBookingLinkScreen() {
     try {
       const creds = await loadCredentials();
       if (!creds) {
-        await alert({
-          title: 'Not set up yet',
-          message: 'Turn on Online booking in Settings and link this device first.',
-        });
+        // A backstop now rather than the first she hears of it: the client card
+        // checks before letting her in. Worded from the same place, so the two
+        // can never say different things.
+        await alert({ title: 'Not set up yet', message: backend.why('booking-links').why });
         return;
       }
 
@@ -97,7 +97,8 @@ export default function SendBookingLinkScreen() {
         greeting: firstNameOf(client.name),
         serviceName: service.name,
         durationMins: service.duration,
-        price: service.price,
+        // Pence on the wire: a 50% deposit on a float is a rounding argument.
+        priceMinor: Math.round(service.price * 100),
         slots,
       });
 

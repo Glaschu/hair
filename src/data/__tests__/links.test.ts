@@ -56,11 +56,35 @@ describe('openInstagram', () => {
     ]);
   });
 
-  it('uses the web profile rather than a useless Safari DM page with no app', async () => {
+  it('still probes the app scheme when canOpenURL says no, because it can be wrong', async () => {
+    // canOpenURL answers false for any scheme missing from
+    // LSApplicationQueriesSchemes, and a build whose Info.plist has drifted from
+    // app.json is exactly the case where Instagram IS installed and we were told
+    // otherwise. openURL rejects a scheme nothing handles, so this both probes
+    // and opens.
     canOpen.mockResolvedValue(false as never);
     await openInstagram('margot.hair');
-    expect(open).toHaveBeenCalledTimes(1);
-    expect(open).toHaveBeenCalledWith('https://www.instagram.com/margot.hair');
+    expect(open.mock.calls.map((c) => c[0])).toEqual(['instagram://user?username=margot.hair']);
+  });
+
+  it('lands on the web profile only when the app genuinely is not there', async () => {
+    canOpen.mockResolvedValue(false as never);
+    open.mockRejectedValueOnce(new Error('no handler') as never);
+    await openInstagram('margot.hair');
+    expect(open.mock.calls.map((c) => c[0])).toEqual([
+      'instagram://user?username=margot.hair',
+      'https://www.instagram.com/margot.hair',
+    ]);
+  });
+
+  it('never opens the DM link without the app, which would silently be Safari', async () => {
+    // ig.me is a universal link: with no app to catch it, openURL reports
+    // success and quietly shows a web page. That is the iPad symptom she
+    // reported, so the DM link stays gated behind a positive canOpenURL.
+    canOpen.mockResolvedValue(false as never);
+    open.mockRejectedValueOnce(new Error('no handler') as never);
+    await openInstagram('margot.hair');
+    expect(open.mock.calls.map((c) => c[0])).not.toContain('https://ig.me/m/margot.hair');
   });
 
   it('does nothing when there is no usable handle', async () => {

@@ -31,15 +31,21 @@ export interface PairingPayload {
  * but no salon keys — the first device makes those itself.
  */
 export interface SetupPayload {
-  v: 1;
+  v: 1 | 2;
   kind: 'setup';
   url: string;
   dk: string;
+  /**
+   * Which kind of service this is. Absent on v1 codes, which every deployed
+   * setup page still produces — those are self-hosted by definition, since
+   * nobody was operating one for her.
+   */
+  mode?: 'self' | 'hosted';
 }
 
 export type ScannedCode =
   /** From the service's /setup page: this device will create the salon keys. */
-  | { kind: 'setup'; serviceUrl: string; deviceKey: string }
+  | { kind: 'setup'; serviceUrl: string; deviceKey: string; mode: 'self-hosted' | 'hosted' }
   /** From a device already linked: adopt its keys so both can read bookings. */
   | { kind: 'pairing'; credentials: BookingCredentials };
 
@@ -93,10 +99,19 @@ export function decodeScannedCode(scanned: string): ScannedCode | null {
 
   try {
     const raw = JSON.parse(scanned) as Partial<SetupPayload>;
-    if (raw?.v !== 1 || raw.kind !== 'setup') return null;
+    if (raw?.kind !== 'setup') return null;
+    // v1 codes are still being produced by every deployed setup page, and a
+    // stylist standing in front of one should not be told her code is invalid
+    // because we added a field.
+    if (raw.v !== 1 && raw.v !== 2) return null;
     if (typeof raw.url !== 'string' || typeof raw.dk !== 'string' || !raw.dk) return null;
     if (!isUsableServiceUrl(raw.url)) return null;
-    return { kind: 'setup', serviceUrl: trimUrl(raw.url), deviceKey: raw.dk };
+    return {
+      kind: 'setup',
+      serviceUrl: trimUrl(raw.url),
+      deviceKey: raw.dk,
+      mode: raw.mode === 'hosted' ? 'hosted' : 'self-hosted',
+    };
   } catch {
     return null;
   }

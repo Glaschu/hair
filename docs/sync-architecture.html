@@ -1,0 +1,1169 @@
+<title>Never Lose A Booking</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500;1,600&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap">
+
+<style>
+  :root {
+    --bg:#FAF6F0; --bg2:#F3ECE3; --card:#FFFFFF;
+    --ink:#2A201A; --ink2:#6B5B4E; --ink3:#A8978A;
+    --line:rgba(42,32,26,.10); --line2:rgba(42,32,26,.18);
+    --accent:#C26E4A; --sage:#6B7B5C; --warn:#C07E2A; --danger:#B84040;
+    --hero:#2A201A; --onhero:#F5EDE5; --code:rgba(42,32,26,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#1C1714; --bg2:#231E1A; --card:#2A2420;
+      --ink:#F5EDE5; --ink2:#B8A89A; --ink3:#7A6A5E;
+      --line:rgba(255,240,230,.10); --line2:rgba(255,240,230,.18);
+      --accent:#D58058; --sage:#8BA07A; --warn:#D49A4A; --danger:#D06060;
+      --hero:#3D3028; --onhero:#F5EDE5; --code:rgba(255,240,230,.06);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#1C1714; --bg2:#231E1A; --card:#2A2420;
+    --ink:#F5EDE5; --ink2:#B8A89A; --ink3:#7A6A5E;
+    --line:rgba(255,240,230,.10); --line2:rgba(255,240,230,.18);
+    --accent:#D58058; --sage:#8BA07A; --warn:#D49A4A; --danger:#D06060;
+    --hero:#3D3028; --onhero:#F5EDE5; --code:rgba(255,240,230,.06);
+  }
+
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"DM Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size:16.5px; line-height:1.62; -webkit-font-smoothing:antialiased;
+  }
+  .page { max-width:1140px; margin:0 auto; padding:0 22px 110px; }
+  .col { max-width:64ch; }
+  .serif { font-family:"Cormorant Garamond", Georgia, serif; font-style:italic; font-weight:500; letter-spacing:-.01em; line-height:1.08; }
+
+  header.top { padding:68px 0 34px; }
+  .eyebrow { font-size:10.5px; letter-spacing:1.5px; text-transform:uppercase; font-weight:600; color:var(--ink3); }
+  h1 { margin:10px 0 0; font-size:clamp(40px,7vw,72px); font-weight:500; }
+  .standfirst { margin:22px 0 0; font-size:19px; line-height:1.55; color:var(--ink2); max-width:60ch; text-wrap:pretty; }
+  .rev { margin-top:20px; display:inline-block; font-size:12px; letter-spacing:.4px; color:var(--ink3);
+         border:1px solid var(--line2); border-radius:999px; padding:4px 13px; }
+
+  nav.toc {
+    margin:34px 0 0; padding:18px 20px; background:var(--bg2); border-radius:16px;
+    display:flex; flex-wrap:wrap; gap:6px 20px; font-size:14px;
+  }
+  nav.toc a { color:var(--ink2); text-decoration:none; border-bottom:1px solid transparent; }
+  nav.toc a:hover { color:var(--accent); border-bottom-color:var(--accent); }
+
+  section { padding-top:56px; scroll-margin-top:18px; }
+  h2 { margin:0 0 6px; font-size:clamp(27px,3.5vw,37px); font-weight:500; text-wrap:balance; }
+  .kicker { font-size:10.5px; letter-spacing:1.5px; text-transform:uppercase; font-weight:600; color:var(--accent); margin-bottom:11px; }
+  h3 { margin:32px 0 8px; font-size:18.5px; font-weight:600; letter-spacing:-.005em; text-wrap:balance; }
+  p { margin:0 0 15px; text-wrap:pretty; }
+  ul,ol { margin:0 0 15px; padding-left:22px; }
+  li { margin-bottom:8px; }
+  li::marker { color:var(--ink3); }
+  strong { font-weight:600; }
+  em { font-style:italic; }
+  hr { border:0; border-top:1px solid var(--line); margin:52px 0 0; }
+  a { color:var(--accent); text-underline-offset:2px; }
+
+  .call { background:var(--bg2); border-radius:18px; padding:22px 24px; margin:26px 0; }
+  .call.key { background:var(--hero); color:var(--onhero); }
+  .call.key .lab { color:color-mix(in srgb, var(--onhero) 60%, transparent); }
+  .call.key strong, .call.key code { color:var(--onhero); }
+  .call.key code { background:rgba(255,255,255,.12); }
+  .call.flag { background:color-mix(in srgb, var(--warn) 13%, var(--bg2)); }
+  .call.bug  { background:color-mix(in srgb, var(--danger) 11%, var(--bg2)); }
+  .call p:last-child { margin-bottom:0; }
+  .lab { font-size:10.5px; letter-spacing:1.4px; text-transform:uppercase; font-weight:600; color:var(--ink3); margin-bottom:8px; }
+
+  .scroll { overflow-x:auto; margin:18px 0 8px; border:1px solid var(--line); border-radius:16px; background:var(--card); }
+  table { border-collapse:collapse; width:100%; min-width:640px; font-size:14.5px; }
+  th,td { padding:11px 16px; text-align:left; vertical-align:top; }
+  thead th { font-size:10.5px; letter-spacing:1.1px; text-transform:uppercase; font-weight:600; color:var(--ink3); border-bottom:1px solid var(--line2); white-space:nowrap; }
+  tbody tr + tr td { border-top:1px solid var(--line); }
+  tbody td:first-child { font-weight:500; }
+  .num { font-variant-numeric:tabular-nums; }
+  .pill { display:inline-block; font-size:11.5px; font-weight:600; line-height:1.5; padding:1px 9px; border-radius:999px; white-space:nowrap; }
+  .sealed { background:color-mix(in srgb, var(--accent) 16%, transparent); color:var(--accent); }
+  .clear  { background:color-mix(in srgb, var(--sage) 18%, transparent); color:var(--sage); }
+  .yes { background:color-mix(in srgb, var(--sage) 18%, transparent); color:var(--sage); }
+  .no  { background:color-mix(in srgb, var(--ink3) 16%, transparent); color:var(--ink3); }
+  .live { background:color-mix(in srgb, var(--danger) 16%, transparent); color:var(--danger); }
+  .note { display:block; font-size:12.5px; color:var(--ink3); margin-top:2px; }
+
+  pre { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:14px;
+        padding:18px 20px; font-size:12.5px; line-height:1.7;
+        font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--ink2); }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.88em; background:var(--code); padding:1.5px 5px; border-radius:5px; }
+  pre code { background:none; padding:0; font-size:inherit; }
+
+  .modes { display:grid; gap:16px; margin-top:22px; }
+  @media (min-width:900px) { .modes { grid-template-columns:repeat(3,1fr); } }
+  .mode { background:var(--card); border:1px solid var(--line); border-top:4px solid var(--edge,var(--accent));
+          border-radius:16px; padding:20px 22px; }
+  .mode.b { --edge:var(--sage); } .mode.c { --edge:var(--warn); }
+  .mode h3 { margin:0 0 2px; font-size:17px; }
+  .mode .who { font-size:12.5px; color:var(--ink3); margin-bottom:12px; }
+  .mode ul { font-size:14.5px; padding-left:18px; margin-bottom:0; }
+
+  .step { display:grid; grid-template-columns:38px 1fr; gap:18px; padding:18px 0; border-top:1px solid var(--line); }
+  .step-n { font-family:"Cormorant Garamond",Georgia,serif; font-style:italic; font-size:30px; line-height:1;
+            color:var(--accent); font-variant-numeric:tabular-nums; }
+  .step h3 { margin:0 0 5px; font-size:16.5px; }
+  .step p { margin-bottom:0; font-size:15px; }
+  .step p + p { margin-top:9px; }
+
+  :focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:4px; }
+  @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
+</style>
+
+<div class="page">
+
+<header class="top">
+  <div class="eyebrow">Iris · backend architecture</div>
+  <h1 class="serif">Never Lose A Booking</h1>
+  <p class="standfirst">Moving iris onto Firebase so deposits and appointments survive anything —
+  without handing Google a readable copy of her client list. Three ways to host it, one app.</p>
+  <div class="rev">Revision 16 · 15 September 2026 · 357 tests · 12 preflight checks · 3 for a human</div>
+
+  <nav class="toc">
+    <a href="#bugs">Defects fixed</a>
+    <a href="#cancelling">Cancelling</a>
+    <a href="#invariant">The invariant</a>
+    <a href="#occupancy">Occupancy</a>
+    <a href="#offline">Offline</a>
+    <a href="#payments">Payments</a>
+    <a href="#privacy">Privacy</a>
+    <a href="#rules">Security rules</a>
+    <a href="#keys">Key recovery</a>
+    <a href="#modes">Three modes</a>
+    <a href="#migration">Migration</a>
+    <a href="#drill">Failure drill</a>
+    <a href="#open">Still open</a>
+  </nav>
+</header>
+
+<section id="bugs">
+  <div class="kicker">Verified, fixed, and covered by tests</div>
+  <h2 class="serif">Eight defects, found and fixed</h2>
+
+  <div class="col">
+    <p>Three passes over this design — two constructive, one adversarial — turned up more in the
+    existing Cloudflare service than in the Firestore plan. Every row below was checked in the code,
+    not inferred.</p>
+    <p><strong>All eight are now fixed, each with a test that names the loss it prevents.</strong>
+    The suite went from 32 to 41. That matters beyond the bug count: the Firestore design inherits
+    these same hazards, so a fix with a test here is a specification there — and the tests are the
+    beginning of the failure drill this document has been promising.</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">What changed in the service</div>
+    <p>Claiming a slot, counting it against the link and writing the booking are now
+    <strong>one batch</strong>, with the loser of a race cleaning up after itself. Links carry a
+    <strong>pinned, content-addressed policy</strong>, so the server decides what was agreed rather
+    than believing a checkbox. A <strong>request id</strong> makes a retry return the original
+    booking. Minting a link <strong>rejects overlaps</strong> with every other live link. Money is
+    <strong>integer pence</strong>. Times carry their <strong>zone</strong>. Reset
+    <strong>revokes</strong>. And <code>?all=1</code> means no booking can ever become unreachable.</p>
+  </div>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Defect</th><th>Status</th><th>What it does now</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Import handshake loses bookings <strong>permanently</strong><span class="note">Marked seen, then the local write fails. <code>/api/bookings</code> filters <code>seen_at IS NULL</code> and is the <em>only</em> read path — no "list all" exists.</span></td>
+          <td><span class="pill yes">Fixed + test</span><span class="note">Silent. No software path can ever surface it again.</span></td>
+          <td>Add an unfiltered read; make <code>seen</code> acknowledge a <em>committed</em> local write; dedupe on remote id</td>
+        </tr>
+        <tr>
+          <td>Re-linking a device overwrites her cancellation policy<span class="note">The setup screen calls <code>registerSalon(creds, name)</code> with no policy, and the API substitutes the shipped default.</span></td>
+          <td><span class="pill yes">Fixed + test</span><span class="note">Her edited terms silently revert every reinstall or second device</span></td>
+          <td><code>registerSalon</code> never sends a policy unless explicitly changing one</td>
+        </tr>
+        <tr>
+          <td>Policy agreement is client-asserted<span class="note"><code>agreed</code> is a boolean from the request body. The HTML <code>required</code> is the only enforcement; curl bypasses it, and <code>agreed:false</code> still books.</span></td>
+          <td><span class="pill yes">Fixed + test</span><span class="note">The artefact meant to win a chargeback proves nothing</span></td>
+          <td>Pin the policy to the link at mint time; the <em>server</em> decides what was agreed, and refuses the booking if it wasn't</td>
+        </tr>
+        <tr>
+          <td>Two links sell the same hour<span class="note"><code>POST /api/links</code> never compares against other links' slots.</span></td>
+          <td><span class="pill yes">Fixed + test</span></td>
+          <td>Conflict-check at mint time, and again at claim</td>
+        </tr>
+        <tr>
+          <td>Slot claim is not atomic<span class="note"><code>UPDATE slots</code> then a <em>separate</em> <code>INSERT INTO bookings</code>.</span></td>
+          <td><span class="pill yes">Fixed + test</span><span class="note">Die between them: slot burned, no booking</span></td>
+          <td>One <code>DB.batch</code></td>
+        </tr>
+        <tr>
+          <td>A lost response books the client twice<span class="note">Retry 409s, page says "someone took it", client picks a second slot.</span></td>
+          <td><span class="pill yes">Fixed + test</span><span class="note">One person, two deposits</span></td>
+          <td><code>requestId</code> at page load; a replay returns the original booking</td>
+        </tr>
+        <tr>
+          <td>"Start over" doesn't stop bookings<span class="note"><code>/book</code> never joins <code>salon</code>, and reset doesn't revoke links. Anyone holding a token keeps booking for 21 days, sealed to a dead key.</span></td>
+          <td><span class="pill yes">Fixed + test</span></td>
+          <td>Reset revokes links and orphans outstanding bookings, in one batch; <code>/book</code> joins <code>salon</code></td>
+        </tr>
+        <tr>
+          <td>Times render in the client's timezone<span class="note"><code>toLocaleTimeString('en-GB', …)</code> pins the locale and not the zone.</span></td>
+          <td><span class="pill yes">Fixed + test</span><span class="note">Both parties hold written evidence of different hours</span></td>
+          <td>Return <code>tz</code> with the link, format through it, print "all times UK time"</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="col">Money moved to integer pence in the same pass, and the one-way
+  <code>slots.taken</code> — where a booking made by mistake destroyed that hour permanently — is
+  fixed below.</p>
+
+  <div class="call key">
+    <div class="lab">Settled — the default wording, two days notice</div>
+    <p>On a £90 service with her 50% deposit of £45, the "remaining appointment cost" is the other
+    £45, so the arithmetic is:</p>
+    <p><strong>Two days or more</strong> — no charge, the whole £45 comes back.
+    <strong>Inside two days</strong> — 50% of the remaining £45 is £22.50, so she keeps £22.50 and
+    refunds £22.50. <strong>Inside 24 hours</strong> — the full amount, so nothing comes back.</p>
+    <p>The two denominators (percent of the deposit, percent of the remaining cost) happen to agree
+    in the middle tier, and nothing but a test keeps them agreeing — so there is one, asserting
+    pounds rather than percentages.</p>
+  </div>
+
+  <div class="call flag">
+    <div class="lab">The one thing the service cannot do</div>
+    <p>Inside 24 hours the prose says <em>the full amount</em> — £90 against a £45 deposit. The
+    service can stop money going back; it cannot reach out and take more. Anything beyond the deposit
+    is between her and the client, and the app has to say so rather than implying it collected.</p>
+  </div>
+</section>
+
+<hr>
+
+<section id="cancelling">
+  <div class="kicker">Built this pass</div>
+  <h2 class="serif">Cancelling, and why status is the authority</h2>
+
+  <div class="col">
+    <p>An hour that can never be resold is a lost booking just as surely as one that never arrived.
+    <code>slots.taken</code> was one-way, so a client who booked by mistake and rang to apologise
+    destroyed that Saturday slot for good.</p>
+    <p>Freeing a slot is also the exact move that opens the window for a stale write to reinstate a
+    dead appointment — the counterexample that broke revision 3's offline claim. So the two are the
+    same problem, and the small version is worth solving first because it is cheap and testable.</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">The rule</div>
+    <p><strong><code>bookings.status</code> is the single authority on whether a booking is live —
+    never the slot.</strong> Releasing the hour and marking the booking cancelled happen in one
+    batch, a second cancellation is a no-op rather than a second release, and nothing that could
+    revive a booking may act without consulting the status first.</p>
+    <p>That is the same test the Firestore resolver needs, written small.</p>
+  </div>
+
+  <h3>What it does now</h3>
+  <div class="col">
+    <ul>
+      <li><strong>Either side can cancel.</strong> She cancels from the app; the client cancels from
+      the page they booked on, with a token good for that one booking and nothing else. No account,
+      no login — burying cancellation behind "message the salon" is how a no-show happens instead,
+      and a freed hour is worth more to her than an awkward conversation avoided.</li>
+      <li><strong>The client is told the cost before pressing anything.</strong> A preview returns
+      the tier that would apply right now. Nobody should discover the charge afterwards.</li>
+      <li><strong>The tier is computed from server time and frozen.</strong> Never a device clock,
+      and never recomputed later — the tier that applied is a fact about that moment.</li>
+      <li><strong>A cancelled booking is never replayed as live.</strong> The request-id
+      short-circuit only fires for a booking that still stands, or a retry would tell someone they
+      are booked when they are not.</li>
+    </ul>
+  </div>
+
+  <h3>The policy as data, not prose</h3>
+  <pre><code>[ { minNoticeHours: 48, refundPct: 100 },
+  { minNoticeHours: 24, refundPct:  50 },
+  { minNoticeHours:  0, refundPct:   0 } ]</code></pre>
+  <div class="col">
+    <p>Structured because the shipped wording is ambiguous in a way that will be argued about, and
+    because the refund maths and the words must never drift apart. Boundaries go the client's way —
+    exactly 48 hours is the 48-hour tier — and the tests check just inside and just outside each one,
+    from real offsets rather than calendar days. "Two days out at 11am" can be 36 hours away
+    depending on the time of day, which is exactly the kind of reasoning that should never decide
+    someone's refund.</p>
+    <p>These numbers are still <em>her stated terms as I read them</em>. The wording decision below
+    changes them, and changing them is now editing three integers rather than rewriting refund code.</p>
+  </div>
+</section>
+
+<hr>
+
+<section id="invariant" class="col">
+  <div class="kicker">The guarantee</div>
+  <h2 class="serif">What we can actually promise</h2>
+
+  <p>Revision 1 claimed <em>"every succeeded payment ends with a confirmed appointment"</em>. That is
+  not achievable and should not be promised: a payment can succeed for a slot that no longer exists,
+  and no amount of transactional care prevents it, because the money commits in a system we don't
+  control. Promising it means either lying or silently dropping money.</p>
+
+  <div class="call key">
+    <div class="lab">The invariant, second attempt</div>
+    <p><strong>Classification.</strong> Every succeeded payment carries exactly one <em>current</em>
+    classification on a monotonic ladder — <code>pending</code> → <code>confirmed</code> →
+    <code>{reversed, refunded, partially_refunded, refund_failed}</code> → <code>closed</code> — and
+    every transition is recorded with its cause.</p>
+    <p><strong>Liveness.</strong> No payment sits in a classification that is neither
+    <code>confirmed</code> nor <code>closed</code> for more than 24 hours without a human being told.</p>
+    <p>Every appointment created by an online deposit has exactly one succeeded, non-reversed payment
+    whose amount and currency match the figure frozen at hold time.</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">Built and tested this pass — 41 tests</div>
+    <p>The classifier and the webhook handler exist, with Stripe stubbed at the re-fetch boundary.
+    Every ordering hazard the red team named now has a test: a refund overtaking a confirmation, five
+    concurrent deliveries of one event, a completed-but-unpaid session, money arriving late, money
+    failing late, a dispute that a redelivered completion cannot undo, and a payment whose booking
+    has vanished.</p>
+    <p>What is <em>not</em> proven is the wire format — these tests show the logic is right, not that
+    Stripe's objects look the way I think they do. That needs a sandbox and
+    <code>stripe trigger</code>, and it is the one thing still waiting on an account.</p>
+  </div>
+
+  <div class="call flag">
+    <div class="lab">Why revision 3's version had to go</div>
+    <p>It said "exactly one <em>terminal</em> state", and the failure drill in this same document
+    refutes it: a payment that is confirmed and then disputed has occupied two. Confirmed is not
+    terminal — money can move for months afterwards.</p>
+    <p>Worse, <code>refunded</code> was being treated as guaranteed-reachable. Stripe refunds can fail
+    <em>asynchronously</em>, days later, against a closed account. The outbox says "refund issued,
+    done", the stylist still has the money, and the client believes they were refunded. That is why
+    <strong><code>refund_failed</code> is a first-class classification that alarms</strong>, not an
+    error swallowed by a retry loop.</p>
+  </div>
+
+  <p>Two details carry the weight. The third terminal state is where money that <em>cannot</em> become
+  an appointment goes, with a bounded and visible lifetime — without it you are pretending the
+  failure can't happen. And the second clause is scoped to <code>origin: 'online_deposit'</code>, so
+  the walk-ins and phone bookings she types in herself don't trip it. A reconciler that cries wolf on
+  day one is a reconciler she stops reading.</p>
+</section>
+
+<hr>
+
+<section id="occupancy">
+  <div class="kicker">The correction that matters most</div>
+  <h2 class="serif">Overlap is not a document-id collision</h2>
+
+  <div class="col">
+    <p>Revision 1 said the slot is claimed by <code>create holds/{slotId}</code>, and called that the
+    double-booking guard. It isn't. That guarantees <em>one hold per slot id</em>. It does nothing
+    about a 90-minute colour at 11:00 and a 45-minute cut at 12:00 — different ids, both creates
+    succeed, overlapping appointments. Firestore has no interval constraint.</p>
+    <p>Worse: <strong>her manually entered appointments live in the app.</strong> If occupancy is only
+    computed from online holds, the booking page will happily sell the hour she blocked out for the
+    school run.</p>
+  </div>
+
+  <h3>One occupancy document per day, authoritative for every origin</h3>
+
+  <pre><code>salons/{salonId}/days/{2026-10-03}
+{
+  version: 41,                 // compare-and-swap counter
+  tz: "Europe/London",
+  turnaroundMins: 10,
+  intervals: [
+    { id:"ap_7c3", s:1759482000000, e:1759489200000, kind:"appointment", origin:"online_deposit" },
+    { id:"hd_92a", s:1759492800000, e:1759496400000, kind:"hold",        expiresAt:1759493700000 }
+  ]
+}</code></pre>
+
+  <div class="col">
+    <ul>
+      <li>Holds and appointments share one array, so the overlap check is a single document read
+      inside a single transaction. Fifteen intervals a day is a few hundred bytes, against a
+      documented 1 MiB document limit.</li>
+      <li>Revision 2 justified this partly against a "one write per second per document" figure.
+      <strong>That number is not in the current documentation</strong> — the best-practices page
+      declines to give one, saying the maximum rate "depends highly on the workload". The honest
+      justification is the documented limits that do exist (1 MiB per document, 10 MiB per request,
+      270 seconds per transaction) plus the observation that one stylist generates single-digit
+      writes per day to any given day-document. For multi-tenant this becomes a contention question
+      to <em>measure</em>, not to quote.</li>
+      <li>Turnaround padding is applied to the <em>stored</em> interval, not at query time, so every
+      reader agrees about what is free.</li>
+      <li><strong>Expiry is evaluated at read time, not only by the sweeper.</strong> An
+      <code>expiresAt</code> in the past means free whether or not the ten-minute sweep has run. The
+      sweeper only tidies. A sweeper outage must never be able to block bookings, and revision 1 made
+      it a correctness dependency.</li>
+    </ul>
+  </div>
+</section>
+
+<hr>
+
+<section id="offline">
+  <div class="kicker">The hazard revision 1 waved at</div>
+  <h2 class="serif">Offline writes, and why she never writes occupancy</h2>
+
+  <div class="col">
+    <p>Saturday, no signal at the basin, she books Mrs Kerr into 11:00 next week. Twenty minutes
+    later the booking page sells an overlapping slot with a £45 deposit. At closing time her phone
+    gets signal and the queued write replays.</p>
+    <p>Under plain last-write-wins one of two things happens silently: the paying client's confirmed
+    appointment disappears with the money taken, or her write vanishes and she turns up expecting
+    Mrs Kerr. Firestore replays queued writes <strong>with no awareness of elapsed time</strong>, and
+    the documentation is explicit that <em>"transactions will fail when the client is offline"</em> —
+    so the transactional guarantee is unavailable on exactly the path that needs it.</p>
+  </div>
+
+  <div class="step">
+    <div class="step-n">1</div>
+    <div>
+      <h3>Client devices never write occupancy. They write intents.</h3>
+      <p>Her app creates an immutable, create-only <code>intents/{id}</code> document carrying the
+      target interval, the sealed payload, the day-document <code>version</code> her device last saw,
+      and a <code>serverTimestamp()</code> that resolves <em>when the write lands</em> — which is what
+      makes elapsed offline time measurable at all.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-n">2</div>
+    <div>
+      <h3>A resolver applies it in a transaction, and can refuse</h3>
+      <p>Three tests in order. <strong>Conflict:</strong> does it overlap a live interval? →
+      rejected. <strong>Staleness:</strong> landed more than six hours after it was made, or too many
+      versions behind, or targets a time already past? → needs review, <em>even with no conflict</em>.
+      A write from a device that has been dark for three days describes a world that no longer exists.
+      Otherwise: apply and bump the version.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-n">3</div>
+    <div>
+      <h3>Rejection is a place in the calendar, not an error toast</h3>
+      <p>Her appointment shows the instant she taps — that is the whole point of offline — rendered
+      provisional until it resolves. On rejection it becomes a conflict card in the same spot:
+      <em>"11:00 Saturday went to an online booking while you were offline. Mrs Kerr isn't booked."</em>
+      with two buttons: <strong>Move to 12:30</strong> and <strong>Keep Mrs Kerr, refund the online
+      booking</strong>. Never a dialog that can be dismissed into nothing.</p>
+    </div>
+  </div>
+
+  <div class="call">
+    <div class="lab">Who wins by default — hold, don't destroy</div>
+    <p>Revision 3 said the paid online booking wins outright. That is a weapon anyone can buy for
+    £45: pay deposits across her best Saturday slots, watch her real bookings get auto-rejected, then
+    dispute every charge. Each dispute costs her a non-refundable fee <em>whether she wins or not</em>,
+    and links are bearer URLs with no identity binding.</p>
+    <p>So: the online booking keeps the money and the slot <strong>provisionally</strong>, her booking
+    is <strong>not deleted</strong>, and the conflict card is a decision with a deadline — if she
+    doesn't answer within N hours, the online booking wins. "A stranger has been charged" is a reason
+    not to destroy the <em>payment</em>; it was never a reason to destroy <em>her</em> booking first.</p>
+    <p>With caps to match: one live deposit per client reference, a few per link, and a daily ceiling
+    across the salon. For one chair those limits are tiny and a real client never reaches them.</p>
+  </div>
+
+  <div class="col">
+    <p>For her non-occupancy edits — notes, prices, service definitions — security rules enforce
+    compare-and-swap directly, which converts last-write-wins into CAS in one line:</p>
+  </div>
+
+  <pre><code>allow update: if isStylist()
+  &amp;&amp; request.resource.data.version == resource.data.version + 1;</code></pre>
+
+  <div class="col">
+    <p>A stale queued write carrying <code>version: 42</code> that replays after the server reached 45
+    is rejected by the rules and rolled back locally, instead of quietly winning.</p>
+  </div>
+
+  <div class="call">
+    <div class="lab">Settled: use the native SDK</div>
+    <p><code>@react-native-firebase/firestore</code> documents persistence as <strong>on by
+    default</strong>, with an explicit opt-out. The Firebase JS SDK still has no durable persistence
+    under React Native — <code>persistentLocalCache</code> is IndexedDB-backed, React Native has no
+    IndexedDB, and the upstream feature request for it is <strong>still open</strong>. So the JS SDK
+    falls back to a memory cache that dies with the session.</p>
+    <p>But the one property we are actually betting on — <em>queued writes surviving a force-quit</em>
+    — is documented nowhere, by anyone. The drill decides it, and a pass is a local empirical result
+    pinned to a library version, not a platform guarantee. Re-run it on every major upgrade.</p>
+  </div>
+
+  <div class="call flag">
+    <div class="lab">The residual race, stated honestly</div>
+    <p>Her offline device cannot publish its intent to the booking page's availability check, because
+    it is offline. <strong>No client-side design eliminates this.</strong> It can only be made small:
+    links offer specific slots she chose rather than open availability, holds are short, intents
+    publish the instant there is any signal, and the conflict path is a two-tap resolution rather than
+    a corruption. A design claiming to have eliminated it would be lying.</p>
+  </div>
+</section>
+
+<hr>
+
+<section id="payments">
+  <div class="kicker">Money</div>
+  <h2 class="serif">The Stripe rules that actually prevent loss</h2>
+
+  <div class="col">
+    <p>"Only the webhook confirms" is right but nowhere near sufficient. The specifics:</p>
+    <ul>
+      <li><strong><code>checkout.session.completed</code> is authoritative only when
+      <code>payment_status == 'paid'</code>.</strong> Delayed methods fire it as unpaid and settle
+      later. Enumerate <code>payment_method_types</code> explicitly rather than using automatic
+      methods, and handle the async success/failure pair regardless.</li>
+      <li><strong>Re-fetch, never trust the payload.</strong> On every webhook, ignore the event's
+      embedded object and retrieve it fresh from the API, then compute state from current truth. One
+      extra call per event at her volume, and most ordering bugs vanish — a refund that overtakes a
+      confirmation can no longer produce a confirmation.</li>
+      <li><strong><code>payment_intent.succeeded</code> carries no
+      <code>client_reference_id</code>.</strong> Set <code>payment_intent_data.metadata</code> too, or
+      the reconciler — which walks PaymentIntents — can't map half of them.</li>
+      <li><strong>Monotonic state machine.</strong> Rank the states and drop any transition that would
+      move backwards, recording it rather than applying it.</li>
+      <li><strong>Read the idempotency marker first, inside the same transaction as the effect.</strong>
+      Writing it first as a claim means a crash between claim and work permanently suppresses a real
+      event. Losing the race returns <strong>HTTP 200</strong> — returning 500 makes Stripe retry into
+      the same race, which is an amplification loop that looks like an outage.</li>
+      <li><strong>Nothing may happen after <code>res.send()</code>.</strong> Function instances are
+      frozen the instant the response goes. The transaction and the 200 are the handler's only
+      effects; everything else is an outbox row.</li>
+    </ul>
+  </div>
+
+  <h3>The one that actually loses money</h3>
+  <div class="col">
+    <p>The hold expires while the client is still paying. Fixes in order of prevention: derive the
+    hold's TTL <em>from the Checkout Session's own expiry</em> rather than picking one independently;
+    make <code>checkout.session.expired</code> the primary release trigger with the sweeper as
+    backstop; and when it happens anyway, the confirm handler finds no free interval, writes
+    <code>held_for_review: slot_lost</code>, and enqueues a refund keyed to the PaymentIntent. The app
+    then says: <em>"Someone paid £45 for Saturday 11:00 but the slot went. Refunded automatically —
+    you may want to call them."</em></p>
+    <p>Auto-refund is the default because it never leaves a stranger out of pocket, but it should be
+    configurable: for a stylist who is fully booked, the better answer is often <em>keep the money,
+    phone them, move them to Tuesday.</em></p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">Stripe's idempotency key expires before its own retries stop</div>
+    <p>Idempotency keys may be pruned after <strong>24 hours</strong>. Webhooks retry for
+    <strong>three days</strong>. So a refund sitting in the outbox and retried on day two presents a
+    pruned key, and Stripe <strong>creates a second refund</strong>.</p>
+    <p>The rule that falls out: <strong>the outbox's own marker in the database is the durable guard,
+    not the Stripe key.</strong> Stripe's key protects the first day only. Anything that moves money
+    checks our own ledger before it calls out.</p>
+  </div>
+
+  <h3>Two defaults that are hostile</h3>
+  <div class="col">
+    <ul>
+      <li><strong>Checkout Sessions expire in 24 hours unless told otherwise</strong>, and the floor is
+      30 minutes. Leave it unset and a Saturday-morning slot is held all day by someone who wandered
+      off. Set it explicitly at the floor and derive the hold from it.</li>
+      <li><strong>Firestore TTL deletes "typically within 24 hours", and expired documents keep
+      appearing in queries until the sweep actually runs.</strong> TTL therefore cannot release a
+      30-minute hold. This makes revision 2's read-time expiry rule load-bearing rather than
+      defensive — TTL is a cost optimisation, never a correctness mechanism.</li>
+    </ul>
+    <p>One more worth designing around: Checkout waits up to <strong>ten seconds</strong> for the
+    webhook response before redirecting the client. A slow handler makes a paying customer stare at a
+    spinner, which is a second reason nothing may happen after the response goes.</p>
+  </div>
+
+  <h3>Freeze the amount, and put the policy in the record</h3>
+  <div class="col">
+    <ul>
+      <li>Freeze <code>expectedAmountMinor</code>, currency and price version onto the booking at hold
+      time. Confirm compares against the frozen value, never the live service price — otherwise
+      editing a price mid-session silently accepts the wrong money.</li>
+      <li>Every timestamp a decision depends on is a server timestamp. Device clocks write advisory
+      metadata only.</li>
+      <li><strong><code>agreedAt</code> is currently useless as evidence</strong> — a timestamp with no
+      record of <em>what</em> was agreed. Edit the policy and it points at nothing. Store a
+      <code>policyHash</code> of the exact text shown, with an immutable policy document behind it.
+      That is the single artefact that wins a chargeback.</li>
+      <li>Store the policy as structured tiers and generate the prose from it, so the words and the
+      refund maths cannot drift apart.</li>
+    </ul>
+  </div>
+</section>
+
+<hr>
+
+<section id="privacy">
+  <div class="kicker">Privacy</div>
+  <h2 class="serif">What's sealed and what's clear</h2>
+  <p class="col">Seal everything and the product can't function — no conflict checks, no rules, no
+  reconciliation. The workable line: <strong>business data clear, personal data sealed.</strong></p>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Field</th><th>State</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Interval start / end</td><td><span class="pill clear">Clear</span></td><td>The overlap check reads it</td></tr>
+        <tr><td>Service, duration, price</td><td><span class="pill clear">Clear</span></td><td>Her business data, not a person's</td></tr>
+        <tr><td>Status, amount, Stripe ids, policy hash</td><td><span class="pill clear">Clear</span></td><td>The reconciler must read these to prove nothing was lost</td></tr>
+        <tr><td>Name, phone, email</td><td><span class="pill sealed">Sealed</span></td><td>Identifies a person</td></tr>
+        <tr><td>Notes, formula, technique</td><td><span class="pill sealed">Sealed</span></td><td>Tied to an identifiable client</td></tr>
+        <tr><td>Allergies, patch tests</td><td><span class="pill sealed">Sealed</span></td><td>Special category health data — Article 9</td></tr>
+        <tr><td>Photos</td><td><span class="pill sealed">Sealed</span></td><td>Encrypted before upload; Storage rules demand an opaque content type so an accidental plain upload fails</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="call flag">
+    <div class="lab">A claim from revision 1 that was too strong</div>
+    <p>"Random <code>clientRef</code> per link so the backend can't correlate visits" is true of the
+    booking links and false of the synced appointment history — stable document ids let the backend
+    see <em>this anonymous person comes every six weeks and spends £90</em>.</p>
+    <p>Fix: derive client document ids as <code>HMAC(salonKey, clientId)</code> — stable across her
+    devices, which share the key, opaque to the backend, and uncorrelatable between salons. Then the
+    honest claim is: <strong>cannot identify anyone, cannot link a client across salons, can see that
+    some anonymous regular exists.</strong></p>
+  </div>
+
+  <h3>The envelope is attacker-supplied, and unbound</h3>
+  <div class="col">
+    <p>Two properties of the current format that the design has been assuming away:</p>
+    <ul>
+      <li><strong>Anyone who can load a booking page can seal anything.</strong> A sealed box
+      authenticates to an <em>attacker-chosen</em> ephemeral key, so "authenticated encryption"
+      guarantees nothing about authorship. The decrypted text goes straight into
+      <code>client.name</code>, <code>phone</code> and <code>notes</code> — including, on the
+      allergies field, somewhere with real safety consequences. Treat an import as a
+      <strong>proposal</strong>: strip control characters and bidi overrides, clamp lengths, normalise
+      the phone before it reaches a <code>sms:</code> URL, and let her confirm rather than writing
+      straight through.</li>
+      <li><strong>Deleting attacker text doesn't stick.</strong> The field-level merge deliberately
+      backfills blanks from the older record — which is right for a missing Instagram handle and wrong
+      here: clear an abusive note on one device and the other restores it on the next sync. Needs a
+      <code>suppressed</code> tombstone the merge honours.</li>
+      <li><strong>The envelope isn't bound to its booking.</strong> It contains only the personal
+      fields — no token, slot, time, price or policy id. A compromised or merely buggy backend can
+      attach any envelope to any booking, or swap two clients' allergy notes, and the app renders it
+      as truth. Seal the identifying context alongside the personal data and refuse the import when
+      the sealed fields disagree with the clear ones. That is a few lines, and it buys a replay guard
+      and the <code>kid</code> hook the keyring already wants.</li>
+    </ul>
+  </div>
+</section>
+
+<hr>
+
+<section id="rules">
+  <div class="kicker">Rules</div>
+  <h2 class="serif">Keeping strangers out of the database entirely</h2>
+
+  <div class="col">
+    <p>The premise that removes a whole class of leak: <strong>no unauthenticated principal ever
+    touches Firestore.</strong> The public booking page talks to the Cloudflare Worker, which writes
+    with a service account. The only clients holding Firestore credentials are her devices. Rules are
+    therefore "deny everything, then allow the stylist a few narrow shapes", not a public API surface.</p>
+    <p>That is also the argument for <strong>keeping the Worker</strong> rather than folding the page
+    into Firebase Hosting: it is the only component strangers touch, it is already tested thirty-two
+    ways, and keeping Firestore closed is what makes these rules short.</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">These now run</div>
+    <p>The rules are written and <strong>29 tests execute them against the Firestore
+    emulator</strong> — <code>firebase/firestore.rules</code> and <code>firebase/rules.test.mjs</code>,
+    in their own package so <code>firebase-tools</code> never enters the app's dependency tree.
+    One case per leak, named for the leak rather than the rule.</p>
+    <p>They found a lockout on the first run. <code>request.auth.token.suspended</code>
+    <strong>throws</strong> when the claim is absent, and a thrown condition denies — so adding a
+    claim in a later release would have locked every device still holding an older token out of her
+    own salon. Every claim is now read with <code>.get(name, default)</code>. Reading the file would
+    not have caught that.</p>
+  </div>
+
+  <h3>The single most valuable rule</h3>
+  <pre><code>match /bookings/{b} {
+  allow update: if stylist()
+    &amp;&amp; request.resource.data.diff(resource.data).affectedKeys()
+         .hasOnly(['sealed','kid','clientNote','seenAt','version'])
+    &amp;&amp; request.resource.data.version == resource.data.version + 1;
+  allow create, delete: if false;
+}</code></pre>
+  <p class="col">She may annotate a booking; she can never touch <code>status</code>,
+  <code>amountMinor</code> or <code>stripe.*</code>. Worth writing first.</p>
+
+  <div class="call flag">
+    <div class="lab">But it does not do what revision 3 claimed</div>
+    <p>Revision 3 said this rule means "a replayed offline write physically cannot resurrect a
+    cancelled or refunded booking". <strong>False</strong>, and the counterexample is ordinary: her
+    iPad, offline since Thursday, nudges a confirmed appointment to 11:15. On Friday the client
+    cancels and is refunded, so the interval is removed from the day document. The iPad reconnects.
+    The intent's conflict test passes — 11:15 is free now — staleness passes, past-time passes. The
+    resolver applies it and the refunded appointment is back in her calendar and back in occupancy.</p>
+    <p>The rule was never involved: her device wrote an <em>intent</em>, which is create-only and
+    therefore allowed, and the resolver runs with admin privileges that bypass rules entirely. So the
+    resolver needs a <strong>fourth test, run first — resolve the target booking and refuse if its
+    status is anything but live.</strong> And the honest claim is: rules stop her device rewriting
+    payment state directly; <em>the resolver</em> is what stops a stale intent reinstating a dead
+    appointment, and the resolver is server code that must be tested, not a rule that is enforced.</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">Built and tested this pass</div>
+    <p>The resolver exists: <code>firebase/src/resolve.mjs</code> as a pure decision, with the
+    transaction around it in <code>src/applyIntent.mjs</code>. <strong>38 tests</strong> — 31 of them
+    without a database, because a pure decision lets the awkward cases be constructed exactly rather
+    than approximated.</p>
+    <p>Five statuses are tested for resurrection —
+    <code>cancelled</code>, <code>refunded</code>, <code>reversed</code>, <code>no_show</code>,
+    <code>expired</code> — each with the hour free, the clock fresh and the time still in the future,
+    so every other check waves it through. And the ordering itself is a test: if conflict ran before
+    status, a cancelled booking whose hour was since taken would report "someone beat you to it"
+    rather than "that booking is gone".</p>
+  </div>
+
+  <h3>How multi-tenant rules leak</h3>
+  <div class="col">
+    <ul>
+      <li><strong>Collection-group queries route around path rules.</strong> A rule at
+      <code>/salons/{sid}/clients/{c}</code> does nothing for <code>collectionGroup('clients')</code>.
+      Default-deny saves you; a permissive group rule written for convenience does not. Denormalise
+      <code>salonId</code> into every document so a group rule can be written safely if ever needed.</li>
+      <li><strong>Rules filter documents, not queries — and people loosen rules to make lists
+      work.</strong> Path-based tenancy makes lists naturally scoped and removes the temptation.</li>
+      <li><strong>Custom claims are stale for up to an hour.</strong> Revoking access does not take
+      effect in rules until the token refreshes, and revoking refresh tokens doesn't invalidate a live
+      one. Money-moving and destructive operations go through callables that check a live revocation
+      document. Rules are not a revocation mechanism.</li>
+      <li><strong>Anonymous auth satisfies <code>request.auth != null</code>.</strong> Enable it
+      anywhere in the project and every such rule is public. Check the sign-in provider too.</li>
+      <li><strong>Callables using the Admin SDK bypass rules entirely.</strong> In practice this is
+      where the real leak will be — a callable taking <code>salonId</code> from the request body
+      instead of the token. Every callable derives tenancy from the token. Make it a review checklist
+      item.</li>
+      <li><strong>Exports, backups and BigQuery streaming ignore rules completely.</strong></li>
+    </ul>
+  </div>
+
+  <div class="call key">
+    <div class="lab">Why the sealing pays for itself — stated accurately this time</div>
+    <p>A leaked export exposes times, prices, opaque blobs, <strong>and pointers into Stripe</strong>.
+    A <code>pi_…</code> resolves in one API call to the name, email, billing address and card last4
+    that Checkout collected. So the sealing is strong against a stranger with a stolen backup, and
+    <em>weak against anyone who also holds Stripe read access</em> — which in main-hosted mode is the
+    platform operator, the exact party most likely to be subpoenaed or compromised.</p>
+    <p>Two smaller leaks in the same spirit: <code>links.greeting</code> stores a real first name in
+    the clear, and a first name plus exact recurring appointment times in one town is not "not
+    people". And any server-sent confirmation needs a plaintext address somewhere. Either the outbox
+    holds personal data, or her device does the sending — that is a decision, not an oversight, and
+    it belongs in the table above as its own row.</p>
+  </div>
+</section>
+
+<hr>
+
+<section id="keys">
+  <div class="kicker">Correcting revision 1</div>
+  <h2 class="serif">Key recovery, before the first deposit</h2>
+
+  <div class="col">
+    <p>Revision 1 said "put the secret key in the iCloud Keychain". <strong>That contradicts the
+    shipped code.</strong> <code>bookingStore.ts</code> uses
+    <code>AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY</code>, which does not sync and is not restored onto a
+    replacement device — deliberately, with a comment saying a secret that syncs is a secret in a
+    file. That is a defensible choice. It also means: drop the phone in the Clyde with the iPad
+    un-paired at home, and every sealed envelope in the cloud is gone for good.</p>
+  </div>
+
+  <h3>The recovery card</h3>
+  <div class="col">
+    <p>A 160-bit code rendered as eight groups of five Crockford base-32 characters — no I, L, O or U,
+    so it survives being handwritten. It wraps the salon secret key with a deliberately slow KDF
+    (pure-JS scrypt, since React Native has no <code>crypto.subtle</code>; target one to two seconds).
+    Only the wrapped blob is uploaded — useless without the code, and the code exists only on paper.</p>
+    <p>What she sees is one printable card: salon name, date, the code in large type, a QR of the
+    same, and one sentence — <em>"Keep this with your passport. Without it, a lost phone means lost
+    client notes."</em> Not a word list, not a JSON file, not an email to herself.</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">Built and tested this pass — 18 tests</div>
+    <p><code>src/data/recovery.ts</code>. Crockford base32 with no I, L, O or U, because this gets
+    handwritten and read back months later — and <code>normalizeCode</code> forgives the
+    substitutions a person actually makes: an O for a zero, an I or L for a one. Rejecting those
+    would mean telling her the card is wrong when it is right.</p>
+    <p>scrypt at N=2<sup>15</sup> measures ~170&nbsp;ms on a laptop, so pure-JS on her phone lands in
+    the intended one-to-two seconds. A wrong code returns <code>null</code> with no detail about
+    <em>how</em> it was wrong — the difference between "bad code" and "bad blob" is a small oracle
+    and there is nothing useful she could do with it.</p>
+    <p><code>canTakeDeposits()</code> is the gate as code rather than a note: a verified card, or two
+    paired devices. The end-to-end test seals a booking, throws the key away, recovers it from the
+    card and opens the envelope.</p>
+  </div>
+
+  <h3>Two changes that shrink the blast radius</h3>
+  <div class="col">
+    <ul>
+      <li><strong>A keyring, not a key.</strong> The envelope format has no key id today. Don't change
+      the wire format — store <code>kid</code> as a clear field beside the sealed blob, with missing
+      meaning key 1. Old envelopes keep opening after a rotation, which turns re-keying from a
+      data-loss event into an ordinary operation and fixes today's all-or-nothing reset path.</li>
+      <li><strong>Make the cloud envelope transient.</strong> When her device imports a booking it
+      re-seals the personal data into the durable record and marks the original superseded. Key loss
+      then costs only the envelopes sealed since the last import — minutes, not the whole history.
+      Cheapest high-value change in this section.</li>
+    </ul>
+  </div>
+
+  <h3>When the key is genuinely gone</h3>
+  <div class="col">
+    <p>The honest answer is also a workable product. The clear fields survive, so she still sees that
+    <em>someone</em> is booked Saturday at 11:00 for a full head of colour, paid £45, agreed to the
+    terms at 20:41. <code>unsealBooking</code> already returns <code>null</code> rather than crashing
+    and the app already carries <code>details: null</code> through to the UI, so the row renders as
+    "Details unavailable — sealed to a key this device no longer has". One tap sends the client a
+    fresh link asking them to re-enter their name and number against the new key.</p>
+    <p>And the app says it out loud, once, at setup: <em>this is the price of Google not being able to
+    read your clients.</em></p>
+  </div>
+</section>
+
+<hr>
+
+<section id="modes">
+  <div class="kicker">Three ways to run it</div>
+  <h2 class="serif">One app, three backends</h2>
+  <p class="col"><strong>The app branches on capabilities, never on mode.</strong>
+  <code>Backend.capabilities()</code> sits beside <code>health()</code> in the adapter and every
+  screen asks <code>has('deposits')</code>. A new mode then costs nothing, and the "identical app"
+  promise survives contact with the code.</p>
+
+  <div class="modes">
+    <div class="mode">
+      <h3>In-app only</h3>
+      <div class="who">Her today. Anyone who wants no server.</div>
+      <ul>
+        <li>Local SQLite, iCloud sync</li>
+        <li>No online booking, no deposits</li>
+        <li>£0, nothing to operate</li>
+        <li>Already shipped</li>
+      </ul>
+    </div>
+    <div class="mode b">
+      <h3>Self-hosted</h3>
+      <div class="who">A stylist who wants her own backend.</div>
+      <ul>
+        <li>Her Firebase project, her Stripe keys</li>
+        <li>Pairs by QR from her setup page</li>
+        <li>~30 min to set up; pennies to run, <strong>but a card on file</strong></li>
+        <li>You hold no data and no liability</li>
+      </ul>
+    </div>
+    <div class="mode c">
+      <h3>Main-hosted</h3>
+      <div class="who">Stylists who won't deploy anything.</div>
+      <ul>
+        <li>One multi-tenant project you operate</li>
+        <li>Stripe <strong>direct charges</strong> on her connected account</li>
+        <li>Sign in and go</li>
+        <li>Needs a business behind it</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Stripe Connect — the vocabulary changed twice</h3>
+  <div class="col">
+    <p>Revision 2 said "Standard / Express / Custom". <strong>Delete that.</strong> The
+    <code>type</code> parameter is now deprecated in favour of <code>controller</code> properties —
+    <code>fees.payer</code>, <code>losses.payments</code>, <code>requirement_collection</code>,
+    <code>stripe_dashboard.type</code>. The shape we want (stylist is merchant of record, has her own
+    dashboard, platform never holds her money) turns out to be <strong>every one of those
+    defaults</strong>, so it is close to a bare account creation plus direct charges.</p>
+    <p>And the bigger one: <strong>there is now an Accounts v2 API, and Stripe steers new Connect
+    platforms to it</strong> — the v1 design guide opens by saying it applies only to existing
+    platforms. Main-hosted would be greenfield, so it should start on v2, where the account-type axis
+    is replaced by configurations (<code>merchant</code> / <code>customer</code> /
+    <code>recipient</code>) and <code>defaults.responsibilities</code>.</p>
+    <p>A precision worth keeping: <code>losses.payments</code> does <em>not</em> mean "who pays
+    disputes". It governs who is liable when the account can't cover a negative balance. Disputes hit
+    her balance because <strong>the charge lives on her account</strong> — that is a consequence of
+    direct charges, not of the controller setting. Two mechanisms, easily conflated.</p>
+    <p>Three operational consequences: every API call carries the account header; the webhook dedupes
+    on <strong>(account, event id)</strong>, not event id alone, or one tenant's event silently
+    suppresses another's; and she can refund from her own dashboard, so subscribe to the Connect
+    refund events and let the app say "refunded outside iris" rather than showing a confident, wrong
+    <em>confirmed</em>.</p>
+    <p>Self-hosted needs none of this. Keep the Stripe adapter behind the same seam as the backend
+    adapter so the Connect complexity lives in exactly one implementation.</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">Wired into the app this pass</div>
+    <p><code>AppContext</code> exposes the backend, built from credentials and refreshed when
+    booking is switched on. It starts local so the app is useful on first paint, and asking the
+    service is best-effort — on a train it simply never answers, which is fine.</p>
+    <p>The dead end it removes: she used to pick a client, a service and a set of times, tap
+    <em>Send</em>, and <strong>only then</strong> be told nothing was set up. Now the client card
+    checks first and offers to set one up, and Settings reports what the deployment can actually do —
+    <em>"Linked · connect Stripe to take deposits"</em> rather than implying it is ready. The wording
+    comes from one place, so the two screens cannot say different things.</p>
+    <p>Verified on device, not just in a typecheck.</p>
+  </div>
+
+  <h3>When a capability is missing</h3>
+  <div class="col">
+    <p>Never hide it, never grey it out without a reason, never show a paywall. One pattern
+    everywhere — the feature appears in place with a line of reason and one action:</p>
+    <p style="padding-left:18px;border-left:3px solid var(--accent)"><strong>Deposits</strong> —
+    <em>Taking deposits needs a booking service. About 30 minutes, then it runs itself.</em>
+    &nbsp;<strong>[Set one up]</strong></p>
+    <p>And the inverse matters more for trust: when a mode <em>loses</em> a capability — she signs
+    out, her Worker is unreachable, Stripe onboarding lapses — the app says what is degraded and what
+    still works, and <strong>never deletes local data to match a remote state.</strong></p>
+  </div>
+</section>
+
+<hr>
+
+<section id="migration">
+  <div class="kicker">The hole revision 2 left</div>
+  <h2 class="serif">Moving her live data across</h2>
+
+  <div class="col">
+    <p>She uses this app every working day. The migration has to happen underneath her with no
+    maintenance window, no read-only mode, and no moment where opening the app shows missing clients.
+    And it has to be reversible, because we might be wrong about Firestore.</p>
+    <p>The shape that gives all three: <strong>snapshot, then tail.</strong> Copy a consistent
+    snapshot up, then repeatedly sweep rows changed since the snapshot until a sweep comes back empty
+    twice. She keeps booking throughout.</p>
+  </div>
+
+  <h3>The rule that makes rollback free</h3>
+  <div class="call key">
+    <p><strong>No step deletes or overwrites local data.</strong> New columns are added beside the old
+    ones, never in place. The pre-migration snapshot file is kept forever. iCloud sync stays running
+    the whole time.</p>
+    <p>The moment someone proposes dropping the old float columns "since we've moved to pence now",
+    rollback stops being free. That is the line to hold.</p>
+  </div>
+
+  <h3>Before anything is written</h3>
+  <div class="col">
+    <ul>
+      <li><strong>The recovery card has been round-tripped</strong>, not merely displayed. Migration
+      is the first bulk encryption, so a key that can't be recovered turns her whole history into
+      noise in one pass rather than one booking at a time.</li>
+      <li><strong>Both devices provably hold the same key.</strong> Seal a canary on the iPhone,
+      unseal it on the iPad, require green. The keychain class doesn't travel, so this is a real
+      failure mode rather than a theoretical one.</li>
+      <li><strong>Converge the two devices first.</strong> Push-pull on each, twice — the first push
+      can't contain rows the other device hasn't uploaded yet. Then compare a manifest of row counts
+      and keyed digests. Unequal manifests keep migration locked.</li>
+      <li><strong>Count the rows against the write ceiling</strong>, and be on Blaze before starting.</li>
+    </ul>
+  </div>
+
+  <h3>Deterministic ids, so every write is idempotent</h3>
+  <pre><code>docId(kind, localId) = base32( HMAC-SHA256(salonKey, kind + ":" + localId) )</code></pre>
+  <div class="col">
+    <p>The same HMAC scheme the privacy section already needs, extended to every collection. It buys
+    three things at once: the backend still can't correlate, both devices independently derive the
+    same id, and <strong>the migration becomes resumable</strong> — interrupt it at 60%, relaunch, and
+    re-running writes the same ids over the same documents. Never <code>add()</code>, never a
+    generated UUID.</p>
+    <p>A bonus worth noting, since random-looking ids read like a privacy tax: Firestore's own
+    best-practices page warns that sequential document ids cause hotspots. Uniformly distributed HMAC
+    output is also the faster choice.</p>
+  </div>
+
+  <div class="call flag">
+    <div class="lab">One key cannot do both jobs</div>
+    <p>Deriving ids from the salon key collides with the keyring promise: ids keyed to it
+    <strong>can never be rotated</strong>, because rotating means every document gets a new id. So
+    "re-keying becomes an ordinary operation" and "ids are HMACs of the salon key" cannot both be
+    true, and one compromise would retroactively destroy unlinkability for the whole dataset with no
+    remedy.</p>
+    <p>Idempotency needs <em>determinism</em>, not secrecy. Give each row a random
+    <code>remoteId</code> at creation and sync it — resumable, uncorrelatable, key-free, and it
+    survives rotation. Keep HMAC only for the verification digests, under its own derived subkey, and
+    never build a preimage by string concatenation: <code>("a:b","c")</code> and
+    <code>("a","b:c")</code> hash identically, and with <code>set()</code> a collision is a silent
+    overwrite rather than a duplicate.</p>
+    <p>Related: the migrator lease needs a <strong>monotonic epoch</strong>, not just a heartbeat. An
+    iPad restored from a three-week-old backup can take over a finished migration after 30 minutes
+    and rewrite every document with stale content — and the row counts still match.</p>
+  </div>
+
+  <h3>Electing one migrator</h3>
+  <div class="col">
+    <p>A local "I am migrating" flag cannot prevent both devices starting, because both can set it
+    offline. The claim is a create-only document, arbitrated by the server, with a heartbeat so a
+    stuck claim can be taken over after 30 minutes. The loser goes into follower mode and shows
+    <em>"Your iPhone is moving your data across. Nothing to do here."</em></p>
+  </div>
+
+  <h3>Verification: three checks, three different failures</h3>
+  <div class="col">
+    <ol>
+      <li><strong>Counts, extents, and money sums</strong> — catches missing rows. Sum every money
+      field in integer pence and require exact equality. Off-by-a-penny is a bug, not rounding, and
+      integers make it visible.</li>
+      <li><strong>Keyed per-record digests rolled into a per-collection root</strong> — catches
+      altered content. Use <code>HMAC(salonKey, …)</code>, not a bare hash: a plain SHA-256 of
+      "name|phone" stored beside the record is a confirmation oracle anyone with the database can test
+      guesses against.</li>
+      <li><strong>The second device re-verifies independently</strong> — it pulls everything, unseals
+      with <em>its</em> key, recomputes, and reports without repairing. This is the only check that
+      proves the data is readable by a device that didn't write it.</li>
+    </ol>
+    <p><strong>The Firestore side must be computed by reading documents back and unsealing them</strong>
+     — never by hashing what you were about to upload. That is the difference between finding a key
+    mismatch today and finding it in March when she taps a client and gets "Details unavailable".
+    Note that sealing is non-deterministic (fresh ephemeral key and nonce per call), so comparing
+    ciphertext is worthless; hash the plaintext, on device.</p>
+  </div>
+
+  <h3>Bake: a replica before it is a source</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Stage</th><th>What's authoritative</th><th>Rolling back costs</th></tr></thead>
+      <tbody>
+        <tr><td>Snapshot &amp; tail</td><td>SQLite</td><td>Nothing — abort, delete the claim</td></tr>
+        <tr><td>A · replica, 14 days</td><td>SQLite; dual-write to Firestore; iCloud still on</td><td>Nothing — turn the adapter off</td></tr>
+        <tr><td>B · reads flip</td><td>Firestore reads, both written; iCloud still on</td><td>Nothing — flip reads back</td></tr>
+        <tr><td>C · retire, day 45+</td><td>Firestore</td><td>Hours — replay Firestore into SQLite, snapshot covers the rest</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="col">Promotion out of Stage A needs <strong>fourteen consecutive nights of zero
+  discrepancies</strong>. And <strong>deposits are not enabled before Stage B completes</strong> —
+  taking real money against a database you haven't yet trusted for reads is the one sequencing
+  mistake that turns a data problem into a money problem.</p>
+
+  <h3>What she sees</h3>
+  <div class="col">
+    <p>Almost nothing, which is correct. One card in Settings beforehand. During: a slim banner —
+    <em>"Moving your data across — 312 of 480. Carry on as normal."</em> — with the app fully usable
+    and writable, because that is the entire point of snapshot-and-tail. Force-quit mid-migration and
+    it resumes silently on relaunch.</p>
+    <p>On completion, one specific line, because specific numbers are what make a person believe a
+    claim: <em>"Done. 214 clients, 1,806 appointments and 340 photos are now backed up and encrypted.
+    Your iPad checked them too."</em></p>
+    <p>On failure, never a red error — the true state is "still local, nothing lost":
+    <em>"Couldn't finish moving your data — everything's still safely on your phone, exactly as it
+    was. I'll try again later."</em></p>
+  </div>
+</section>
+
+<hr>
+
+<section id="drill">
+  <div class="kicker">What "production ready" means</div>
+  <h2 class="serif">The failure drill</h2>
+  <p class="col">Green across all of these, plus a seven-day staging soak with random fault injection
+  and a zero-discrepancy reconciler report. Anything less is a feeling rather than a claim.</p>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Fault</th><th>Injection</th><th>Observable that proves the invariant</th></tr></thead>
+      <tbody>
+        <tr><td>Duplicate webhook</td><td><code>stripe events resend</code> ×5, plus 5 concurrent</td><td>One appointment, one marker, version incremented once; all 200</td></tr>
+        <tr><td>Out-of-order refund</td><td>Deliver refund before completion</td><td>No appointment ever created; booking ends refunded; no "confirmed" message sent</td></tr>
+        <tr><td>Killed mid-transaction</td><td><code>exit(1)</code> between reads and commit</td><td>Day version unchanged; exactly one confirmation after Stripe's retry</td></tr>
+        <tr><td>Killed after the 200</td><td>Kill the outbox consumer post-write</td><td>One <code>sentAt</code>; provider shows one send</td></tr>
+        <tr><td>Hold expires mid-payment</td><td>Force the sweeper, then complete the session</td><td>Refund exists with the expected key; no orphan appointment; alert raised</td></tr>
+        <tr><td>Two payments, one booking</td><td>Second session by hand, pay both</td><td>Two PaymentIntents, one appointment, one refund, zero discrepancies</td></tr>
+        <tr><td>Amount mismatch</td><td>Edit the price mid-session</td><td>Held for review; appointment absent; alert raised</td></tr>
+        <tr><td>Webhooks down 6 hours</td><td>Block the endpoint, take three bookings</td><td>Reconciler repairs all three; discrepancy count returns to zero</td></tr>
+        <tr><td>Signature storm</td><td>Rotate the secret, don't update the function</td><td>Alert fires within one cycle; reconciler still confirms</td></tr>
+        <tr><td>Dispute</td><td><code>stripe trigger charge.dispute.created</code></td><td>Payment reversed; reconciler does <em>not</em> re-confirm; evidence bundle complete</td></tr>
+        <tr><td><strong>Offline queue survives an app kill</strong></td><td>Airplane mode, two bookings, force-quit, relaunch</td><td>Both intents land. <strong>Run this first</strong> — it decides the SDK</td></tr>
+        <tr><td>The headline scenario</td><td>Offline booking vs. online booking, same hour</td><td>Conflict card with two actions; day array pairwise non-overlapping</td></tr>
+        <tr><td>Stale intent</td><td>Backdate by three days</td><td>Needs review even with no conflict; nothing applied</td></tr>
+        <tr><td>Skewed clock</td><td>Device clock two days forward</td><td>Decision falls back to version distance, not the device clock</td></tr>
+        <tr><td>Overlap storm</td><td>50 concurrent attempts across one day</td><td>Exactly one winner per real interval; 49 clean rejections</td></tr>
+        <tr><td>Sweeper down</td><td>Disable the schedule for an hour</td><td>Expired holds still read as free and are bookable</td></tr>
+        <tr><td>Total device loss</td><td>Wipe, restore from iCloud backup</td><td>Key absent (proving the threat), then the card restores it</td></tr>
+        <tr><td>Recovery code lost</td><td>Discard the card</td><td>Clear fields intact, <code>details: null</code> copy, no crash, repair link offered</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="col">Plus every security-rule assertion running in the emulator on each commit, with the
+  rules coverage report failing the build on an uncovered path.</p>
+</section>
+
+<hr>
+
+<section id="open" class="col">
+  <div class="kicker">Next passes</div>
+  <h2 class="serif">Still open</h2>
+
+  <p>Fourteen passes. Both blocking decisions are settled, and the machinery that keeps a booking or
+  a payment from going missing is built and covered — occupancy, the resolver, the rules, cancellation,
+  the outbox, the payment classifier, the webhook handler, key recovery, the capability seam, and now
+  the reconciler.</p>
+
+  <div class="call key">
+    <div class="lab">Check it rather than believe it</div>
+    <p><code>scripts/preflight.sh</code> — everything that must be true before a first real deposit,
+    written as a script rather than a checklist. A checklist is a list of things somebody believes;
+    this is a list of things that can be checked. It runs the three suites and then looks for the
+    specific mistakes this design is prone to: money stored as a float, a policy whose wording and
+    maths can drift apart, a bypass hostname left on, a Firestore claim read directly (an absent one
+    <em>throws</em>, and a thrown condition denies), a missing composite index the emulator will
+    never complain about.</p>
+    <p>It exits non-zero and says <em>"Not ready to take a deposit"</em>. Today: <strong>12 passed,
+    0 failed, 3 for a human.</strong></p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">What would make this production-ready</div>
+    <p><strong>One thing: a Stripe sandbox.</strong> The payment logic is proven against stubs —
+    every ordering hazard, every duplicate, every refusal. What is <em>not</em> proven is that
+    Stripe's objects look the way this code assumes. That needs an account,
+    <code>stripe trigger</code>, and a run through the drill table above with real events.</p>
+    <p>Until then the honest claim is: the design holds against every failure we can construct, and
+    the wire format is an assumption.</p>
+  </div>
+
+  <h3>The three a script cannot settle</h3>
+  <ol>
+    <li><strong>Stripe object shapes.</strong> The payment logic is proven against stubs — every
+    ordering hazard, every duplicate, every refusal. Whether Stripe's objects look the way this code
+    assumes needs an account and <code>stripe trigger</code>.</li>
+    <li><strong>Offline queue durability.</strong> Force-quit the app with writes queued and confirm
+    they land. Nobody documents this, which is why it is a drill and not a search.</li>
+    <li><strong>The migration, rehearsed.</strong> Planned in detail, never run. Do it on a copy of
+    her database before the live one.</li>
+  </ol>
+
+  <h3>Worth doing, not blocking</h3>
+  <ol>
+    <li><strong>Migrate screens onto the capability seam</strong> — mechanical, one screen at a time,
+    and each reviewable on its own.</li>
+    <li><strong>Confirm Stripe's Accounts v2 version string</strong> in Workbench; every doc example
+    is pinned to <code>.preview</code> despite the prose saying otherwise.</li>
+    <li><strong>Two drills that need a device</strong>, not a search: whether Firestore's offline
+    queue survives a force-quit, and whether a rules-rejected queued write is dropped cleanly or
+    wedges the queue behind it.</li>
+    <li><strong>The migration from SQLite</strong> is planned in detail but has never been run
+    against her real data.</li>
+  </ol>
+
+  <div class="call flag">
+    <div class="lab">A claim checked and rejected</div>
+    <p>The refinement pass reported that <code>appointment_products</code> and
+    <code>service_products</code> have never synced between her devices — which would have been a
+    serious live data-loss bug. <strong>It's wrong.</strong> Both travel nested inside their parents:
+    <code>Appointment.products</code> and <code>Service.defaults</code>/<code>recommended</code> are
+    part of the synced payload.</p>
+    <p>There is a smaller real issue underneath: those nested arrays merge as whole-array
+    last-write-wins, so an iPad product edit can be overwritten by a later iPhone edit that never saw
+    it — the same class of bug already fixed for client fields, and deserving the same treatment.
+    Worth recording that the stronger claim didn't survive checking.</p>
+  </div>
+</section>
+
+</div>

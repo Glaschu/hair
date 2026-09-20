@@ -1,0 +1,23 @@
+{
+  "indexes": [
+    {
+      "_comment": "The drainer queries state == pending ordered by nextAttemptAt. A composite of an equality and a different order-by field needs an index, and the emulator does NOT enforce that — so this query passes every test here and fails on the first real deploy. Deploy it with: firebase deploy --only firestore:indexes",
+      "collectionGroup": "outbox",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "state", "order": "ASCENDING" },
+        { "fieldPath": "nextAttemptAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "_comment": "The inbox: unseen bookings, oldest first.",
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

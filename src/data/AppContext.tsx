@@ -15,6 +15,9 @@ import {
   rowsToSchedule,
 } from '../db/helpers';
 import { syncAppointmentReminders, setupNotificationChannel } from './notifications';
+import { Backend, LocalBackend, backendFor } from './backend';
+import { loadCredentials } from './bookingStore';
+import { probeService } from './bookingApi';
 import { configureFormats, deviceUses24HourClock } from './utils';
 import { getOrCreateIrisCalendar, syncAppointmentsToCalendar, deleteCalendarEvents } from './calendarSync';
 import { pullSync, pushSync, syncPhotos } from './syncEngine';
@@ -77,6 +80,13 @@ interface AppState {
 
   /** Off unless she runs her own booking service — hides the feature entirely. */
   bookingEnabled: boolean;
+  /**
+   * What this device can actually do — no server, her own, or one run for her.
+   * Screens ask this rather than inspecting credentials or checking a mode.
+   */
+  backend: Backend;
+  /** Call after linking or unlinking a device. */
+  refreshBackend: () => Promise<void>;
   setBookingEnabled: (v: boolean) => void;
 
   iCloudSyncEnabled: boolean;
@@ -116,6 +126,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [hour24, setHour24State] = useState(false);
   const [calendarSyncEnabled, setCalendarSyncEnabledState] = useState(false);
   const [bookingEnabled, setBookingEnabledState] = useState(false);
+  // Starts local so the app is useful on first paint; the real one arrives a
+  // moment later, and on a train it simply never does, which is fine.
+  const [backend, setBackend] = useState<Backend>(() => new LocalBackend());
   const [iCloudSyncEnabled, setICloudSyncEnabledState] = useState(false);
   const [appleCalendarId, setAppleCalendarIdState] = useState<string | null>(null);
   const [lastExportAt, setLastExportAtState] = useState<string | null>(null);
@@ -192,6 +205,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setHour24 = (v: boolean) => { configureFormats({ hour24: v }); setHour24State(v); setSetting('hour24', String(v)); };
   const setCalendarSyncEnabled = (v: boolean) => { setCalendarSyncEnabledState(v); setSetting('calendarSyncEnabled', String(v)); };
   const setBookingEnabled = (v: boolean) => { setBookingEnabledState(v); setSetting('bookingEnabled', String(v)); };
+
+  const refreshBackend = async () => {
+    const creds = await loadCredentials().catch(() => null);
+    const next = backendFor(creds, { probe: probeService });
+    // Asking is best-effort: a service that cannot be reached keeps the
+    // capabilities its mode implies, so the app degrades rather than going dark.
+    await next.health().catch(() => {});
+    setBackend(next);
+  };
+
+  useEffect(() => { refreshBackend(); }, [bookingEnabled]);
   const setICloudSyncEnabled = (v: boolean) => { setICloudSyncEnabledState(v); setSetting('iCloudSyncEnabled', String(v)); };
   const setAppleCalendarId = (v: string | null) => { setAppleCalendarIdState(v); if (v) setSetting('appleCalendarId', v); };
 
@@ -605,6 +629,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       hour24, setHour24,
       calendarSyncEnabled, setCalendarSyncEnabled,
       bookingEnabled, setBookingEnabled,
+      backend, refreshBackend,
       iCloudSyncEnabled, setICloudSyncEnabled,
       appleCalendarId, setAppleCalendarId,
       tombstones, setTombstones: setTombstonesState,

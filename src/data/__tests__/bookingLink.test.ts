@@ -55,6 +55,7 @@ describe('scanning a code', () => {
       kind: 'setup',
       serviceUrl: 'https://book.herstudio.co.uk',
       deviceKey: 'device-key',
+      mode: 'self-hosted',
     });
   });
 
@@ -75,7 +76,9 @@ describe('scanning a code', () => {
     expect(decodeScannedCode('https://instagram.com/iris')).toBeNull();
     expect(decodeScannedCode(setupCode({ url: 'http://insecure.co' }))).toBeNull();
     expect(decodeScannedCode(setupCode({ dk: '' }))).toBeNull();
-    expect(decodeScannedCode(setupCode({ v: 2 }))).toBeNull();
+    // v2 is ours now — the boundary is versions we have never heard of, which
+    // most likely mean an app older than the page it is scanning.
+    expect(decodeScannedCode(setupCode({ v: 99 }))).toBeNull();
     expect(decodeScannedCode('')).toBeNull();
   });
 
@@ -96,10 +99,14 @@ describe('setup page ↔ app', () => {
     const html = fs.readFileSync(
       path.join(__dirname, '../../../booking/site/setup.html'), 'utf8',
     );
-    const line = html.match(/const payload = (JSON\.stringify\(\{[^;]*\}\));/);
+    // The page now builds the payload inline, from what /api/setup/qr returned,
+    // rather than from a form field. Scraped rather than duplicated so the two
+    // implementations cannot silently drift apart — which is the whole reason
+    // this test exists.
+    const line = html.match(/await QRCode\.toCanvas\(el\('qr'\), (JSON\.stringify\(\{[\s\S]*?\}\)),/);
     expect(line).not.toBeNull();
     // eslint-disable-next-line no-new-func
-    return new Function('location', 'key', `return ${line![1]};`)({ origin }, key);
+    return new Function('data', `return ${line![1]};`)({ url: origin, deviceKey: key });
   }
 
   it('produces a code this app can read', () => {
@@ -108,6 +115,7 @@ describe('setup page ↔ app', () => {
       kind: 'setup',
       serviceUrl: 'https://book.herstudio.co.uk',
       deviceKey: 'the-device-key',
+      mode: 'self-hosted',
     });
   });
 

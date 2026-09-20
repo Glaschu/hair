@@ -38,7 +38,7 @@ for (let h = 6; h <= 22; h++) {
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SettingsScreen() {
-  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, vatRate, setVatRate, currency, setCurrency, hour24, setHour24, calendarSyncEnabled, setCalendarSyncEnabled, bookingEnabled, setBookingEnabled, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
+  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, vatRate, setVatRate, currency, setCurrency, hour24, setHour24, calendarSyncEnabled, setCalendarSyncEnabled, bookingEnabled, setBookingEnabled, backend, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
   const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const [editingName, setEditingName] = useState(false);
@@ -509,8 +509,22 @@ export default function SettingsScreen() {
                     <Icons.calendar size={16} color={theme.accent} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.dataLabel, { color: theme.ink }]}>Set up booking service</Text>
-                    <Text style={[styles.dataSub, { color: theme.ink3 }]}>Connect this device to your own booking page</Text>
+                    <Text style={[styles.dataLabel, { color: theme.ink }]}>
+                      {backend.has('booking-links') ? 'Booking service' : 'Set up booking service'}
+                    </Text>
+                    {/*
+                      What this deployment can actually do, not what the app can.
+                      A booking service with no Stripe key is a perfectly good
+                      booking service that cannot take deposits, and saying so
+                      here beats her finding out at a checkout.
+                    */}
+                    <Text style={[styles.dataSub, { color: theme.ink3 }]}>
+                      {!backend.has('booking-links')
+                        ? 'Connect this device to your own booking page'
+                        : backend.has('deposits')
+                          ? 'Linked · deposits go to your Stripe account'
+                          : 'Linked · connect Stripe to take deposits'}
+                    </Text>
                   </View>
                   <Icons.chevronRight size={16} color={theme.ink3} />
                 </Pressable>

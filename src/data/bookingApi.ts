@@ -28,7 +28,7 @@ export interface IncomingBooking {
   clientRef: string;
   serviceName: string;
   durationMins: number;
-  price: number;
+  priceMinor: number;
   startsAt: string;
   endsAt: string;
   createdAt: number;
@@ -67,6 +67,22 @@ async function call<T>(
  * Asks a service what it is before trusting it. Also the first real
  * network call, so it doubles as "is this address even a booking service".
  */
+/**
+ * What a deployment says it can do, for the capability seam.
+ *
+ * Separate from `checkService` because that one throws on a version mismatch —
+ * right when linking, wrong here: a service one version behind still takes
+ * bookings, and the app should keep working rather than going dark on a number.
+ */
+export async function probeService(
+  creds: { serviceUrl: string },
+): Promise<{ apiVersion: number; capabilities?: string[] }> {
+  const res = await fetch(`${creds.serviceUrl}/api/version`);
+  if (!res.ok) throw new Error('unreachable');
+  const body = (await res.json()) as { api?: number; capabilities?: string[] };
+  return { apiVersion: body.api ?? 0, capabilities: body.capabilities };
+}
+
 export async function checkService(serviceUrl: string): Promise<number> {
   let res: Response;
   try {
@@ -76,7 +92,7 @@ export async function checkService(serviceUrl: string): Promise<number> {
   }
   if (!res.ok) throw new Error("That address doesn't look like a booking service.");
 
-  const body = (await res.json()) as { service?: string; api?: number };
+  const body = (await res.json()) as { service?: string; api?: number; capabilities?: string[] };
   if (body?.service !== 'iris-booking' || typeof body.api !== 'number') {
     throw new Error("That address doesn't look like a booking service.");
   }
@@ -131,10 +147,13 @@ export async function registerSalon(
       authorization: `Bearer ${creds.deviceKey}`,
       ...(resetKey ? { 'x-iris-reset': resetKey } : {}),
     },
+    // Only ever send a policy when one is being set. Passing the default here
+    // meant every re-link and every reinstall silently reverted her edited
+    // cancellation terms — and those terms are what a chargeback turns on.
     body: JSON.stringify({
       name,
       publicKey: creds.keyPair.publicKey,
-      policy: policy ?? DEFAULT_CANCELLATION_POLICY,
+      ...(policy === undefined ? {} : { policy }),
     }),
   });
 
@@ -168,7 +187,7 @@ export function createLink(
   creds: BookingCredentials,
   link: {
     clientRef: string; greeting?: string; serviceName: string;
-    durationMins: number; price: number; slots: LinkSlot[];
+    durationMins: number; priceMinor: number; tz?: string; slots: LinkSlot[];
   },
 ): Promise<{ token: string; url: string; expiresAt: number }> {
   return call(creds, '/api/links', { method: 'POST', body: JSON.stringify(link) });
@@ -187,7 +206,7 @@ export async function fetchBookings(creds: BookingCredentials): Promise<Incoming
     clientRef: String(b.clientRef),
     serviceName: String(b.serviceName ?? ''),
     durationMins: Number(b.durationMins ?? 60),
-    price: Number(b.price ?? 0),
+    priceMinor: Number(b.priceMinor ?? 0),
     startsAt: String(b.startsAt),
     endsAt: String(b.endsAt),
     createdAt: Number(b.createdAt ?? Date.now()),

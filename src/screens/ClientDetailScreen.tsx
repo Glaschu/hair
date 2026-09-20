@@ -24,7 +24,7 @@ type Route = RouteProp<RootStackParamList, 'ClientDetail'>;
 type Tab = 'overview' | 'history' | 'photos';
 
 export default function ClientDetailScreen() {
-  const { theme, clients, setClients, appointments, products, bookingEnabled } = useApp();
+  const { theme, clients, setClients, appointments, products, bookingEnabled, backend } = useApp();
   const { isLarge } = useResponsive();
   const { confirm, alert, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
@@ -180,7 +180,27 @@ export default function ClientDetailScreen() {
               { icon: <Icons.message size={18} color={theme.ink} />, label: 'Message', onPress: () => Linking.openURL(`sms:${client.phone}`) },
               ...(client.instagram ? [{ icon: <Icons.instagram size={18} color={theme.ink} />, label: 'Insta', onPress: () => { openInstagram(client.instagram); } }] : []),
               { icon: <Icons.plus size={18} color={theme.ink} />, label: 'Book', onPress: () => nav.navigate('NewAppointment', { clientId: client.id, prefillService: completedAppts[0]?.service }) },
-              ...(bookingEnabled ? [{ icon: <Icons.calendar size={18} color={theme.ink} />, label: 'Send link', onPress: () => nav.navigate('SendBookingLink', { clientId: client.id }) }] : []),
+              // Shown whenever she has the feature switched on. If there is no
+              // service behind it yet, the tap explains and offers to set one up
+              // — she used to get all the way through picking times before
+              // finding out.
+              ...(bookingEnabled ? [{
+                icon: <Icons.calendar size={18} color={theme.ink} />,
+                label: 'Send link',
+                onPress: async () => {
+                  if (backend.has('booking-links')) {
+                    nav.navigate('SendBookingLink', { clientId: client.id });
+                    return;
+                  }
+                  const { why, action } = backend.why('booking-links');
+                  const go = await confirm({
+                    title: 'Not set up yet',
+                    message: why,
+                    confirmLabel: action?.label ?? 'OK',
+                  });
+                  if (go && action) nav.navigate(action.route as 'BookingSetup');
+                },
+              }] : []),
             ].map((a) => (
               <Pressable key={a.label} onPress={a.onPress}
                 style={({ pressed }) => [styles.actionBtn, { backgroundColor: pressed ? theme.bg2 : theme.card, borderColor: theme.line }]}>

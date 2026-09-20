@@ -28,6 +28,15 @@ export interface Env {
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   /**
+   * HER Stripe account, not ours.
+   *
+   * Every deployment holds its own key, so deposits land in the balance of the
+   * person who did the hair. Nobody's money passes through anyone else, which
+   * is also what keeps whoever runs the code out of being a payment business.
+   * Set with: npx wrangler secret put STRIPE_SECRET_KEY
+   */
+  STRIPE_SECRET_KEY?: string;
+  /**
    * Optional second secret, required only to re-key an existing salon.
    * Kept out of the app and out of every QR so a leaked device key cannot
    * quietly redirect future bookings to someone else.
@@ -57,6 +66,94 @@ const json = (data: unknown, status = 200) =>
   });
 
 const LINK_TTL_DAYS = 21;
+
+/**
+ * What this particular deployment can do, from what it has been given.
+ *
+ * Reported rather than assumed: two services running identical code differ by
+ * which secrets their owner has set, and the app cannot know that from the URL.
+ */
+function serviceCapabilities(env: Env): string[] {
+  const caps = ['booking-links', 'offsite-backup'];
+  if (env.STRIPE_SECRET_KEY) caps.push('deposits', 'refunds');
+  return caps;
+}
+
+/**
+ * Her terms, as data rather than prose. SETTLED: the shipped default wording
+ * stands, and the notice period is two days.
+ *
+ * The arithmetic behind these numbers, because it is not obvious. On a £90
+ * service with a 50% deposit of £45, the "remaining appointment cost" is the
+ * other £45:
+ *
+ *   48h or more   no charge                         → refund the whole £45
+ *   24-48h        50% of the remaining £45 = £22.50 → refund £22.50, keep £22.50
+ *   under 24h     the full £90                      → refund nothing
+ *
+ * So `refundPct` is a percentage OF THE DEPOSIT, and it lines up with the prose
+ * in the first two tiers exactly.
+ *
+ * THE LIMIT WORTH KNOWING: in the last tier the prose says the full amount, and
+ * the deposit is only half of it. The service can stop money going back; it
+ * cannot reach out and take more. Anything beyond the deposit is between her
+ * and the client, and the app should say so rather than implying it collected.
+ */
+const DEFAULT_TIERS: { minNoticeHours: number; refundPct: number }[] = [
+  { minNoticeHours: 48, refundPct: 100 },
+  { minNoticeHours: 24, refundPct: 50 },
+  { minNoticeHours: 0,  refundPct: 0 },
+];
+
+/** Which tier a cancellation falls into, from server time only. */
+function tierFor(noticeMs: number, tiers = DEFAULT_TIERS): number {
+  const hours = noticeMs / 3_600_000;
+  // Boundaries go the client's way: exactly 48 hours is the 48-hour tier.
+  const hit = tiers.find((t) => hours >= t.minNoticeHours);
+  return hit ? hit.refundPct : 0;
+}
+
+/**
+ * Cancels a booking and puts its hour back on the market, atomically.
+ *
+ * The status is the authority, not the slot: freeing a slot is what creates the
+ * window for a stale write to reinstate a dead appointment, so a second cancel
+ * is a no-op rather than a second release.
+ */
+async function cancelBooking(
+  env: Env,
+  booking: { id: string; token: string; slotId: string; startsAt: string; status: string },
+  by: 'client' | 'salon',
+): Promise<{ noticeMs: number; refundPct: number; alreadyCancelled: boolean }> {
+  const now = Date.now();
+  const noticeMs = Math.max(0, Date.parse(booking.startsAt) - now);
+  const refundPct = tierFor(noticeMs);
+
+  if (booking.status !== 'confirmed') {
+    const row = await env.DB.prepare(
+      `SELECT notice_ms AS noticeMs, refund_pct AS refundPct FROM bookings WHERE id = ?`,
+    ).bind(booking.id).first<{ noticeMs: number; refundPct: number }>();
+    return { noticeMs: row?.noticeMs ?? 0, refundPct: row?.refundPct ?? 0, alreadyCancelled: true };
+  }
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE bookings
+          SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?,
+              notice_ms = ?, refund_pct = ?
+        WHERE id = ? AND status = 'confirmed'`,
+    ).bind(now, by, noticeMs, refundPct, booking.id),
+    // The hour goes back on sale. Without this it was gone for good: `taken`
+    // was one-way, so a booking made by mistake made the slot unsellable.
+    env.DB.prepare(`UPDATE slots SET taken = 0 WHERE id = ?`).bind(booking.slotId),
+    env.DB.prepare(
+      `UPDATE links SET booked_count = booked_count - 1
+        WHERE token = ? AND booked_count > 0`,
+    ).bind(booking.token),
+  ]);
+
+  return { noticeMs, refundPct, alreadyCancelled: false };
+}
 
 /** Compares without leaking which character differed. */
 function safeEqual(a: string, b: string): boolean {
@@ -118,6 +215,12 @@ async function throughAccess(request: Request, env: Env): Promise<Response | { e
   return json({ error: 'forbidden' }, 403);
 }
 
+/** Content address for a policy, so the wording and its id can never drift. */
+async function policyId(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 /** 128 bits, url-safe. Unguessable is the only thing protecting a link. */
 function newToken(bytes = 16): string {
   const raw = crypto.getRandomValues(new Uint8Array(bytes));
@@ -134,7 +237,15 @@ export default {
       // ---- anyone: what this service is and speaks ----
 
       if (path === '/api/version' && method === 'GET') {
-        return json({ service: 'iris-booking', api: API_VERSION });
+        // What this deployment can actually do, as opposed to what the app
+        // imagines a deployment can do. A stylist who has not connected Stripe
+        // has a perfectly good booking service that cannot take deposits, and
+        // the app should say that rather than offering her a broken button.
+        return json({
+          service: 'iris-booking',
+          api: API_VERSION,
+          capabilities: serviceCapabilities(env),
+        });
       }
 
       // ---- the setup page (Cloudflare Access) ----
@@ -156,6 +267,10 @@ export default {
           deviceKey: await deviceKey(env),
           salon: salon ?? null,
           signedInAs: gate.email,
+          capabilities: serviceCapabilities(env),
+          // Named plainly so the setup page can tell her what is missing and
+          // exactly how to add it, rather than leaving her to infer it.
+          stripe: { connected: !!env.STRIPE_SECRET_KEY },
         });
       }
 
@@ -167,13 +282,21 @@ export default {
         // Otherwise someone who photographed the old code still holds a
         // working key and can race her to register theirs.
         const fresh = newToken(24);
+        const at = Date.now();
         await env.DB.batch([
           env.DB.prepare(
             `INSERT INTO service (id, device_key, rotated_at) VALUES ('me', ?, ?)
              ON CONFLICT(id) DO UPDATE SET device_key = excluded.device_key,
                                            rotated_at = excluded.rotated_at`,
-          ).bind(fresh, Date.now()),
+          ).bind(fresh, at),
           env.DB.prepare(`DELETE FROM salon WHERE id = 'me'`),
+          // Outstanding links are sealed to the key we are throwing away. Leaving
+          // them live meant anyone holding a token could keep booking for three
+          // weeks into a salon that no longer exists.
+          env.DB.prepare(`UPDATE links SET revoked = 1 WHERE revoked = 0`),
+          // And retire what already arrived, so the newly-keyed device doesn't
+          // download a pile of envelopes it can never open.
+          env.DB.prepare(`UPDATE bookings SET seen_at = ? WHERE seen_at IS NULL`).bind(at),
         ]);
 
         console.log('booking service reset by', gate.email);
@@ -233,29 +356,78 @@ export default {
         if (!(await authed(request, env))) return json({ error: 'unauthorised' }, 401);
         const body = (await request.json()) as {
           clientRef?: string; greeting?: string; serviceName?: string;
-          durationMins?: number; price?: number;
+          durationMins?: number; priceMinor?: number; tz?: string; maxBookings?: number;
           slots?: { startsAt: string; endsAt: string }[];
         };
         if (!body.clientRef || !body.serviceName || !body.slots?.length) {
           return json({ error: 'clientRef, serviceName and at least one slot required' }, 400);
         }
 
+        // Every slot must be a real interval, or the overlap check below is
+        // comparing nonsense.
+        for (const slot of body.slots) {
+          const s0 = Date.parse(slot.startsAt), e0 = Date.parse(slot.endsAt);
+          if (!Number.isFinite(s0) || !Number.isFinite(e0) || e0 <= s0) {
+            return json({ error: 'each slot needs startsAt before endsAt' }, 400);
+          }
+        }
+
+        // Two links must never offer the same hour. The app checks her calendar
+        // when she makes a link, but it cannot see the other links she has out,
+        // so without this two clients can both book the same Saturday.
+        const { results: live } = await env.DB.prepare(
+          `SELECT s.starts_at AS startsAt, s.ends_at AS endsAt
+             FROM slots s JOIN links l ON l.token = s.token
+            WHERE l.revoked = 0 AND l.expires_at > ?`,
+        ).bind(Date.now()).all<{ startsAt: string; endsAt: string }>();
+
+        const clash = body.slots.find((slot) => {
+          const s0 = Date.parse(slot.startsAt), e0 = Date.parse(slot.endsAt);
+          return live.some((o: { startsAt: string; endsAt: string }) =>
+            s0 < Date.parse(o.endsAt) && Date.parse(o.startsAt) < e0);
+        });
+        if (clash) {
+          return json({
+            error: 'slot already offered',
+            detail: 'Another link is already offering that time. Revoke it first, or pick another.',
+            startsAt: clash.startsAt,
+          }, 409);
+        }
+
         const token = newToken();
         const now = Date.now();
         const expires = now + LINK_TTL_DAYS * 86_400_000;
 
+        const salon = await env.DB.prepare(
+          `SELECT policy FROM salon WHERE id = 'me'`,
+        ).first<{ policy: string | null }>();
+        const pid = salon?.policy ? await policyId(salon.policy) : null;
+        const tiers = JSON.stringify(DEFAULT_TIERS);
+
         const statements = [
+          ...(pid && salon?.policy
+            ? [env.DB.prepare(
+                // Words and numbers are stored together, so a link pins both.
+                // A policy whose prose says 48 hours and whose tiers say 24 is
+                // the kind of thing that only surfaces in an argument.
+                `INSERT INTO policies (id, text, tiers, created_at) VALUES (?, ?, ?, ?)
+                 ON CONFLICT(id) DO NOTHING`,
+              ).bind(pid, salon.policy, tiers, now)]
+            : []),
           env.DB.prepare(
-            `INSERT INTO links (token, client_ref, greeting, service_name, duration_mins, price, created_at, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO links (token, client_ref, greeting, service_name, duration_mins,
+                                price_minor, tz, policy_id, created_at, expires_at, max_bookings)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           ).bind(
             token, body.clientRef, body.greeting ?? null, body.serviceName,
-            body.durationMins ?? 60, body.price ?? 0, now, expires,
+            body.durationMins ?? 60, Math.round(body.priceMinor ?? 0),
+            body.tz ?? 'Europe/London', pid, now, expires,
+            Math.max(1, Math.round(body.maxBookings ?? 1)),
           ),
-          ...body.slots.map((s) =>
+          ...body.slots.map((slot) =>
             env.DB.prepare(
               `INSERT INTO slots (id, token, starts_at, ends_at) VALUES (?, ?, ?, ?)`,
-            ).bind(newToken(8), token, s.startsAt, s.endsAt),
+            ).bind(newToken(8), token, slot.startsAt, slot.endsAt),
           ),
         ];
         await env.DB.batch(statements);
@@ -265,15 +437,23 @@ export default {
 
       if (path === '/api/bookings' && method === 'GET') {
         if (!(await authed(request, env))) return json({ error: 'unauthorised' }, 401);
+        // `?all=1` exists because marking a booking seen and storing it locally
+        // are two round-trips. Lose the device between them and a booking that
+        // only the unseen filter could reach is gone for good -- silently, with
+        // the row still sitting here. Nothing should ever be unreachable.
+        const all = url.searchParams.get('all') === '1';
         const { results } = await env.DB.prepare(
           `SELECT b.id, b.token, b.client_ref AS clientRef, b.sealed, b.created_at AS createdAt,
-                  b.agreed_at AS agreedAt,
-                  l.service_name AS serviceName, l.duration_mins AS durationMins, l.price,
+                  b.agreed_at AS agreedAt, b.agreed_policy_id AS agreedPolicyId, b.seen_at AS seenAt,
+                  b.status, b.cancelled_at AS cancelledAt, b.cancelled_by AS cancelledBy,
+                  b.refund_pct AS refundPct,
+                  l.service_name AS serviceName, l.duration_mins AS durationMins,
+                  l.price_minor AS priceMinor, l.tz,
                   s.starts_at AS startsAt, s.ends_at AS endsAt
              FROM bookings b
              JOIN links l ON l.token = b.token
              JOIN slots s ON s.id = b.slot_id
-            WHERE b.seen_at IS NULL
+            ${all ? '' : 'WHERE b.seen_at IS NULL'}
             ORDER BY b.created_at`,
         ).all();
         return json({ bookings: results });
@@ -285,6 +465,55 @@ export default {
         await env.DB.prepare(`UPDATE bookings SET seen_at = ? WHERE id = ?`)
           .bind(Date.now(), seen[1]).run();
         return json({ ok: true });
+      }
+
+      // Her device cancelling, from the app.
+      const scrub = path.match(/^\/api\/bookings\/([a-f0-9]+)\/cancel$/);
+      if (scrub && method === 'POST') {
+        if (!(await authed(request, env))) return json({ error: 'unauthorised' }, 401);
+        const booking = await env.DB.prepare(
+          `SELECT b.id, b.token, b.slot_id AS slotId, b.status, s.starts_at AS startsAt
+             FROM bookings b JOIN slots s ON s.id = b.slot_id
+            WHERE b.id = ?`,
+        ).bind(scrub[1]).first<{ id: string; token: string; slotId: string; status: string; startsAt: string }>();
+        if (!booking) return json({ error: 'no such booking' }, 404);
+
+        const out = await cancelBooking(env, booking, 'salon');
+        return json({ ok: true, ...out });
+      }
+
+      // The client cancelling their own, with the token their booking returned.
+      // No account, no login — the token is the whole credential, and it can do
+      // nothing except cancel this one booking.
+      const bail = path.match(/^\/api\/c\/([a-f0-9]+)$/);
+      if (bail && (method === 'POST' || method === 'GET')) {
+        const booking = await env.DB.prepare(
+          `SELECT b.id, b.token, b.slot_id AS slotId, b.status, b.notice_ms AS noticeMs,
+                  b.refund_pct AS refundPct, s.starts_at AS startsAt, l.service_name AS serviceName,
+                  l.tz
+             FROM bookings b
+             JOIN slots s ON s.id = b.slot_id
+             JOIN links l ON l.token = b.token
+            WHERE b.cancel_token = ?`,
+        ).bind(bail[1]).first<{
+          id: string; token: string; slotId: string; status: string;
+          noticeMs: number; refundPct: number; startsAt: string; serviceName: string; tz: string;
+        }>();
+        if (!booking) return json({ error: 'no such booking' }, 404);
+
+        // GET is a preview: what would happen if they cancelled now. Nobody
+        // should discover the charge only after pressing the button.
+        if (method === 'GET') {
+          const noticeMs = Math.max(0, Date.parse(booking.startsAt) - Date.now());
+          return json({
+            status: booking.status, startsAt: booking.startsAt, tz: booking.tz,
+            serviceName: booking.serviceName,
+            noticeMs, refundPct: booking.status === 'confirmed' ? tierFor(noticeMs) : booking.refundPct,
+          });
+        }
+
+        const out = await cancelBooking(env, booking, 'client');
+        return json({ ok: true, startsAt: booking.startsAt, ...out });
       }
 
       const revoke = path.match(/^\/api\/links\/([a-f0-9]+)$/);
@@ -300,13 +529,18 @@ export default {
       if (view && method === 'GET') {
         const link = await env.DB.prepare(
           `SELECT l.token, l.greeting, l.service_name AS serviceName, l.duration_mins AS durationMins,
-                  l.price, l.expires_at AS expiresAt, l.revoked, s.name AS salonName, s.public_key AS publicKey,
-                  s.policy
-             FROM links l, salon s
-            WHERE l.token = ? AND s.id = 'me'`,
+                  l.price_minor AS priceMinor, l.tz, l.expires_at AS expiresAt, l.revoked,
+                  l.max_bookings AS maxBookings, l.booked_count AS bookedCount,
+                  s.name AS salonName, s.public_key AS publicKey,
+                  p.text AS policy, p.id AS policyId
+             FROM links l
+             JOIN salon s ON s.id = 'me'
+             LEFT JOIN policies p ON p.id = l.policy_id
+            WHERE l.token = ?`,
         ).bind(view[1]).first();
 
-        if (!link || link.revoked || (link.expiresAt as number) < Date.now()) {
+        if (!link || link.revoked || (link.expiresAt as number) < Date.now()
+            || (link.bookedCount as number) >= (link.maxBookings as number)) {
           return json({ error: 'expired' }, 404);
         }
 
@@ -317,46 +551,98 @@ export default {
 
         return json({
           salonName: link.salonName, greeting: link.greeting,
-          serviceName: link.serviceName, durationMins: link.durationMins, price: link.price,
-          publicKey: link.publicKey, policy: link.policy, slots,
+          serviceName: link.serviceName, durationMins: link.durationMins,
+          priceMinor: link.priceMinor, tz: link.tz,
+          publicKey: link.publicKey, policy: link.policy, policyId: link.policyId, slots,
         });
       }
 
       const book = path.match(/^\/api\/l\/([a-f0-9]+)\/book$/);
       if (book && method === 'POST') {
         const token = book[1];
-        const { slotId, sealed, agreed } = (await request.json()) as
-          { slotId?: string; sealed?: string; agreed?: boolean };
+        const { slotId, sealed, agreed, requestId } = (await request.json()) as
+          { slotId?: string; sealed?: string; agreed?: boolean; requestId?: string };
         if (!slotId || !sealed) return json({ error: 'slotId and sealed required' }, 400);
         // An envelope is ~120 bytes of overhead plus the details; anything
         // much larger is someone using the store as free disk space.
         if (sealed.length > 4096) return json({ error: 'too large' }, 413);
 
+        // A retry after a lost response must return the original booking. Without
+        // this the page says "someone took that time" and sends them to a second
+        // slot -- one person, two bookings, and with a deposit, two charges.
+        if (requestId) {
+          const prior = await env.DB.prepare(
+            `SELECT id, status, cancel_token AS cancelToken
+               FROM bookings WHERE token = ? AND request_id = ?`,
+          ).bind(token, requestId).first<{ id: string; status: string; cancelToken: string }>();
+          // Only a live booking short-circuits. Replaying a cancelled one would
+          // tell someone they are booked when they are not.
+          if (prior && prior.status === 'confirmed') {
+            return json({ ok: true, bookingId: prior.id, cancelToken: prior.cancelToken, replayed: true });
+          }
+        }
+
+        // Joining salon matters: after a reset there is no salon, so there is no
+        // key to seal to and nothing should be accepted.
         const link = await env.DB.prepare(
-          `SELECT token, client_ref AS clientRef, expires_at AS expiresAt, revoked FROM links WHERE token = ?`,
+          `SELECT l.token, l.client_ref AS clientRef, l.expires_at AS expiresAt, l.revoked,
+                  l.policy_id AS policyId, l.max_bookings AS maxBookings, l.booked_count AS bookedCount
+             FROM links l JOIN salon s ON s.id = 'me'
+            WHERE l.token = ?`,
         ).bind(token).first();
         if (!link || link.revoked || (link.expiresAt as number) < Date.now()) {
           return json({ error: 'expired' }, 404);
         }
+        if ((link.bookedCount as number) >= (link.maxBookings as number)) {
+          return json({ error: 'expired', detail: 'This link has already been used.' }, 404);
+        }
 
-        // Claiming the slot is the lock: whoever flips taken first wins,
-        // so two people tapping the same time can't both get it.
-        const claim = await env.DB.prepare(
-          `UPDATE slots SET taken = 1 WHERE id = ? AND token = ? AND taken = 0`,
-        ).bind(slotId, token).run();
-        if (!claim.meta.changes) return json({ error: 'taken' }, 409);
+        // The server decides what was agreed, from the policy pinned to the link
+        // it served. A boolean from the browser proves nothing -- curl sends it
+        // too -- and an agreement record that can be forged is worse than none.
+        if (link.policyId && !agreed) {
+          return json({
+            error: 'policy not agreed',
+            detail: 'The cancellation policy has to be accepted before booking.',
+          }, 422);
+        }
 
         const id = newToken(8);
+        const cancelToken = newToken(16);
         const now = Date.now();
-        // Recorded separately from the envelope: if a late cancellation is ever
-        // disputed, she needs to be able to see they agreed without opening a
-        // booking on her phone.
-        await env.DB.prepare(
-          `INSERT INTO bookings (id, token, slot_id, client_ref, sealed, created_at, agreed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        ).bind(id, token, slotId, link.clientRef, sealed, now, agreed ? now : null).run();
 
-        return json({ ok: true, bookingId: id });
+        // One batch: claiming the slot, counting it against the link and writing
+        // the booking either all happen or none do. Two statements meant a dead
+        // isolate between them burned the slot with no booking behind it.
+        const written = await env.DB.batch([
+          env.DB.prepare(
+            `UPDATE slots SET taken = 1 WHERE id = ? AND token = ? AND taken = 0`,
+          ).bind(slotId, token),
+          env.DB.prepare(
+            `UPDATE links SET booked_count = booked_count + 1
+              WHERE token = ? AND booked_count < max_bookings`,
+          ).bind(token),
+          env.DB.prepare(
+            `INSERT INTO bookings (id, token, slot_id, client_ref, sealed, created_at,
+                                   agreed_at, agreed_policy_id, request_id, cancel_token)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(
+            id, token, slotId, link.clientRef, sealed, now,
+            link.policyId ? now : null, link.policyId ?? null, requestId ?? null, cancelToken,
+          ),
+        ]);
+
+        // Whoever flipped `taken` first wins. If we lost, the batch still wrote a
+        // booking, so undo it rather than leaving a ghost.
+        if (!written[0].meta.changes) {
+          await env.DB.prepare(`DELETE FROM bookings WHERE id = ?`).bind(id).run();
+          await env.DB.prepare(
+            `UPDATE links SET booked_count = booked_count - 1 WHERE token = ? AND booked_count > 0`,
+          ).bind(token).run();
+          return json({ error: 'taken' }, 409);
+        }
+
+        return json({ ok: true, bookingId: id, cancelToken });
       }
 
       // ---- the pages ----

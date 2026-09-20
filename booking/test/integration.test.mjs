@@ -32,7 +32,7 @@ async function setUpSalon() {
     method: 'POST',
     body: JSON.stringify({
       clientRef: 'ref-abc123', greeting: 'Sara', serviceName: 'Consultation',
-      durationMins: 30, price: 45,
+      durationMins: 30, priceMinor: 4500, maxBookings: 4,
       slots: [
         { startsAt: inDays(3, 11), endsAt: inDays(3, 12) },
         { startsAt: inDays(5, 10), endsAt: inDays(5, 11) },
@@ -65,7 +65,7 @@ describe('booking, end to end', () => {
     const booked = await svc.call(`/api/l/${link.token}/book`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ slotId: page.slots[0].id, sealed }),
+      body: JSON.stringify({ slotId: page.slots[0].id, sealed, agreed: true }),
     });
     assert.equal(booked.status, 200);
 
@@ -174,11 +174,32 @@ describe('booking, end to end', () => {
 });
 
 describe('self-hosting', () => {
+  test('reports what THIS deployment can do, not what the software can do', async () => {
+    // Two services running identical code differ by which secrets their owner
+    // set. Without Stripe, this is a perfectly good booking service that cannot
+    // take deposits — and the app needs to know that before offering a button.
+    const bare = makeService();
+    const plain = await (await bare.call('/api/version')).json();
+    assert.ok(plain.capabilities.includes('booking-links'));
+    assert.ok(!plain.capabilities.includes('deposits'), 'no Stripe key, no deposits');
+
+    const withStripe = makeService();
+    withStripe.env.STRIPE_SECRET_KEY = 'sk_test_not_a_real_key';
+    const paid = await (await withStripe.call('/api/version')).json();
+    assert.ok(paid.capabilities.includes('deposits'));
+    assert.ok(paid.capabilities.includes('refunds'));
+  });
+
   test('says what it is, so the app can spot a stale deployment', async () => {
     const { svc } = await setUpSalon();
     const res = await svc.call('/api/version');
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { service: 'iris-booking', api: 1 });
+    const body = await res.json();
+    assert.equal(body.service, 'iris-booking');
+    assert.equal(body.api, 1);
+    // Capabilities are asserted separately, in the test above — a deep-equal
+    // here would break every time a deployment learns to do something new.
+    assert.ok(Array.isArray(body.capabilities));
     assert.equal(res.headers.get('x-iris-api'), '1', 'every response carries it too');
   });
 
@@ -279,7 +300,7 @@ async function freshLink(svc) {
   const made = await svc.authed('/api/links', {
     method: 'POST',
     body: JSON.stringify({
-      clientRef: 'ref-2', serviceName: 'Consultation', durationMins: 30, price: 45,
+      clientRef: 'ref-2', serviceName: 'Consultation', durationMins: 30, priceMinor: 4500, maxBookings: 4,
       slots: [{ startsAt: inDays(7, 11), endsAt: inDays(7, 12) }],
     }),
   });
@@ -439,7 +460,7 @@ describe('cancellation policy', () => {
     const made = await svc.authed('/api/links', {
       method: 'POST',
       body: JSON.stringify({
-        clientRef: 'ref-1', serviceName: 'Colour', durationMins: 60, price: 90,
+        clientRef: 'ref-1', serviceName: 'Colour', durationMins: 60, priceMinor: 9000,
         slots: [{ startsAt: inDays(3, 11), endsAt: inDays(3, 12) }],
       }),
     });
@@ -474,17 +495,24 @@ describe('cancellation policy', () => {
     assert.equal(details.name, 'Sara');
   });
 
-  test('a booking that did not agree is not marked as having agreed', async () => {
+  test('a booking that did not agree is refused outright', async () => {
+    // The old behaviour let it through and simply left agreedAt null, which gave
+    // her a booking she could not defend. The tick is now a server-side condition.
     const { svc, link } = await withPolicy();
     const page = await (await svc.call(`/api/l/${link.token}`)).json();
     const sealed = pageSeal()(JSON.stringify({ name: 'Sara', phone: '07700900000' }), page.publicKey);
-    await svc.call(`/api/l/${link.token}/book`, {
+
+    const res = await svc.call(`/api/l/${link.token}/book`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ slotId: page.slots[0].id, sealed }),
     });
-    const { bookings } = await (await svc.authed('/api/bookings')).json();
-    assert.equal(bookings[0].agreedAt, null);
+    assert.equal(res.status, 422);
+    assert.equal((await res.json()).error, 'policy not agreed');
+
+    // And nothing was written -- the slot is still free.
+    const again = await (await svc.call(`/api/l/${link.token}`)).json();
+    assert.equal(again.slots.length, 1, 'the slot was not consumed by a refused booking');
   });
 
   test('a service with no policy set still works', async () => {
@@ -513,5 +541,443 @@ describe('cancellation policy', () => {
       body: JSON.stringify({ name: 'Iris', publicKey: keys.publicKey, policy: 'x'.repeat(2001) }),
     });
     assert.equal(res.status, 413);
+  });
+});
+
+/**
+ * One test per defect found by red-teaming the design. Each names the loss it
+ * prevents, because a regression here is a booking or a deposit, not a red dot.
+ */
+describe('losses that used to be possible', () => {
+  const at = (days, hour) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(hour, 0, 0, 0);
+    return d.toISOString();
+  };
+
+  async function salon(svc) {
+    const keys = newSalonKeys();
+    await svc.authed('/api/salon', {
+      method: 'PUT',
+      body: JSON.stringify({ name: 'Iris', publicKey: keys.publicKey, policy: 'Give 48 hours notice.' }),
+    });
+    return keys;
+  }
+
+  const mint = (svc, slots, extra = {}) => svc.authed('/api/links', {
+    method: 'POST',
+    body: JSON.stringify({ clientRef: 'ref-1', serviceName: 'Colour', priceMinor: 9000, slots, ...extra }),
+  });
+
+  test('two links cannot offer the same hour', async () => {
+    const svc = makeService();
+    await salon(svc);
+    const first = await mint(svc, [{ startsAt: at(3, 11), endsAt: at(3, 13) }]);
+    assert.equal(first.status, 200);
+
+    // Overlapping, not identical — the bug was that only exact slot rows collided.
+    const second = await mint(svc, [{ startsAt: at(3, 12), endsAt: at(3, 14) }]);
+    assert.equal(second.status, 409);
+    assert.equal((await second.json()).error, 'slot already offered');
+
+    // Butting up against it is fine; that is a real back-to-back appointment.
+    const third = await mint(svc, [{ startsAt: at(3, 13), endsAt: at(3, 14) }]);
+    assert.equal(third.status, 200);
+  });
+
+  test('a revoked link frees its hour for the next one', async () => {
+    const svc = makeService();
+    await salon(svc);
+    const made = await (await mint(svc, [{ startsAt: at(4, 10), endsAt: at(4, 11) }])).json();
+    await svc.authed(`/api/links/${made.token}`, { method: 'DELETE' });
+    const again = await mint(svc, [{ startsAt: at(4, 10), endsAt: at(4, 11) }]);
+    assert.equal(again.status, 200, 'revoking should release the time');
+  });
+
+  test('a retry after a lost response returns the same booking, not a second one', async () => {
+    const svc = makeService();
+    const keys = await salon(svc);
+    const link = await (await mint(svc, [{ startsAt: at(5, 11), endsAt: at(5, 12) }])).json();
+    const page = await (await svc.call(`/api/l/${link.token}`)).json();
+    const sealed = pageSeal()(JSON.stringify({ name: 'Sara', phone: '07700900000' }), page.publicKey);
+
+    const body = JSON.stringify({
+      slotId: page.slots[0].id, sealed, agreed: true, requestId: 'req-abc',
+    });
+    const send = () => svc.call(`/api/l/${link.token}/book`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body,
+    });
+
+    const first = await (await send()).json();
+    const second = await (await send()).json();
+
+    assert.equal(second.bookingId, first.bookingId, 'the retry is the same booking');
+    assert.equal(second.replayed, true);
+
+    const { bookings } = await (await svc.authed('/api/bookings')).json();
+    assert.equal(bookings.length, 1, 'one person, one booking, one deposit');
+  });
+
+  test('a link is spent after its booking, so forwarding it takes nothing else', async () => {
+    const svc = makeService();
+    await salon(svc);
+    const link = await (await mint(svc, [
+      { startsAt: at(6, 10), endsAt: at(6, 11) },
+      { startsAt: at(6, 14), endsAt: at(6, 15) },
+    ])).json();
+    const page = await (await svc.call(`/api/l/${link.token}`)).json();
+    const sealed = pageSeal()(JSON.stringify({ name: 'Sara', phone: '07700900000' }), page.publicKey);
+
+    const booked = await svc.call(`/api/l/${link.token}/book`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slotId: page.slots[0].id, sealed, agreed: true }),
+    });
+    assert.equal(booked.status, 200);
+
+    // Whoever it was forwarded to gets nothing.
+    const reused = await svc.call(`/api/l/${link.token}`);
+    assert.equal(reused.status, 404, 'a spent link is closed');
+  });
+
+  test('a failed claim leaves no ghost booking behind', async () => {
+    const svc = makeService();
+    await salon(svc);
+    const link = await (await mint(svc, [{ startsAt: at(7, 11), endsAt: at(7, 12) }],
+      { maxBookings: 3 })).json();
+    const page = await (await svc.call(`/api/l/${link.token}`)).json();
+    const sealed = pageSeal()(JSON.stringify({ name: 'Sara', phone: '07700900000' }), page.publicKey);
+
+    const post = () => svc.call(`/api/l/${link.token}/book`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slotId: page.slots[0].id, sealed, agreed: true }),
+    });
+
+    assert.equal((await post()).status, 200);
+    assert.equal((await post()).status, 409, 'the second attempt loses the claim');
+
+    // The batch writes the booking and the claim together, so the loser must not
+    // leave a row behind. That is what burned slots with no booking before.
+    const { bookings } = await (await svc.authed('/api/bookings')).json();
+    assert.equal(bookings.length, 1);
+  });
+
+  test('a booking can always be reached again after it is marked seen', async () => {
+    const svc = makeService();
+    await salon(svc);
+    const link = await (await mint(svc, [{ startsAt: at(8, 11), endsAt: at(8, 12) }])).json();
+    const page = await (await svc.call(`/api/l/${link.token}`)).json();
+    const sealed = pageSeal()(JSON.stringify({ name: 'Sara', phone: '07700900000' }), page.publicKey);
+    await svc.call(`/api/l/${link.token}/book`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slotId: page.slots[0].id, sealed, agreed: true }),
+    });
+
+    const { bookings } = await (await svc.authed('/api/bookings')).json();
+    await svc.authed(`/api/bookings/${bookings[0].id}/seen`, { method: 'POST' });
+
+    // The device died before it stored the booking locally. Under the old code
+    // this row was unreachable forever — there was no other read path.
+    const unseen = await (await svc.authed('/api/bookings')).json();
+    assert.equal(unseen.bookings.length, 0);
+
+    const everything = await (await svc.authed('/api/bookings?all=1')).json();
+    assert.equal(everything.bookings.length, 1, 'nothing is ever unreachable');
+    assert.ok(everything.bookings[0].seenAt > 0);
+  });
+
+  test('starting over stops the links that were sealed to the old key', async () => {
+    const access = await makeAccess();
+    try {
+      forgetCerts();
+      const svc = makeService({ access: true, deviceKey: undefined });
+      const { deviceKey } = await (await svc.asHer('/api/setup/qr', await access.token())).json();
+      const authed = (p, init = {}) => svc.call(p, {
+        ...init,
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${deviceKey}`, ...(init.headers ?? {}) },
+      });
+
+      const keys = newSalonKeys();
+      await authed('/api/salon', {
+        method: 'PUT',
+        body: JSON.stringify({ name: 'Iris', publicKey: keys.publicKey, policy: 'Give 48 hours notice.' }),
+      });
+      const link = await (await authed('/api/links', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientRef: 'r', serviceName: 'Colour', priceMinor: 9000,
+          slots: [{ startsAt: at(9, 11), endsAt: at(9, 12) }],
+        }),
+      })).json();
+      const page = await (await svc.call(`/api/l/${link.token}`)).json();
+      const sealed = pageSeal()(JSON.stringify({ name: 'Sara', phone: '07700900000' }), page.publicKey);
+
+      await svc.asHer('/api/setup/reset', await access.token(), { method: 'POST' });
+
+      // Anyone still holding the page could previously keep booking for 21 days,
+      // sealed to a key that no longer exists.
+      const after = await svc.call(`/api/l/${link.token}/book`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slotId: page.slots[0].id, sealed, agreed: true }),
+      });
+      assert.equal(after.status, 404);
+    } finally {
+      access.restore();
+    }
+  });
+
+  test('the times a client is shown carry the zone they mean', async () => {
+    const svc = makeService();
+    await salon(svc);
+    const link = await (await mint(svc, [{ startsAt: at(10, 11), endsAt: at(10, 12) }])).json();
+    const page = await (await svc.call(`/api/l/${link.token}`)).json();
+    // Without this the page formats in the reader's zone, so a client abroad
+    // books 12:00 for an 11:00 slot and both sides have written proof they were
+    // right.
+    assert.equal(page.tz, 'Europe/London');
+  });
+
+  test('prices are pence, so half a deposit is never half a penny', async () => {
+    const svc = makeService();
+    await salon(svc);
+    const link = await (await mint(svc, [{ startsAt: at(11, 11), endsAt: at(11, 12) }],
+      { priceMinor: 4500 })).json();
+    const page = await (await svc.call(`/api/l/${link.token}`)).json();
+    assert.equal(page.priceMinor, 4500);
+    assert.equal(Number.isInteger(page.priceMinor), true);
+    assert.equal(page.priceMinor / 2, 2250, 'a 50% deposit stays exact');
+  });
+});
+
+/**
+ * Cancelling. An hour that can never be resold is a lost booking just as surely
+ * as one that never arrived — `taken` used to be one-way, so a client who
+ * booked by mistake destroyed that slot permanently.
+ */
+describe('cancelling', () => {
+  const at = (days, hour) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(hour, 0, 0, 0);
+    return d.toISOString();
+  };
+
+  // Hours from *now*, never calendar days. "Tomorrow at 11" is thirteen hours
+  // away at 10pm and thirty-five at midnight, so a tier assertion written in the
+  // evening starts failing after midnight. Learned the hard way, twice.
+  const hoursOut = (n) => new Date(Date.now() + n * 3_600_000).toISOString();
+
+  async function booked({ hours = 120, maxBookings = 2 } = {}) {
+    const svc = makeService();
+    const keys = newSalonKeys();
+    await svc.authed('/api/salon', {
+      method: 'PUT',
+      body: JSON.stringify({ name: 'Iris', publicKey: keys.publicKey, policy: 'Give 48 hours notice.' }),
+    });
+    const link = await (await svc.authed('/api/links', {
+      method: 'POST',
+      body: JSON.stringify({
+        clientRef: 'ref-1', serviceName: 'Colour', priceMinor: 9000, maxBookings,
+        slots: [{ startsAt: hoursOut(hours), endsAt: hoursOut(hours + 2) }],
+      }),
+    })).json();
+    const page = await (await svc.call(`/api/l/${link.token}`)).json();
+    const sealed = pageSeal()(JSON.stringify({ name: 'Sara', phone: '07700900000' }), page.publicKey);
+    const res = await (await svc.call(`/api/l/${link.token}/book`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slotId: page.slots[0].id, sealed, agreed: true, requestId: 'r1' }),
+    })).json();
+    return { svc, link, page, sealed, booking: res };
+  }
+
+  test('the hour goes back on sale', async () => {
+    const { svc, link, booking } = await booked();
+
+    let page = await (await svc.call(`/api/l/${link.token}`)).json();
+    assert.equal(page.slots.length, 0, 'taken while the booking stands');
+
+    const cancelled = await svc.call(`/api/c/${booking.cancelToken}`, { method: 'POST' });
+    assert.equal(cancelled.status, 200);
+
+    page = await (await svc.call(`/api/l/${link.token}`)).json();
+    assert.equal(page.slots.length, 1, 'and free again afterwards');
+  });
+
+  test('a cancelled booking is never replayed as if it were live', async () => {
+    const { svc, link, page, sealed, booking } = await booked();
+    await svc.call(`/api/c/${booking.cancelToken}`, { method: 'POST' });
+
+    // Same requestId as the original. Returning the old booking here would tell
+    // someone they are booked when they are not.
+    const again = await (await svc.call(`/api/l/${link.token}/book`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slotId: page.slots[0].id, sealed, agreed: true, requestId: 'r1' }),
+    })).json();
+    assert.notEqual(again.bookingId, booking.bookingId, 'a fresh booking, not the dead one');
+    assert.equal(again.replayed, undefined);
+  });
+
+  test('cancelling twice frees the hour once', async () => {
+    const { svc, link, booking } = await booked();
+    const first = await (await svc.call(`/api/c/${booking.cancelToken}`, { method: 'POST' })).json();
+    const second = await (await svc.call(`/api/c/${booking.cancelToken}`, { method: 'POST' })).json();
+
+    assert.equal(first.alreadyCancelled, false);
+    assert.equal(second.alreadyCancelled, true, 'idempotent, not a second release');
+    assert.equal(second.refundPct, first.refundPct, 'and the tier does not drift');
+
+    const state = await (await svc.call(`/api/l/${link.token}`)).json();
+    assert.equal(state.slots.length, 1);
+    assert.equal(state.bookedCount, undefined);
+  });
+
+  test('the notice tier is decided by the server, and frozen', async () => {
+    // Offsets from *now*, not calendar days: "two days out at 11am" can be 36
+    // hours away depending on the time of day, which is exactly the kind of
+    // reasoning that should never decide someone's refund.
+    const hoursOut = (h) => new Date(Date.now() + h * 3_600_000).toISOString();
+
+    async function cancelAt(hoursBefore) {
+      const svc = makeService();
+      const keys = newSalonKeys();
+      await svc.authed('/api/salon', {
+        method: 'PUT',
+        body: JSON.stringify({ name: 'Iris', publicKey: keys.publicKey, policy: 'Give 48 hours notice.' }),
+      });
+      const link = await (await svc.authed('/api/links', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientRef: 'r', serviceName: 'Colour', priceMinor: 9000,
+          slots: [{ startsAt: hoursOut(hoursBefore), endsAt: hoursOut(hoursBefore + 2) }],
+        }),
+      })).json();
+      const page = await (await svc.call(`/api/l/${link.token}`)).json();
+      const sealed = pageSeal()(JSON.stringify({ name: 'Sara', phone: '07700900000' }), page.publicKey);
+      const b = await (await svc.call(`/api/l/${link.token}/book`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slotId: page.slots[0].id, sealed, agreed: true }),
+      })).json();
+      return (await (await svc.call(`/api/c/${b.cancelToken}`, { method: 'POST' })).json()).refundPct;
+    }
+
+    assert.equal(await cancelAt(72), 100, 'three days out — full refund');
+    assert.equal(await cancelAt(48.5), 100, 'just outside 48 hours');
+    assert.equal(await cancelAt(47.5), 50, 'just inside 48 hours');
+    assert.equal(await cancelAt(25), 50, 'still inside the middle tier');
+    assert.equal(await cancelAt(23), 0, 'inside 24 hours — nothing comes back');
+    assert.equal(await cancelAt(0.5), 0, 'half an hour before');
+  });
+
+  test('a client can see what cancelling would cost before pressing anything', async () => {
+    const { svc, booking } = await booked({ hours: 12 });
+    const preview = await (await svc.call(`/api/c/${booking.cancelToken}`)).json();
+    assert.equal(preview.status, 'confirmed');
+    assert.equal(preview.refundPct, 0, 'told up front, not after the fact');
+    assert.equal(preview.serviceName, 'Colour');
+    assert.equal(preview.tz, 'Europe/London');
+  });
+
+  test('she can cancel from the app, and it reaches her inbox as cancelled', async () => {
+    const { svc, booking } = await booked();
+    const res = await svc.authed(`/api/bookings/${booking.bookingId}/cancel`, { method: 'POST' });
+    assert.equal(res.status, 200);
+
+    const { bookings } = await (await svc.authed('/api/bookings?all=1')).json();
+    assert.equal(bookings[0].status, 'cancelled');
+    assert.equal(bookings[0].cancelledBy, 'salon');
+    assert.ok(bookings[0].cancelledAt > 0);
+  });
+
+  test('a cancel token is good for exactly one booking and nothing else', async () => {
+    const { svc } = await booked();
+    assert.equal((await svc.call('/api/c/deadbeefdeadbeef', { method: 'POST' })).status, 404);
+  });
+});
+
+/**
+ * The cancellation terms, settled: the shipped default wording, two days notice.
+ *
+ * These assert the ARITHMETIC against a real price rather than the percentages
+ * in isolation, because the percentages are a percentage of the deposit and the
+ * prose is a percentage of the remaining cost — two different denominators that
+ * happen to line up, and nothing except a test keeps them lined up.
+ */
+describe('what a cancellation actually costs', () => {
+  const SERVICE_MINOR = 9000;   // £90
+  const DEPOSIT_MINOR = 4500;   // 50%, which is what she takes
+
+  async function refundPctAt(hoursBefore) {
+    const svc = makeService();
+    const keys = newSalonKeys();
+    await svc.authed('/api/salon', {
+      method: 'PUT',
+      body: JSON.stringify({
+        name: 'Iris', publicKey: keys.publicKey,
+        policy: 'If you need to cancel, please give at least 48 hours notice.',
+      }),
+    });
+    const iso = (h) => new Date(Date.now() + h * 3_600_000).toISOString();
+    const link = await (await svc.authed('/api/links', {
+      method: 'POST',
+      body: JSON.stringify({
+        clientRef: 'r', serviceName: 'Full head colour', priceMinor: SERVICE_MINOR,
+        slots: [{ startsAt: iso(hoursBefore), endsAt: iso(hoursBefore + 3) }],
+      }),
+    })).json();
+    const page = await (await svc.call(`/api/l/${link.token}`)).json();
+    const sealed = pageSeal()(JSON.stringify({ name: 'Sara', phone: '07700900000' }), page.publicKey);
+    const booked = await (await svc.call(`/api/l/${link.token}/book`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slotId: page.slots[0].id, sealed, agreed: true }),
+    })).json();
+    return (await (await svc.call(`/api/c/${booked.cancelToken}`, { method: 'POST' })).json()).refundPct;
+  }
+
+  test('two days or more: the deposit comes back in full', async () => {
+    const pct = await refundPctAt(50);
+    assert.equal(pct, 100);
+    assert.equal((DEPOSIT_MINOR * pct) / 100, 4500, 'the whole £45');
+  });
+
+  test('inside two days: she keeps half the deposit, which is half the remaining cost', async () => {
+    // The prose says "50% of the remaining appointment cost". With £45 already
+    // paid on a £90 service, the remaining cost is £45, so the charge is £22.50
+    // — which is half the deposit. The two denominators agree here, and this is
+    // the test that keeps them agreeing.
+    const pct = await refundPctAt(30);
+    assert.equal(pct, 50);
+    const refunded = (DEPOSIT_MINOR * pct) / 100;
+    const kept = DEPOSIT_MINOR - refunded;
+    assert.equal(kept, 2250, 'she keeps £22.50');
+    assert.equal(kept, (SERVICE_MINOR - DEPOSIT_MINOR) / 2, 'which is half the remaining cost');
+  });
+
+  test('inside 24 hours: nothing comes back', async () => {
+    const pct = await refundPctAt(6);
+    assert.equal(pct, 0);
+  });
+
+  test('the deposit is the ceiling of what the service can act on', async () => {
+    // The prose says the full amount inside 24 hours — £90 on a £45 deposit. The
+    // service can stop money going back; it cannot reach out and take more. The
+    // rest is between her and the client, and the app must not imply otherwise.
+    const pct = await refundPctAt(6);
+    const collected = DEPOSIT_MINOR - (DEPOSIT_MINOR * pct) / 100;
+    assert.equal(collected, DEPOSIT_MINOR);
+    assert.ok(collected < SERVICE_MINOR, 'short of the full amount, by design');
+  });
+
+  test('exactly two days out still counts as two days', async () => {
+    // Boundaries go the client's way, and a boundary that goes the other way is
+    // the one people write reviews about.
+    assert.equal(await refundPctAt(48.25), 100);
   });
 });

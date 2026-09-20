@@ -36,7 +36,7 @@ const link = await (await authed('/api/links', {
   method: 'POST',
   body: JSON.stringify({
     clientRef: 'preview', greeting: 'Sara', serviceName: 'Consultation',
-    durationMins: 30, price: 45,
+    durationMins: 30, priceMinor: 4500, maxBookings: 20,
     slots: [
       { startsAt: at(4, 11), endsAt: at(4, 11, 30) },
       { startsAt: at(4, 15, 30), endsAt: at(4, 16) },

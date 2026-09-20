@@ -92,6 +92,7 @@
     <button class="ghost" id="keepIt" style="margin-top:10px">Keep things as they are</button>
   </div>
 
+  <div id="stripe" class="hidden" style="margin-top:22px"></div>
   <div id="who" class="who hidden"></div>
   <div id="err" class="error hidden" style="margin-top:16px"></div>
 </main>
@@ -117,8 +118,29 @@
     el('who').textContent = 'Signed in as ' + data.signedInAs;
     show('who');
 
+    // Whether she can take deposits is a property of THIS deployment, not of the
+    // software — so it is reported rather than assumed, and said plainly.
+    const connected = data.stripe && data.stripe.connected;
+    el('stripe').innerHTML = connected
+      ? `<div class="policy">
+           <div class="eyebrow" style="margin-bottom:6px">Deposits</div>
+           <div class="policy-text">Your Stripe account is connected. Deposits go straight to it —
+           they never pass through anyone else.</div>
+         </div>`
+      : `<div class="warn">
+           <span><strong>Deposits are off.</strong> Bookings work fine without them. To turn them
+           on, connect <em>your own</em> Stripe account — the money goes to you, not to whoever
+           runs this software:
+           <code style="display:block;margin-top:8px;font-size:12px">npx wrangler secret put STRIPE_SECRET_KEY</code>
+           </span>
+         </div>`;
+    show('stripe');
+
+    // v2 adds the mode. This page is a service she runs herself, by definition
+    // — a hosted operator issues its own codes after sign-in. Older apps ignore
+    // the extra field, and this app still reads v1, so nothing breaks either way.
     await QRCode.toCanvas(el('qr'), JSON.stringify({
-      v: 1, kind: 'setup', url: data.url, dk: data.deviceKey,
+      v: 2, kind: 'setup', mode: 'self', url: data.url, dk: data.deviceKey,
     }), { width: 260, margin: 1, color: { dark: '#2A201A', light: '#FFFFFF' } });
 
     if (!data.salon) { show('fresh'); return; }
