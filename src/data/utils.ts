@@ -71,6 +71,8 @@ export const fmt = {
     const d = new Date(iso);
     const today = new Date();
     const days = Math.round((today.getTime() - d.getTime()) / 86400000);
+    if (days <= 0) return 'today';
+    if (days === 1) return 'yesterday';
     if (days < 7) return `${days}d ago`;
     if (days < 30) return `${Math.round(days / 7)}w ago`;
     if (days < 365) return `${Math.round(days / 30)}mo ago`;

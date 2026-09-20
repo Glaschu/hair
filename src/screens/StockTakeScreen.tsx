@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, FlatList,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -8,6 +9,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
 import { RootStackParamList } from '../navigation/types';
 import { Chip, Icons } from '../components';
+import { sanitizeStockInput, parseStockInput, formatStockInput, stockStatus } from '../data/stock';
 import { Product } from '../data/types';
 import { SERIF } from '../theme';
 
@@ -18,11 +20,16 @@ export default function StockTakeScreen() {
   const nav = useNavigation<Nav>();
   const [cat, setCat] = useState('all');
 
-  const [counts, setCounts] = useState<Record<string, number>>(() => {
-    const obj: Record<string, number> = {};
-    products.forEach((p) => { obj[p.id] = p.stock; });
+  // Held as text, not numbers: a numeric state would swallow the decimal
+  // point as it's typed, making "3.5" impossible to enter.
+  const [counts, setCounts] = useState<Record<string, string>>(() => {
+    const obj: Record<string, string> = {};
+    products.forEach((p) => { obj[p.id] = formatStockInput(p.stock); });
     return obj;
   });
+
+  /** The counted number for a product, falling back to its current stock. */
+  const countFor = (p: Product) => parseStockInput(counts[p.id] ?? '') ?? p.stock;
 
   const cats = useMemo(() => {
     const unique = Array.from(new Set(products.map((p) => p.category)));
@@ -31,21 +38,25 @@ export default function StockTakeScreen() {
 
   const filtered = cat === 'all' ? products : products.filter((p) => p.category === cat);
 
-  const changedCount = products.filter((p) => Math.abs((counts[p.id] ?? p.stock) - p.stock) > 0.01).length;
+  const changedCount = products.filter((p) => Math.abs(countFor(p) - p.stock) > 0.001).length;
 
   const handleSave = () => {
     setProducts((ps) =>
       ps.map((p) => {
-        const actual = counts[p.id] ?? p.stock;
-        const newStock = Math.max(0, Number(actual) || 0);
-        const newStatus = newStock === 0 ? 'out' : newStock <= p.reorder ? 'low' : 'ok';
-        return { ...p, stock: newStock, status: newStatus };
+        // A field left blank means "not counted" — keep what was there
+        // rather than zeroing the shelf.
+        const newStock = Math.max(0, countFor(p));
+        return { ...p, stock: newStock, status: stockStatus(newStock, p.reorder) };
       })
     );
     nav.goBack();
   };
 
   return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top']}>
       {/* Top bar */}
       <View style={styles.topBar}>
@@ -92,13 +103,15 @@ export default function StockTakeScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 20, paddingTop: 8, paddingBottom: 20 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         <View style={{ gap: 8 }}>
           {filtered.map((p) => (
             <StockTakeRow
               key={p.id}
               product={p}
-              value={counts[p.id] ?? p.stock}
+              value={counts[p.id] ?? formatStockInput(p.stock)}
               onChange={(v) => setCounts((c) => ({ ...c, [p.id]: v }))}
               theme={theme}
             />
@@ -122,6 +135,7 @@ export default function StockTakeScreen() {
         </Pressable>
       </View>
     </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -129,14 +143,15 @@ function StockTakeRow({
   product, value, onChange, theme,
 }: {
   product: Product;
-  value: number;
-  onChange: (v: number) => void;
+  value: string;
+  onChange: (v: string) => void;
   theme: any;
 }) {
-  const diff = Number(value) - product.stock;
-  const diffLabel = diff > 0 ? `+${diff % 1 === 0 ? diff : diff.toFixed(1)}`
-    : diff < 0 ? `${diff % 1 === 0 ? diff : diff.toFixed(1)}`
-    : null;
+  const counted = parseStockInput(value) ?? product.stock;
+  const diff = counted - product.stock;
+  const diffLabel = Math.abs(diff) < 0.001 ? null
+    : `${diff > 0 ? '+' : ''}${formatStockInput(diff)}`;
+  const step = (by: number) => onChange(formatStockInput(Math.max(0, counted + by)));
   const diffColor = diff > 0 ? theme.sage : diff < 0 ? theme.danger : theme.ink3;
 
   return (
@@ -160,20 +175,25 @@ function StockTakeRow({
       {/* Counter */}
       <View style={styles.counter}>
         <Pressable
-          onPress={() => onChange(Math.max(0, Number(value) - 1))}
+          onPress={() => step(-1)}
+          accessibilityRole="button"
+          accessibilityLabel={`One less ${product.name}`}
           style={[styles.counterBtn, { borderColor: theme.line, backgroundColor: theme.bg2 }]}
         >
           <Text style={[styles.counterBtnText, { color: theme.ink2 }]}>−</Text>
         </Pressable>
         <TextInput
           style={[styles.counterInput, { color: theme.ink, borderColor: theme.line, backgroundColor: theme.bg2 }]}
-          keyboardType="numeric"
-          value={String(value)}
-          onChangeText={(t) => onChange(t === '' ? 0 : Number(t))}
+          keyboardType="decimal-pad"
+          value={value}
+          onChangeText={(t) => onChange(sanitizeStockInput(t))}
           selectTextOnFocus
+          accessibilityLabel={`${product.name} count`}
         />
         <Pressable
-          onPress={() => onChange(Number(value) + 1)}
+          onPress={() => step(1)}
+          accessibilityRole="button"
+          accessibilityLabel={`One more ${product.name}`}
           style={[styles.counterBtn, { borderColor: theme.line, backgroundColor: theme.bg2 }]}
         >
           <Text style={[styles.counterBtnText, { color: theme.ink2 }]}>+</Text>

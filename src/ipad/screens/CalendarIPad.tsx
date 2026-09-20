@@ -18,7 +18,7 @@ function dayOpenHours(schedule: Schedule, d: Date): number {
   return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
 }
 import { Eyebrow, Title, Btn } from '../ui';
-import { SERIF } from '../../theme';
+import { SERIF, appointmentTint } from '../../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CalView = 'day' | 'week' | 'month';
@@ -237,8 +237,10 @@ function WeekGrid({ weekDays, weekAppts, selectedDate, onSelectDay, hourHeight, 
                   const top = ((s.getHours() - HOUR_START) + s.getMinutes() / 60) * hourHeight;
                   const h = Math.max(((e.getTime() - s.getTime()) / 3600000) * hourHeight - 3, 24);
                   const client = clients.find((c) => c.id === a.clientId);
+                  const tint = appointmentTint(a.status, theme);
+                  const edge = tint?.edge ?? theme.accent;
                   return (
-                    <Pressable key={a.id} onPress={() => onOpen(a.id)} style={{ position: 'absolute', top, left: 3, right: 3, height: h, backgroundColor: theme.accent + '22', borderLeftWidth: 3, borderLeftColor: theme.accent, borderRadius: 8, padding: 6, overflow: 'hidden' }}>
+                    <Pressable key={a.id} onPress={() => onOpen(a.id)} style={{ position: 'absolute', top, left: 3, right: 3, height: h, backgroundColor: edge + '22', borderLeftWidth: 3, borderLeftColor: edge, borderRadius: 8, padding: 6, overflow: 'hidden', opacity: tint?.dim ? 0.6 : 1 }}>
                       <Text style={{ fontSize: 12, fontWeight: '700', color: theme.ink }} numberOfLines={1}>{client?.name ?? a.service}</Text>
                       <Text style={{ fontSize: 11, color: theme.ink2 }} numberOfLines={1}>{a.service}</Text>
                     </Pressable>
@@ -276,8 +278,10 @@ function DayGrid({ date, appts, hourHeight, onOpen }: { date: Date; appts: Appoi
               const top = ((s.getHours() - HOUR_START) + s.getMinutes() / 60) * hourHeight;
               const h = Math.max(((e.getTime() - s.getTime()) / 3600000) * hourHeight - 4, 40);
               const client = clients.find((c) => c.id === a.clientId);
+              const tint = appointmentTint(a.status, theme);
+              const edge = tint?.edge ?? theme.accent;
               return (
-                <Pressable key={a.id} onPress={() => onOpen(a.id)} style={{ position: 'absolute', top, left: 60, right: 0, height: h, backgroundColor: theme.accent + '22', borderLeftWidth: 3, borderLeftColor: theme.accent, borderRadius: 8, padding: 8 }}>
+                <Pressable key={a.id} onPress={() => onOpen(a.id)} style={{ position: 'absolute', top, left: 60, right: 0, height: h, backgroundColor: edge + '22', borderLeftWidth: 3, borderLeftColor: edge, borderRadius: 8, padding: 8, opacity: tint?.dim ? 0.6 : 1 }}>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: theme.ink }} numberOfLines={1}>{client?.name ?? a.service}</Text>
                   <Text style={{ fontSize: 12, color: theme.ink2 }} numberOfLines={1}>{a.service} · {fmt.timeShort(a.start)}</Text>
                 </Pressable>
@@ -371,8 +375,16 @@ function RailAppt({ appt, onPress }: { appt: Appointment; onPress: () => void })
   const { theme, clients } = useApp();
   const client = clients.find((c) => c.id === appt.clientId);
   const mins = Math.round((new Date(appt.end).getTime() - new Date(appt.start).getTime()) / 60000);
+  const tint = appointmentTint(appt.status, theme);
   return (
-    <Pressable onPress={onPress} style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 }]}>
+    <Pressable onPress={onPress} style={[styles.card, {
+      backgroundColor: theme.card,
+      borderColor: tint ? tint.edge + '55' : theme.line,
+      borderLeftWidth: tint ? 4 : StyleSheet.hairlineWidth,
+      borderLeftColor: tint ? tint.edge : theme.line,
+      opacity: tint?.dim ? 0.6 : 1,
+      flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12,
+    }]}>
       {client && <Avatar name={client.name} tone={client.tone} size={34} />}
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontWeight: '600', fontSize: 14, color: theme.ink }} numberOfLines={1}>{client?.name}</Text>
@@ -382,6 +394,7 @@ function RailAppt({ appt, onPress }: { appt: Appointment; onPress: () => void })
         <Text style={{ fontWeight: '600', fontSize: 13, color: theme.ink }}>{fmt.timeShort(appt.start)}</Text>
         <Text style={{ color: theme.ink3, fontSize: 11 }}>{fmt.duration(mins)}</Text>
       </View>
+      {appt.status === 'completed' && <Icons.check size={15} color={theme.sage} strokeWidth={2.4} />}
     </Pressable>
   );
 }

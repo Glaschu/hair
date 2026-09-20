@@ -1,0 +1,81 @@
+appId: com.glaschu.iris
+name: Repro — iPad wrap-up scrolling with many products
+env:
+  OUTPUT_DIR: screenshots/repro
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "Reset / wipe data.*"
+    direction: DOWN
+- tapOn: "Reset / wipe data.*"
+- tapOn: "Reset to demo data"
+- tapOn: "OK"
+- launchApp
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+
+# Complete Margot's visit, then open its wrap-up record.
+- tapOn:
+    text: ".*Margot Lebreton.*"
+    index: 0
+- tapOn: "Complete"
+- tapOn: "Confirm & complete"
+- extendedWaitUntil:
+    visible: "Add visit notes"
+    timeout: 10000
+- tapOn: "Add visit notes"
+- assertVisible: "VISIT RECORD.*"
+
+# Pile in products the way a full colour service does.
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Koleston 9/13.*"
+- waitForAnimationToEnd
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Color Touch 10/1.*"
+- waitForAnimationToEnd
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Color Touch 5/1.*"
+- waitForAnimationToEnd
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Welloxon 1.9%.*"
+- waitForAnimationToEnd
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Welloxon 9%.*"
+- waitForAnimationToEnd
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Blondor Freelights.*"
+- waitForAnimationToEnd
+- takeScreenshot: ${OUTPUT_DIR}/wrapup-many-products
+
+# Can she reach the bottom of the record at all?
+- scrollUntilVisible:
+    element:
+      text: "PHOTOS"
+    direction: DOWN
+    timeout: 12000
+- takeScreenshot: ${OUTPUT_DIR}/wrapup-scrolled-to-bottom

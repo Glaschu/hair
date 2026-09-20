@@ -71,6 +71,9 @@ function sanitizeAppointment(a: any): Appointment | null {
     service: str(a.service),
     status: STATUSES.includes(a.status) ? a.status : 'upcoming',
     price: num(a.price),
+    technique: typeof a.technique === 'string' ? a.technique : undefined,
+    timing: typeof a.timing === 'string' ? a.timing : undefined,
+    nextNotes: typeof a.nextNotes === 'string' ? a.nextNotes : undefined,
     products: arr(a.products)
       .filter((p) => p && typeof p === 'object' && p.productId)
       .map((p) => ({ productId: String(p.productId), amount: num(p.amount) })),

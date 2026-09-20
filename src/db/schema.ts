@@ -59,6 +59,9 @@ export const appointments = sqliteTable('appointments', {
   price:        real('price').notNull().default(0),
   notes:        text('notes'),
   formula:      text('formula'),
+  technique:    text('technique'),
+  timing:       text('timing'),
+  nextNotes:    text('next_notes'),
   paid:         integer('paid', { mode: 'boolean' }).notNull().default(false),
   appleEventId: text('apple_event_id'),
   updatedAt:    integer('updated_at').$defaultFn(() => Date.now()).$onUpdateFn(() => Date.now()),
@@ -96,4 +99,22 @@ export const schedule = sqliteTable('schedule', {
 export const settings = sqliteTable('settings', {
   key:   text('key').primaryKey(),
   value: text('value').notNull(),
+});
+
+/**
+ * Booking links she has sent, and who each one went to.
+ *
+ * `clientRef` is a fresh random string per link — the service never learns
+ * that two links belong to the same person, and only this table can say.
+ * Deliberately outside the iCloud export: these expire in weeks and a
+ * secret that syncs is a secret in a file.
+ */
+export const bookingLinks = sqliteTable('booking_links', {
+  token:       text('token').primaryKey(),
+  clientRef:   text('client_ref').notNull(),
+  clientId:    text('client_id').notNull(),
+  serviceName: text('service_name').notNull(),
+  url:         text('url').notNull(),
+  createdAt:   integer('created_at').notNull(),
+  expiresAt:   integer('expires_at').notNull(),
 });

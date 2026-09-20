@@ -146,12 +146,16 @@ export const WEEK_APPOINTMENTS: Appointment[] = [
     id: 'a-w-5', clientId: 'c1', start: isoOffset(-1, 14, 0), end: isoOffset(-1, 15, 30),
     service: 'Consultation', status: 'completed', paid: true, price: 45,
     products: [],
+    notes: 'Strand test on lower left — took the 6/34 well.',
+    nextNotes: 'Agreed root touch-up + gloss: 6/0 base, 6/34 through mids for warmth. Keep away from warm gold near the face.',
   },
   // Historical completed appointments — makes Reports, ClientDetail history, and Recent filter look realistic
   {
     id: 'a-h-01', clientId: 'c3', start: isoOffset(-21, 15, 30), end: isoOffset(-21, 16, 15),
     service: 'Mens Cut', status: 'completed', paid: true, price: 65,
     products: [{ productId: 'p-pomade', amount: 4 }],
+    technique: 'Scissor over comb, point-cut top',
+    nextNotes: 'Wants to try a mid skin fade next visit — check regrowth at the crown.',
   },
   {
     id: 'a-h-02', clientId: 'c7', start: isoOffset(-21, 17, 0), end: isoOffset(-21, 18, 0),

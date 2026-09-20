@@ -1,0 +1,22 @@
+appId: com.glaschu.iris
+name: Check — resized product picker on iPad
+env:
+  OUTPUT_DIR: screenshots/fixes-ipad
+---
+- launchApp
+- setOrientation: PORTRAIT
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- tapOn:
+    text: ".*Margot Lebreton.*"
+    index: 0
+- assertVisible: "Products"
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- takeScreenshot: ${OUTPUT_DIR}/picker-ipad-portrait
+- assertVisible: ".*Blondifier Cool.*"
+- tapOn: "Search products..."
+- takeScreenshot: ${OUTPUT_DIR}/picker-ipad-keyboard

@@ -13,6 +13,9 @@ export type RootStackParamList = {
   ServiceForm: { serviceId?: string };
   RescheduleModal: { appointmentId: string };
   AppointmentEdit: { appointmentId: string };
+  VisitWrapUp: { appointmentId: string };
+  BookingSetup: undefined;
+  SendBookingLink: { clientId: string };
 };
 
 export type TabParamList = {

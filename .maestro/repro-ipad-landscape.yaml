@@ -1,0 +1,37 @@
+appId: com.glaschu.iris
+name: Repro 6 — landscape iPad, keyboard up, adding products
+env:
+  OUTPUT_DIR: screenshots/repro
+---
+- launchApp
+- setOrientation: LANDSCAPE_LEFT
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Add visit notes"
+    timeout: 10000
+- tapOn: "Add visit notes"
+- assertVisible: "VISIT RECORD.*"
+- takeScreenshot: ${OUTPUT_DIR}/land-01-wrapup
+
+# Keyboard up while writing the record.
+- tapOn: "Anything to remember about this visit…"
+- inputText: "Pulled warm"
+- takeScreenshot: ${OUTPUT_DIR}/land-02-keyboard-up
+
+# Reach the bottom of the record with the keyboard up.
+- repeat:
+    times: 5
+    commands:
+      - swipe:
+          start: 50%, 55%
+          end: 50%, 25%
+- takeScreenshot: ${OUTPUT_DIR}/land-03-after-scrolling
+
+# And the picker in landscape.
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- takeScreenshot: ${OUTPUT_DIR}/land-04-picker

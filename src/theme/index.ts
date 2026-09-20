@@ -89,3 +89,15 @@ export const typography = {
     letterSpacing: 0.05 * size,
   }),
 };
+
+/**
+ * Whether a visit actually happened is what she scans the calendar for, so it
+ * reads as colour instead of needing a tap. Green for done; the ones that
+ * never happened fade back rather than compete for attention. `null` means
+ * "nothing special" — an upcoming appointment keeps the accent.
+ */
+export function appointmentTint(status: string, theme: Theme): { edge: string; dim: boolean } | null {
+  if (status === 'completed') return { edge: theme.sage, dim: false };
+  if (status === 'cancelled' || status === 'no-show') return { edge: theme.ink3, dim: true };
+  return null;
+}

@@ -11,7 +11,7 @@ import { File, Paths } from 'expo-file-system';
 import { useApp, ExportPayload } from '../data/AppContext';
 import { DEFAULT_SCHEDULE } from '../data/mockData';
 import { RootStackParamList } from '../navigation/types';
-import { Card, Icons, RoundBtn, useLocalDialog, PrivacyPolicyModal, appVersionLabel } from '../components';
+import { Card, Icons, RoundBtn, useLocalDialog, PrivacyPolicyModal, appVersionLabel, WhatsNewList } from '../components';
 import { accentOptions, SERIF } from '../theme';
 import { fmt, CURRENCY_OPTIONS } from '../data/utils';
 import { requestNotificationPermission } from '../data/notifications';
@@ -38,7 +38,7 @@ for (let h = 6; h <= 22; h++) {
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SettingsScreen() {
-  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, vatRate, setVatRate, currency, setCurrency, hour24, setHour24, calendarSyncEnabled, setCalendarSyncEnabled, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
+  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, vatRate, setVatRate, currency, setCurrency, hour24, setHour24, calendarSyncEnabled, setCalendarSyncEnabled, bookingEnabled, setBookingEnabled, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
   const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const [editingName, setEditingName] = useState(false);
@@ -481,6 +481,41 @@ export default function SettingsScreen() {
                 <View style={[styles.toggleThumb, { transform: [{ translateX: calendarSyncEnabled ? 22 : 2 }] }]} />
               </Pressable>
             </View>
+
+            {/* Only useful to someone running their own booking page, so it
+                stays out of the way until it's switched on. */}
+            <View style={[styles.divider, { backgroundColor: theme.line }]} />
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.settingLabel, { color: theme.ink }]}>Online booking</Text>
+                <Text style={{ fontSize: 11, color: theme.ink3, marginTop: 2 }}>
+                  Send clients a link to book themselves
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setBookingEnabled(!bookingEnabled)}
+                accessibilityRole="switch"
+                accessibilityLabel="Online booking"
+                style={[styles.toggleTrack, { backgroundColor: bookingEnabled ? theme.accent : theme.bg2 }]}
+              >
+                <View style={[styles.toggleThumb, { transform: [{ translateX: bookingEnabled ? 22 : 2 }] }]} />
+              </Pressable>
+            </View>
+            {bookingEnabled && (
+              <>
+                <View style={[styles.divider, { backgroundColor: theme.line }]} />
+                <Pressable style={styles.dataRow} onPress={() => nav.navigate('BookingSetup')}>
+                  <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
+                    <Icons.calendar size={16} color={theme.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.dataLabel, { color: theme.ink }]}>Set up booking service</Text>
+                    <Text style={[styles.dataSub, { color: theme.ink3 }]}>Connect this device to your own booking page</Text>
+                  </View>
+                  <Icons.chevronRight size={16} color={theme.ink3} />
+                </Pressable>
+              </>
+            )}
           </Card>
         </View>
 
@@ -749,37 +784,7 @@ export default function SettingsScreen() {
             <View style={styles.timePickerHandle} />
             <Text style={[styles.timePickerTitle, { color: theme.ink, fontSize: 20, marginBottom: 24 }]}>What's New</Text>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}>
-              
-              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
-                <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
-                  <Icons.search size={18} color={theme.accent} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Smart Product Search</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Easily find products across the app with our new smart search bar. Filter by brand instantly or search by name to add exactly what you need.</Text>
-                </View>
-              </View>
-
-              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
-                <View style={[styles.dataIcon, { backgroundColor: theme.sage + '25' }]}>
-                  <Icons.trend size={18} color={theme.sage} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Automated VAT</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Set your default VAT rate in Preferences and effortlessly add it to your product costs with a single tap during creation.</Text>
-                </View>
-              </View>
-
-              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
-                <View style={[styles.dataIcon, { backgroundColor: '#8a3ab925' }]}>
-                  <Icons.barcode size={18} color="#8a3ab9" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Refined Scanning & iPad UI</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Enjoy a smoother barcode scanning flow without UI glitches, and instantly open client Instagram profiles directly on your iPad.</Text>
-                </View>
-              </View>
-
+              <WhatsNewList />
             </ScrollView>
             <SafeAreaView edges={['bottom']}>
               <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>

@@ -23,6 +23,8 @@ export function CustomTimeRow({ value, onChange }: Props) {
             <Pressable
               key={h}
               onPress={() => onChange({ h, m: value.m })}
+              accessibilityRole="button"
+              accessibilityLabel={`Hour ${h}`}
               style={[styles.chip, { backgroundColor: active ? theme.accent : theme.bg2 }]}
             >
               <Text style={[styles.chipText, { color: active ? '#fff' : theme.ink2 }]}>
@@ -39,6 +41,8 @@ export function CustomTimeRow({ value, onChange }: Props) {
             <Pressable
               key={m}
               onPress={() => onChange({ h: value.h, m })}
+              accessibilityRole="button"
+              accessibilityLabel={`Minute ${m}`}
               style={[styles.chip, { backgroundColor: active ? theme.accent : theme.bg2 }]}
             >
               <Text style={[styles.chipText, { color: active ? '#fff' : theme.ink2 }]}>

@@ -1,0 +1,89 @@
+appId: com.glaschu.iris
+name: Repro 7 — appointment detail with lots of products (iPad)
+env:
+  OUTPUT_DIR: screenshots/repro
+---
+- launchApp:
+    clearState: true
+- setOrientation: PORTRAIT
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "Reset / wipe data.*"
+    direction: DOWN
+- tapOn: "Reset / wipe data.*"
+- tapOn: "Reset to demo data"
+- tapOn: "OK"
+- launchApp
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+
+# Open her upcoming appointment and load it up with products.
+- tapOn:
+    text: ".*Margot Lebreton.*"
+    index: 0
+- assertVisible: "Products"
+- takeScreenshot: ${OUTPUT_DIR}/appt-01-before
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Koleston 9/13.*"
+- waitForAnimationToEnd
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Color Touch 10/1.*"
+- waitForAnimationToEnd
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Color Touch 5/1.*"
+- waitForAnimationToEnd
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Welloxon 1.9%.*"
+- waitForAnimationToEnd
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Welloxon 9%.*"
+- waitForAnimationToEnd
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Blondor Freelights.*"
+- waitForAnimationToEnd
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*No.1 Bond Multiplier.*"
+- waitForAnimationToEnd
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- tapOn: ".*Absolut Repair Mask.*"
+- waitForAnimationToEnd
+- takeScreenshot: ${OUTPUT_DIR}/appt-02-many-products
+
+# Can she still reach the bottom of the screen and complete the visit?
+- repeat:
+    times: 6
+    commands:
+      - swipe:
+          start: 50%, 70%
+          end: 50%, 35%
+- takeScreenshot: ${OUTPUT_DIR}/appt-03-scrolled-to-bottom
+- assertVisible: "PHOTOS"

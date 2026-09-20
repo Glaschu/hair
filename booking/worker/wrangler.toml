@@ -1,0 +1,29 @@
+name = "iris-booking"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# Both OFF on purpose. Cloudflare Access is attached to your own hostname;
+# it does nothing for a request that arrives at iris-booking.<you>.workers.dev
+# or at a per-version preview URL. Leaving either on is a second front door
+# to the page that hands out your device key.
+workers_dev = false
+preview_urls = false
+
+# Cloudflare Access, in front of /setup. Fill both in after you create the
+# Access application (README step 4) — until you do, /setup stays shut.
+[vars]
+ACCESS_TEAM_DOMAIN = ""   # yoursalon.cloudflareaccess.com
+ACCESS_AUD = ""           # the application's Audience (AUD) tag
+
+# The booking page is served from the same origin as the API, so the
+# browser never makes a cross-origin request and there is no CORS to open up.
+assets = { directory = "../site", binding = "ASSETS" }
+
+[[d1_databases]]
+binding = "DB"
+database_name = "iris-booking"
+database_id = "PUT_YOUR_D1_DATABASE_ID_HERE"
+
+# No DEVICE_KEY secret to set: the service makes its own the first time you
+# sign in to /setup, and rotates it when you start over. `wrangler secret put
+# DEVICE_KEY` still works if you would rather pin one by hand.

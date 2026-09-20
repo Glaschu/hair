@@ -12,6 +12,8 @@ import { savePhoto, getPhotoUri } from '../../db/photos';
 import { RootStackParamList } from '../../navigation/types';
 import { Avatar, Icons, Chip, RoundBtn } from '../../components';
 import { fmt, groupByLetter, clientMatchesQuery } from '../../data/utils';
+import { openInstagram } from '../../data/links';
+import { treatmentSummary, TreatmentSummaryRow } from '../../data/visits';
 import { Client, ClientPhoto, Appointment } from '../../data/types';
 import { Eyebrow, Title, Btn } from '../ui';
 import { useShell } from '../shellContext';
@@ -193,6 +195,7 @@ function ClientDetailPanel({ clientId }: { clientId: string }) {
         totalSpend={totalSpend}
         avg={avg}
         lastFinishedAppt={completed[0]}
+        treatments={treatmentSummary(client.id, completed)}
         onEdit={() => nav.navigate('ClientForm', { clientId: client.id })}
         onBook={() => nav.navigate('NewAppointment', { clientId: client.id, prefillService: completed[0]?.service })}
       />
@@ -237,9 +240,9 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 function Divider() { const { theme } = useApp(); return <View style={{ width: 0.5, backgroundColor: theme.line }} />; }
 
-function ProfileDock({ client, totalVisits, totalSpend, avg, lastFinishedAppt, onEdit, onBook }: {
+function ProfileDock({ client, totalVisits, totalSpend, avg, lastFinishedAppt, treatments, onEdit, onBook }: {
   client: Client; totalVisits: number; totalSpend: number; avg: number;
-  lastFinishedAppt?: Appointment; onEdit: () => void; onBook: () => void;
+  lastFinishedAppt?: Appointment; treatments: TreatmentSummaryRow[]; onEdit: () => void; onBook: () => void;
 }) {
   const { theme } = useApp();
   return (
@@ -266,10 +269,7 @@ function ProfileDock({ client, totalVisits, totalSpend, avg, lastFinishedAppt, o
         <RoundBtn size={38} onPress={() => Linking.openURL(`tel:${client.phone}`)}><Icons.phone size={16} color={theme.ink} /></RoundBtn>
         <RoundBtn size={38} onPress={() => Linking.openURL(`sms:${client.phone}`)}><Icons.message size={16} color={theme.ink} /></RoundBtn>
         {client.instagram && (
-          <RoundBtn size={38} onPress={() => {
-            const handle = client.instagram?.replace('@', '');
-            Linking.openURL(`https://ig.me/m/${handle}`).catch(() => Linking.openURL(`https://instagram.com/${handle}`));
-          }}><Icons.instagram size={16} color={theme.ink} /></RoundBtn>
+          <RoundBtn size={38} label="Instagram" onPress={() => { openInstagram(client.instagram); }}><Icons.instagram size={16} color={theme.ink} /></RoundBtn>
         )}
       </View>
       <Btn variant="primary" icon={<Icons.plus size={15} color="#fff" />} onPress={onBook}>Book appointment</Btn>
@@ -299,6 +299,20 @@ function ProfileDock({ client, totalVisits, totalSpend, avg, lastFinishedAppt, o
         <ProfileRow label="Length" value={client.hair.length} />
         <ProfileRow label="Natural" value={client.hair.natural} />
       </Panel>
+
+      {treatments.length > 0 && (
+        <Panel>
+          <Eyebrow>TREATMENTS</Eyebrow>
+          {treatments.map((t) => (
+            <View key={t.service} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              <Text style={{ flex: 1, color: theme.ink, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
+                {t.service}
+              </Text>
+              <Text style={{ color: theme.ink3, fontSize: 12 }}>×{t.count} · {fmt.ago(t.last)}</Text>
+            </View>
+          ))}
+        </Panel>
+      )}
 
       {client.notes ? (
         <Panel>
@@ -391,6 +405,22 @@ function VisitTimeline({ client, upcoming, history, products, onOpenAppt, onView
                   <View style={{ height: 0.5, backgroundColor: theme.line, marginVertical: 12 }} />
                   <Eyebrow style={{ marginBottom: 6 }}>FORMULA</Eyebrow>
                   <Text style={{ color: theme.ink, fontSize: 13 }}>{a.formula}</Text>
+                </>
+              )}
+              {!noShow && (a.technique || a.timing) && (
+                <>
+                  <View style={{ height: 0.5, backgroundColor: theme.line, marginVertical: 12 }} />
+                  <Eyebrow style={{ marginBottom: 6 }}>TECHNIQUE</Eyebrow>
+                  <Text style={{ color: theme.ink, fontSize: 13 }}>
+                    {[a.technique, a.timing].filter(Boolean).join(' · ')}
+                  </Text>
+                </>
+              )}
+              {!noShow && a.nextNotes && (
+                <>
+                  <View style={{ height: 0.5, backgroundColor: theme.line, marginVertical: 12 }} />
+                  <Eyebrow color={theme.accent} style={{ marginBottom: 6 }}>NEXT TIME</Eyebrow>
+                  <Text style={{ color: theme.ink, fontSize: 13 }}>{a.nextNotes}</Text>
                 </>
               )}
               {!noShow && a.notes && (

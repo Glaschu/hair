@@ -10,7 +10,7 @@ import { useDialog } from '../../data/DialogContext';
 import { useResponsive } from '../../hooks/useResponsive';
 import { DEFAULT_SCHEDULE } from '../../data/mockData';
 import { RootStackParamList } from '../../navigation/types';
-import { Icons, RoundBtn, PrivacyPolicyModal, appVersionLabel } from '../../components';
+import { Icons, RoundBtn, PrivacyPolicyModal, appVersionLabel, WhatsNewList } from '../../components';
 import { accentOptions, SERIF } from '../../theme';
 import { fmt, CURRENCY_OPTIONS } from '../../data/utils';
 import { requestNotificationPermission } from '../../data/notifications';
@@ -490,37 +490,7 @@ export function SettingsIPad() {
             <View style={{ width: 40, height: 5, backgroundColor: theme.line, borderRadius: 3, alignSelf: 'center', marginBottom: 20 }} />
             <Text style={{ color: theme.ink, fontSize: 20, marginBottom: 24, fontWeight: '700' }}>What's New</Text>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 4, paddingBottom: 60 }}>
-              
-              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
-                <View style={{ backgroundColor: theme.accent + '18', width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
-                  <Icons.search size={18} color={theme.accent} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '600', fontSize: 15, color: theme.ink }}>Smart Product Search</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Easily find products across the app with our new smart search bar. Filter by brand instantly or search by name to add exactly what you need.</Text>
-                </View>
-              </View>
-
-              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
-                <View style={{ backgroundColor: theme.sage + '25', width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
-                  <Icons.trend size={18} color={theme.sage} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '600', fontSize: 15, color: theme.ink }}>Automated VAT</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Set your default VAT rate in Preferences and effortlessly add it to your product costs with a single tap during creation.</Text>
-                </View>
-              </View>
-
-              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
-                <View style={{ backgroundColor: '#8a3ab925', width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
-                  <Icons.barcode size={18} color="#8a3ab9" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '600', fontSize: 15, color: theme.ink }}>Refined Scanning & iPad UI</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Enjoy a smoother barcode scanning flow without UI glitches, and instantly open client Instagram profiles directly on your iPad.</Text>
-                </View>
-              </View>
-
+              <WhatsNewList />
             </ScrollView>
             <View style={{ paddingVertical: 10 }}>
               <Pressable onPress={() => setWhatsNewOpen(false)} style={{ backgroundColor: theme.accent, borderRadius: 14, padding: 16, alignItems: 'center' }}>

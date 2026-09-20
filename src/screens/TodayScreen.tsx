@@ -5,14 +5,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as Haptics from 'expo-haptics';
 import { useApp } from '../data/AppContext';
 import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
-import { Avatar, Icons, RoundBtn } from '../components';
+import { Avatar, Icons, RoundBtn, InChairCard } from '../components';
 import { fmt, addDays, isSameDay, is24Hour } from '../data/utils';
-import { deductStock, restoreStock } from '../data/stock';
-import { notifyLowStock } from '../data/notifications';
+import { useVisitActions } from '../data/useVisitActions';
 import { Appointment } from '../data/types';
 import { SERIF } from '../theme';
 
@@ -168,6 +166,9 @@ export default function TodayScreen() {
           </View>
         )}
 
+        {/* Who's in the chair (or up next) — rich client context at a glance */}
+        <InChairCard />
+
         {/* Schedule */}
         <View style={styles.sectionHead}>
           <View>
@@ -220,8 +221,9 @@ export default function TodayScreen() {
 }
 
 function ApptCard({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
-  const { theme, clients, products, setProducts, setAppointments } = useApp();
+  const { theme, clients } = useApp();
   const dialog = useDialog();
+  const visit = useVisitActions();
   const nav = useNavigation<Nav>();
   const client = clients.find((c) => c.id === appt.clientId);
 
@@ -233,27 +235,10 @@ function ApptCard({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
     });
     if (idx === null || appt.status !== 'upcoming') return;
     if (idx === 1) {
-      setAppointments((prev) => prev.map((a) =>
-        a.id === appt.id ? { ...a, status: 'no-show' } : a
-      ));
+      visit.markNoShow(appt);
       return;
     }
-    appt.products.forEach((ap) => {
-      const product = products.find((p) => p.id === ap.productId);
-      if (!product) return;
-      const after = deductStock(product, ap.amount);
-      if (after.status !== 'ok' && after.status !== product.status) {
-        notifyLowStock(product.name, after.status === 'out');
-      }
-    });
-    setProducts((prev) => prev.map((p) => {
-      const used = appt.products.find((ap) => ap.productId === p.id);
-      return used ? deductStock(p, used.amount) : p;
-    }));
-    setAppointments((prev) => prev.map((a) =>
-      a.id === appt.id ? { ...a, status: 'completed', paid: true } : a
-    ));
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    visit.complete(appt);
   };
 
   const handleQuickUndo = async () => {
@@ -264,13 +249,7 @@ function ApptCard({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
     });
     if (!ok) return;
     if (appt.status !== 'completed') return;
-    setProducts((prev) => prev.map((p) => {
-      const used = appt.products.find((ap) => ap.productId === p.id);
-      return used ? restoreStock(p, used.amount) : p;
-    }));
-    setAppointments((prev) => prev.map((a) =>
-      a.id === appt.id ? { ...a, status: 'upcoming' } : a
-    ));
+    visit.undoComplete(appt);
   };
 
   return (
@@ -306,6 +285,18 @@ function ApptCard({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
         )}
         {appt.status === 'no-show' && (
           <Text style={[styles.unpaidTag, { color: theme.danger }]}>NO-SHOW</Text>
+        )}
+        {appt.status === 'completed' && (
+          <Pressable
+            onPress={() => nav.navigate('VisitWrapUp', { appointmentId: appt.id })}
+            hitSlop={6}
+            style={[styles.visitNotesPill, { backgroundColor: theme.accent + '12' }]}
+          >
+            <Icons.clipboardCheck size={11} color={theme.accent} />
+            <Text style={[styles.visitNotesPillText, { color: theme.accent }]}>
+              {appt.technique || appt.timing || appt.nextNotes ? 'Visit notes' : 'Add visit notes'}
+            </Text>
+          </Pressable>
         )}
       </View>
       {/* Next badge */}
@@ -484,6 +475,11 @@ const styles = StyleSheet.create({
   apptName: { fontSize: 15, fontWeight: '600', marginBottom: 2 },
   apptService: { fontSize: 12 },
   unpaidTag: { fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginTop: 3 },
+  visitNotesPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginTop: 5,
+  },
+  visitNotesPillText: { fontSize: 11, fontWeight: '600' },
   nextBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,

@@ -17,6 +17,9 @@ import ProductFormScreen from '../screens/ProductFormScreen';
 import ServiceFormScreen from '../screens/ServiceFormScreen';
 import RescheduleModal from '../screens/RescheduleModal';
 import AppointmentEditScreen from '../screens/AppointmentEditScreen';
+import VisitWrapUpScreen from '../screens/VisitWrapUpScreen';
+import BookingSetupScreen from '../screens/BookingSetupScreen';
+import SendBookingLinkScreen from '../screens/SendBookingLinkScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -41,7 +44,9 @@ export function RootNavigator() {
       }}
     >
       <Stack.Screen name="MainTabs" component={Main} />
-      <Stack.Screen name="ClientDetail" component={ClientDetailScreen} options={sheet} />
+      {/* Full screen on every device — this is the record card she reads
+          with a client beside her, so it never sits in a narrow sheet. */}
+      <Stack.Screen name="ClientDetail" component={ClientDetailScreen} />
       <Stack.Screen name="ProductDetail" component={ProductDetailScreen} options={sheet} />
       <Stack.Screen name="AppointmentDetail" component={AppointmentDetailScreen} options={sheet} />
       <Stack.Screen
@@ -70,6 +75,13 @@ export function RootNavigator() {
         options={bottomModal}
       />
       <Stack.Screen name="AppointmentEdit" component={AppointmentEditScreen} options={sheet} />
+      <Stack.Screen
+        name="VisitWrapUp"
+        component={VisitWrapUpScreen}
+        options={bottomModal}
+      />
+      <Stack.Screen name="BookingSetup" component={BookingSetupScreen} options={sheet} />
+      <Stack.Screen name="SendBookingLink" component={SendBookingLinkScreen} options={bottomModal} />
     </Stack.Navigator>
   );
 }

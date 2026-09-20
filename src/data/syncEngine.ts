@@ -2,6 +2,7 @@ import { CloudStorage } from 'react-native-cloud-storage';
 import { File, Paths, Directory } from 'expo-file-system';
 import { ExportPayload, ClientPhoto } from './types';
 import { sanitizePayload } from './sanitize';
+import { mergeById, mergeClients, mergeAppointments } from './merge';
 
 const SYNC_FILE = '/iris-sync.json';
 
@@ -25,10 +26,10 @@ export async function pushSync(payload: ExportPayload): Promise<void> {
           version: 1,
           exported: new Date().toISOString(),
           tombstones: { ...remote.tombstones, ...payload.tombstones },
-          clients: mergeArrays(payload.clients, remote.clients, { ...remote.tombstones, ...payload.tombstones }),
-          products: mergeArrays(payload.products, remote.products, { ...remote.tombstones, ...payload.tombstones }),
-          appointments: mergeArrays(payload.appointments, remote.appointments, { ...remote.tombstones, ...payload.tombstones }),
-          services: mergeArrays(payload.services, remote.services, { ...remote.tombstones, ...payload.tombstones }),
+          clients: mergeClients(payload.clients, remote.clients, { ...remote.tombstones, ...payload.tombstones }),
+          products: mergeById(payload.products, remote.products, { ...remote.tombstones, ...payload.tombstones }),
+          appointments: mergeAppointments(payload.appointments, remote.appointments, { ...remote.tombstones, ...payload.tombstones }),
+          services: mergeById(payload.services, remote.services, { ...remote.tombstones, ...payload.tombstones }),
           schedule: { ...remote.schedule, ...payload.schedule },
         };
       }
@@ -72,47 +73,14 @@ export async function pullSync(localPayload: ExportPayload): Promise<ExportPaylo
     version: 1,
     exported: new Date().toISOString(),
     tombstones: { ...localPayload.tombstones, ...remote.tombstones },
-    clients: mergeArrays(localPayload.clients, remote.clients, { ...localPayload.tombstones, ...remote.tombstones }),
-    products: mergeArrays(localPayload.products, remote.products, { ...localPayload.tombstones, ...remote.tombstones }),
-    appointments: mergeArrays(localPayload.appointments, remote.appointments, { ...localPayload.tombstones, ...remote.tombstones }),
-    services: mergeArrays(localPayload.services, remote.services, { ...localPayload.tombstones, ...remote.tombstones }),
+    clients: mergeClients(localPayload.clients, remote.clients, { ...localPayload.tombstones, ...remote.tombstones }),
+    products: mergeById(localPayload.products, remote.products, { ...localPayload.tombstones, ...remote.tombstones }),
+    appointments: mergeAppointments(localPayload.appointments, remote.appointments, { ...localPayload.tombstones, ...remote.tombstones }),
+    services: mergeById(localPayload.services, remote.services, { ...localPayload.tombstones, ...remote.tombstones }),
     schedule: { ...localPayload.schedule, ...remote.schedule },
   };
 
   return merged;
-}
-
-/**
- * Merges two arrays of objects based on their `id` and `updatedAt` properties.
- * If an item exists in both, the one with the higher `updatedAt` is kept.
- */
-function mergeArrays<T extends { id: string; updatedAt?: number }>(local: T[], remote: T[], tombstones?: Record<string, number>): T[] {
-  const map = new Map<string, T>();
-
-  // Add local items
-  for (const item of local) {
-    if (tombstones && tombstones[item.id] && tombstones[item.id] >= (item.updatedAt ?? 0)) continue;
-    map.set(item.id, item);
-  }
-
-  // Merge remote items
-  for (const item of remote) {
-    if (tombstones && tombstones[item.id] && tombstones[item.id] >= (item.updatedAt ?? 0)) continue;
-    
-    const existing = map.get(item.id);
-    if (existing) {
-      const localTime = existing.updatedAt ?? 0;
-      const remoteTime = item.updatedAt ?? 0;
-      if (remoteTime > localTime) {
-        map.set(item.id, item);
-      }
-    } else {
-      map.set(item.id, item);
-    }
-  }
-
-
-  return Array.from(map.values());
 }
 
 /**

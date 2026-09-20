@@ -13,7 +13,8 @@ import { useApp } from '../data/AppContext';
 import { RootStackParamList } from '../navigation/types';
 import { Avatar, Icons, RoundBtn } from '../components';
 import { fmt, isSameDay, addDays, startOfWeek, is24Hour } from '../data/utils';
-import { SERIF } from '../theme';
+import { SERIF, appointmentTint } from '../theme';
+
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CalView = 'day' | 'week' | 'month';
@@ -273,6 +274,7 @@ function WeekView({ days, allAppts, selectedDate, onSelectDay, density: _density
     }
   }, [selectedDate, days]);
 
+
   const renderItem = ({ item: day }: { item: Date }) => {
     const dayAppts = allAppts
       .filter((a) => isSameDay(new Date(a.start), day))
@@ -299,21 +301,29 @@ function WeekView({ days, allAppts, selectedDate, onSelectDay, density: _density
         ) : (
           dayAppts.map((appt) => {
             const client = clients.find((c) => c.id === appt.clientId);
+            const tint = appointmentTint(appt.status, theme);
             return (
               <Pressable
                 key={appt.id}
                 onPress={() => nav.navigate('AppointmentDetail', { appointmentId: appt.id })}
                 style={({ pressed }) => [styles.weekAppt, {
                   backgroundColor: pressed ? theme.bg2 : theme.card,
-                  borderColor: theme.line,
+                  borderColor: tint ? tint.edge + '55' : theme.line,
+                  borderLeftWidth: tint ? 4 : 0.5,
+                  borderLeftColor: tint ? tint.edge : theme.line,
+                  opacity: tint?.dim ? 0.6 : 1,
                 }]}
+                accessibilityLabel={`${client?.name ?? ''} ${appt.service} ${fmt.timeShort(appt.start)}${appt.status === 'completed' ? ', done' : ''}`}
               >
                 {client && <Avatar name={client.name} tone={client.tone} size={34} />}
                 <View style={{ flex: 1, marginLeft: 10 }}>
                   <Text style={[styles.weekApptName, { color: theme.ink }]}>{client?.name}</Text>
                   <Text style={[styles.weekApptSvc, { color: theme.ink2 }]}>{appt.service}</Text>
                 </View>
-                <Text style={[styles.weekApptTime, { color: theme.ink3 }]}>{fmt.timeShort(appt.start)}</Text>
+                {appt.status === 'completed' && (
+                  <Icons.check size={15} color={theme.sage} strokeWidth={2.4} />
+                )}
+                <Text style={[styles.weekApptTime, { color: theme.ink3, marginLeft: 8 }]}>{fmt.timeShort(appt.start)}</Text>
               </Pressable>
             );
           })
@@ -407,13 +417,17 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
             .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
             .map((appt) => {
               const client = clients.find((c) => c.id === appt.clientId);
+              const tint = appointmentTint(appt.status, theme);
               return (
                 <Pressable
                   key={appt.id}
                   onPress={() => nav.navigate('AppointmentDetail', { appointmentId: appt.id })}
                   style={({ pressed }) => [styles.monthAppt, {
                     backgroundColor: pressed ? theme.bg2 : theme.card,
-                    borderColor: theme.line,
+                    borderColor: tint ? tint.edge + '55' : theme.line,
+                    borderLeftWidth: tint ? 4 : 0.5,
+                    borderLeftColor: tint ? tint.edge : theme.line,
+                    opacity: tint?.dim ? 0.6 : 1,
                   }]}
                 >
                   {client && <Avatar name={client.name} tone={client.tone} size={36} />}
@@ -421,7 +435,9 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
                     <Text style={[styles.weekApptName, { color: theme.ink }]}>{client?.name}</Text>
                     <Text style={[styles.weekApptSvc, { color: theme.ink2 }]}>{appt.service} · {fmt.timeShort(appt.start)}</Text>
                   </View>
-                  <Icons.chevronRight size={16} color={theme.ink3} />
+                  {appt.status === 'completed'
+                    ? <Icons.check size={16} color={theme.sage} strokeWidth={2.4} />
+                    : <Icons.chevronRight size={16} color={theme.ink3} />}
                 </Pressable>
               );
             })

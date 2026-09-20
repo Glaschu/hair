@@ -76,10 +76,10 @@ export default function InventoryScreen() {
           <Text style={[styles.title, { color: theme.ink }]}>Stock</Text>
         </View>
         <View style={styles.headerBtns}>
-          <RoundBtn onPress={() => nav.navigate('ScanModal')} size={40}>
+          <RoundBtn label="Scan barcode" onPress={() => nav.navigate('ScanModal')} size={40}>
             <Icons.barcode size={18} color={theme.ink2} />
           </RoundBtn>
-          <RoundBtn onPress={() => nav.navigate('StockTake')} size={40}>
+          <RoundBtn label="Stock-take" onPress={() => nav.navigate('StockTake')} size={40}>
             <Icons.clipboardCheck size={18} color={theme.ink2} />
           </RoundBtn>
           <RoundBtn onPress={() => nav.navigate('ProductForm', {})} filled size={40}>

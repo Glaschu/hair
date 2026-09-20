@@ -1,0 +1,48 @@
+appId: com.glaschu.iris
+name: Check — online booking is hidden until switched on
+env:
+  OUTPUT_DIR: screenshots/booking
+---
+- launchApp:
+    clearState: true
+- setOrientation: PORTRAIT
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+- tapOn: "Settings"
+
+# Off by default: nothing about booking should be reachable.
+- scrollUntilVisible:
+    element:
+      text: "Send clients a link to book themselves"
+    direction: DOWN
+- assertNotVisible: "Set up booking service.*"
+- takeScreenshot: ${OUTPUT_DIR}/01-off-by-default
+
+# Switching it on reveals the setup row.
+- tapOn:
+    text: "Online booking"
+    index: 1
+- extendedWaitUntil:
+    visible: "Set up booking service.*"
+    timeout: 5000
+- takeScreenshot: ${OUTPUT_DIR}/02-switched-on
+- tapOn: "Set up booking service.*"
+- extendedWaitUntil:
+    visible: "Link this device"
+    timeout: 10000
+- assertVisible: "Scan a code"
+- assertVisible: "BOOKING ADDRESS"
+- takeScreenshot: ${OUTPUT_DIR}/03-setup
+
+# A key must never be sent over an unencrypted address.
+- tapOn: "https://book.yourstudio.co.uk"
+- inputText: "http://not-secure.example.com"
+# Tapping neutral copy dismisses the keyboard (keyboardShouldPersistTaps),
+# which otherwise covers the button. hideKeyboard is unreliable on iOS.
+- tapOn: "or set it up here"
+- tapOn:
+    text: "Link this device"
+    index: 1
+- assertVisible: "Check the address.*"
+- takeScreenshot: ${OUTPUT_DIR}/04-rejects-insecure

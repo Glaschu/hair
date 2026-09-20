@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, TextInput } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../../data/AppContext';
@@ -7,6 +7,7 @@ import { useResponsive } from '../../hooks/useResponsive';
 import { RootStackParamList } from '../../navigation/types';
 import { Icons, StockBar, RoundBtn, Avatar } from '../../components';
 import { fmt } from '../../data/utils';
+import { sanitizeStockInput, parseStockInput, formatStockInput } from '../../data/stock';
 import { Product } from '../../data/types';
 import { Eyebrow, Title, Btn } from '../ui';
 import { useShell } from '../shellContext';
@@ -60,7 +61,7 @@ export function InventoryIPad() {
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <RoundBtn size={40} onPress={() => nav.navigate('ScanModal')}><Icons.barcode size={18} color={theme.ink2} /></RoundBtn>
-            <RoundBtn size={40} onPress={() => nav.navigate('StockTake')}><Icons.clipboardCheck size={18} color={theme.ink2} /></RoundBtn>
+            <RoundBtn size={40} label="Stock-take" onPress={() => nav.navigate('StockTake')}><Icons.clipboardCheck size={18} color={theme.ink2} /></RoundBtn>
             <RoundBtn filled size={40} onPress={() => nav.navigate('ProductForm', {})}><Icons.plus size={18} color={theme.bg} /></RoundBtn>
           </View>
         </View>
@@ -147,6 +148,14 @@ function ProductDetailPanel({ productId }: { productId: string }) {
     return { ...p, stock, status };
   }));
 
+  // null while not being edited, so the field follows the product otherwise.
+  const [stockDraft, setStockDraft] = useState<string | null>(null);
+  const commitStock = () => {
+    const typed = parseStockInput(stockDraft ?? '');
+    if (typed !== null) setStock(typed);
+    setStockDraft(null);
+  };
+
   const upcoming = useMemo(() => appointments
     .filter((a) => a.status === 'upcoming' && a.products.some((p) => p.productId === product.id))
     .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()), [appointments, product.id]);
@@ -185,9 +194,19 @@ function ProductDetailPanel({ productId }: { productId: string }) {
           <View style={[styles.box, { backgroundColor: theme.bg2 }]}>
             <Eyebrow>ON HAND</Eyebrow>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 8 }}>
-              <RoundBtn size={34} onPress={() => setStock(product.stock - 1)}><Icons.close size={14} color={theme.ink2} /></RoundBtn>
-              <Text style={{ fontSize: 34, fontFamily: SERIF, color: theme.ink, minWidth: 36, textAlign: 'center' }}>{product.stock}</Text>
-              <RoundBtn size={34} onPress={() => setStock(product.stock + 1)}><Icons.plus size={14} color={theme.ink2} /></RoundBtn>
+              <RoundBtn size={34} label="One less" onPress={() => setStock(product.stock - 1)}><Icons.close size={14} color={theme.ink2} /></RoundBtn>
+              {/* Tap to type an exact count — half a tub is 0.5. */}
+              <TextInput
+                style={{ fontSize: 34, fontFamily: SERIF, color: theme.ink, minWidth: 64, textAlign: 'center', padding: 0 }}
+                keyboardType="decimal-pad"
+                value={stockDraft ?? formatStockInput(product.stock)}
+                onChangeText={(t) => setStockDraft(sanitizeStockInput(t))}
+                onBlur={commitStock}
+                onSubmitEditing={commitStock}
+                selectTextOnFocus
+                accessibilityLabel={`${product.name} on hand`}
+              />
+              <RoundBtn size={34} label="One more" onPress={() => setStock(product.stock + 1)}><Icons.plus size={14} color={theme.ink2} /></RoundBtn>
             </View>
           </View>
           <View style={[styles.box, { backgroundColor: theme.bg2 }]}>

@@ -1,4 +1,4 @@
-import { checkSchedule, numberFieldError, generateTimeSlots } from '../utils';
+import { checkSchedule, numberFieldError, generateTimeSlots, fmt } from '../utils';
 import { Schedule } from '../types';
 
 const schedule: Schedule = {
@@ -63,5 +63,21 @@ describe('numberFieldError', () => {
   });
   it('accepts a valid value', () => {
     expect(numberFieldError('12.5', { min: 0 })).toBe('');
+  });
+});
+
+describe('fmt.ago', () => {
+  const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString();
+
+  it('reads naturally for the most recent visits', () => {
+    expect(fmt.ago(daysAgo(0))).toBe('today');
+    expect(fmt.ago(daysAgo(1))).toBe('yesterday');
+    expect(fmt.ago(daysAgo(3))).toBe('3d ago');
+  });
+
+  it('rolls up to weeks, months, years', () => {
+    expect(fmt.ago(daysAgo(14))).toBe('2w ago');
+    expect(fmt.ago(daysAgo(60))).toBe('2mo ago');
+    expect(fmt.ago(daysAgo(730))).toBe('2y ago');
   });
 });

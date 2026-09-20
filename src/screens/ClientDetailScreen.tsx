@@ -11,8 +11,11 @@ import { useApp } from '../data/AppContext';
 import { useLocalDialog } from '../components/Dialog';
 import { savePhoto, deletePhoto, getPhotoUri } from '../db/photos';
 import { RootStackParamList } from '../navigation/types';
-import { Avatar, Card, Icons, RoundBtn, EmptyState } from '../components';
+import { Avatar, Card, Icons, RoundBtn, EmptyState, PhotoStrip } from '../components';
+import { useResponsive } from '../hooks/useResponsive';
 import { fmt } from '../data/utils';
+import { treatmentSummary, TreatmentSummaryRow } from '../data/visits';
+import { openInstagram } from '../data/links';
 import { ClientPhoto, Appointment } from '../data/types';
 import { SERIF } from '../theme';
 
@@ -21,7 +24,8 @@ type Route = RouteProp<RootStackParamList, 'ClientDetail'>;
 type Tab = 'overview' | 'history' | 'photos';
 
 export default function ClientDetailScreen() {
-  const { theme, clients, setClients, appointments, products } = useApp();
+  const { theme, clients, setClients, appointments, products, bookingEnabled } = useApp();
+  const { isLarge } = useResponsive();
   const { confirm, alert, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
@@ -145,6 +149,7 @@ export default function ClientDetailScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 50 }} showsVerticalScrollIndicator={false}>
+       <View style={isLarge ? styles.contentWide : undefined}>
         {/* Hero — centred */}
         <View style={styles.hero}>
           <Pressable onPress={pickProfilePhoto} style={styles.avatarWrap} disabled={savingPhoto}>
@@ -173,11 +178,9 @@ export default function ClientDetailScreen() {
             {[
               { icon: <Icons.phone size={18} color={theme.ink} />, label: 'Call', onPress: () => Linking.openURL(`tel:${client.phone}`) },
               { icon: <Icons.message size={18} color={theme.ink} />, label: 'Message', onPress: () => Linking.openURL(`sms:${client.phone}`) },
-              ...(client.instagram ? [{ icon: <Icons.instagram size={18} color={theme.ink} />, label: 'Insta', onPress: () => {
-                const handle = client.instagram?.replace('@', '');
-                Linking.openURL(`https://ig.me/m/${handle}`).catch(() => Linking.openURL(`https://instagram.com/${handle}`));
-              } }] : []),
+              ...(client.instagram ? [{ icon: <Icons.instagram size={18} color={theme.ink} />, label: 'Insta', onPress: () => { openInstagram(client.instagram); } }] : []),
               { icon: <Icons.plus size={18} color={theme.ink} />, label: 'Book', onPress: () => nav.navigate('NewAppointment', { clientId: client.id, prefillService: completedAppts[0]?.service }) },
+              ...(bookingEnabled ? [{ icon: <Icons.calendar size={18} color={theme.ink} />, label: 'Send link', onPress: () => nav.navigate('SendBookingLink', { clientId: client.id }) }] : []),
             ].map((a) => (
               <Pressable key={a.label} onPress={a.onPress}
                 style={({ pressed }) => [styles.actionBtn, { backgroundColor: pressed ? theme.bg2 : theme.card, borderColor: theme.line }]}>
@@ -214,14 +217,23 @@ export default function ClientDetailScreen() {
 
         {/* Tab content */}
         {tab === 'overview' && (
-          <OverviewTab client={client} upcomingAppts={upcomingAppts} lastFinishedAppt={completedAppts[0]} nav={nav} />
+          <OverviewTab
+            client={client}
+            upcomingAppts={upcomingAppts}
+            lastFinishedAppt={completedAppts[0]}
+            treatments={treatmentSummary(client.id, completedAppts)}
+            nav={nav}
+            isLarge={isLarge}
+            onAddPhotos={addPhotos}
+          />
         )}
         {tab === 'history' && (
-          <HistoryTab historyAppts={historyAppts} products={products} nav={nav} client={client} onViewPhoto={setViewingPhoto} />
+          <HistoryTab historyAppts={historyAppts} products={products} nav={nav} client={client} onViewPhoto={setViewingPhoto} photoSize={isLarge ? 88 : 48} />
         )}
         {tab === 'photos' && (
-          <PhotosTab client={client} onAdd={addPhotos} onView={setViewingPhoto} />
+          <PhotosTab client={client} onAdd={addPhotos} onView={setViewingPhoto} perRow={isLarge ? 3 : 2} />
         )}
+       </View>
       </ScrollView>
 
       {/* Photo viewer modal */}
@@ -238,10 +250,50 @@ export default function ClientDetailScreen() {
   );
 }
 
-function OverviewTab({ client, upcomingAppts, lastFinishedAppt, nav }: { client: any; upcomingAppts: Appointment[]; lastFinishedAppt?: Appointment; nav: any }) {
+function OverviewTab({ client, upcomingAppts, lastFinishedAppt, treatments, nav, isLarge, onAddPhotos }: {
+  client: any; upcomingAppts: Appointment[]; lastFinishedAppt?: Appointment;
+  treatments: TreatmentSummaryRow[]; nav: any; isLarge: boolean; onAddPhotos: () => void;
+}) {
   const { theme } = useApp();
-  return (
-    <View style={{ padding: 20, gap: 14 }}>
+
+  // Photos belong next to the formula — the pair she shows clients in the
+  // chair. iPad has room for a column beside it; the phone stacks a
+  // swipeable strip directly under the formula instead.
+  const photos: ClientPhoto[] = client.photos || [];
+  const photoCard = (size: number, horizontal: boolean) => (
+    <Card>
+      <View style={styles.cardHead}>
+        <Icons.camera size={16} color={theme.accent} />
+        <Text style={[styles.sectionLabel, { color: theme.ink3, marginBottom: 0, flex: 1 }]}>PHOTOS</Text>
+        {photos.length > 0 && (
+          <Text style={[styles.sectionLabel, { color: theme.ink3, marginBottom: 0 }]}>{photos.length}</Text>
+        )}
+      </View>
+      {photos.length === 0 ? (
+        // Most clients start with none — say what belongs here rather than
+        // leaving a lone tile floating in an empty panel.
+        <Pressable
+          onPress={onAddPhotos}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.photoEmpty, {
+            borderColor: theme.accent + '55',
+            backgroundColor: pressed ? theme.accent + '14' : theme.accent + '08',
+          }]}
+        >
+          <Icons.camera size={26} color={theme.accent} />
+          <Text style={[styles.photoEmptyTitle, { color: theme.ink }]}>Add before & after photos</Text>
+          <Text style={[styles.photoEmptySub, { color: theme.ink3 }]}>
+            They show up here with the formula — handy for showing {String(client.name).split(' ')[0]} what you did last time.
+          </Text>
+        </Pressable>
+      ) : (
+        <PhotoStrip photos={photos} size={size} horizontal={horizontal} onAdd={onAddPhotos} />
+      )}
+    </Card>
+  );
+
+  const detailsTop = (
+    <>
       {/* Upcoming */}
       {upcomingAppts.length > 0 && (
         <View>
@@ -290,6 +342,32 @@ function OverviewTab({ client, upcomingAppts, lastFinishedAppt, nav }: { client:
         </View>
       </Card>
 
+    </>
+  );
+
+  const detailsRest = (
+    <>
+      {/* Treatments — what they have done, how often, when last */}
+      {treatments.length > 0 && (
+        <Card>
+          <View style={styles.cardHead}>
+            <Icons.scissors size={16} color={theme.accent} />
+            <Text style={[styles.sectionLabel, { color: theme.ink3, marginBottom: 0 }]}>TREATMENTS</Text>
+          </View>
+          {treatments.map((t, i) => (
+            <View key={t.service}>
+              {i > 0 && <View style={[styles.divider, { backgroundColor: theme.line }]} />}
+              <View style={styles.treatmentRow}>
+                <Text style={[styles.treatmentName, { color: theme.ink }]} numberOfLines={1}>{t.service}</Text>
+                <Text style={[styles.treatmentMeta, { color: theme.ink3 }]}>
+                  ×{t.count} · {fmt.ago(t.last)}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </Card>
+      )}
+
       {/* Allergies + notes */}
       <Card>
         <Text style={[styles.sectionLabel, { color: theme.warn }]}>ALLERGIES & SENSITIVITIES</Text>
@@ -314,12 +392,30 @@ function OverviewTab({ client, upcomingAppts, lastFinishedAppt, nav }: { client:
         <ContactRow icon={<Icons.message size={16} color={theme.accent} />} label={client.email}
           onPress={() => Linking.openURL(`mailto:${client.email}`)} theme={theme} />
       </Card>
+    </>
+  );
+
+  if (isLarge) {
+    return (
+      <View style={{ flexDirection: 'row', gap: 16, padding: 20, alignItems: 'flex-start' }}>
+        <View style={{ flex: 1.15, minWidth: 0, gap: 14 }}>{detailsTop}{detailsRest}</View>
+        <View style={{ flex: 1, minWidth: 0 }}>{photoCard(156, false)}</View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ padding: 20, gap: 14 }}>
+      {detailsTop}
+      {photoCard(112, true)}
+      {detailsRest}
     </View>
   );
 }
 
-function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
-  historyAppts: Appointment[]; products: any[]; nav: any; client: any; onViewPhoto: (p: ClientPhoto) => void;
+function HistoryTab({ historyAppts, products, nav, client, onViewPhoto, photoSize }: {
+  historyAppts: Appointment[]; products: any[]; nav: any; client: any;
+  onViewPhoto: (p: ClientPhoto) => void; photoSize: number;
 }) {
   const { theme } = useApp();
 
@@ -370,6 +466,22 @@ function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
                     <Text style={[styles.bodyText, { color: theme.ink }]}>{appt.formula}</Text>
                   </>
                 )}
+                {!isNoShow && (appt.technique || appt.timing) && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 8 }]} />
+                    <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>TECHNIQUE</Text>
+                    <Text style={[styles.bodyText, { color: theme.ink }]}>
+                      {[appt.technique, appt.timing].filter(Boolean).join(' · ')}
+                    </Text>
+                  </>
+                )}
+                {!isNoShow && appt.nextNotes && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 8 }]} />
+                    <Text style={[styles.sectionLabel, { color: theme.accent }]}>NEXT TIME</Text>
+                    <Text style={[styles.bodyText, { color: theme.ink }]}>{appt.nextNotes}</Text>
+                  </>
+                )}
                 {!isNoShow && appt.notes && (
                   <>
                     <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 8 }]} />
@@ -397,7 +509,7 @@ function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
                 {client?.photos?.some((p: any) => p.appointmentId === appt.id) && (
                   <View style={{ marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
                     {client.photos.filter((p: any) => p.appointmentId === appt.id).map((p: any) => (
-                      <Pressable key={p.id} onPress={() => onViewPhoto(p)} style={{ width: 48, height: 48, borderRadius: 8, overflow: 'hidden' }}>
+                      <Pressable key={p.id} onPress={() => onViewPhoto(p)} style={{ width: photoSize, height: photoSize, borderRadius: 8, overflow: 'hidden' }}>
                         <Image source={{ uri: getPhotoUri(p.url) }} style={{ flex: 1 }} resizeMode="cover" />
                       </Pressable>
                     ))}
@@ -412,15 +524,15 @@ function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
   );
 }
 
-function PhotosTab({ client, onAdd, onView }: {
-  client: any; onAdd: () => void; onView: (p: ClientPhoto) => void;
+function PhotosTab({ client, onAdd, onView, perRow }: {
+  client: any; onAdd: () => void; onView: (p: ClientPhoto) => void; perRow: number;
 }) {
   const { theme } = useApp();
   const photos: ClientPhoto[] = client.photos || [];
 
   const allItems = [{ type: 'add' as const }, ...photos.map((p) => ({ type: 'photo' as const, data: p }))];
   const pairs: typeof allItems[] = [];
-  for (let i = 0; i < allItems.length; i += 2) pairs.push(allItems.slice(i, i + 2));
+  for (let i = 0; i < allItems.length; i += perRow) pairs.push(allItems.slice(i, i + perRow));
 
   return (
     <View style={{ padding: 20, gap: 10 }}>
@@ -455,7 +567,8 @@ function PhotosTab({ client, onAdd, onView }: {
             }
             return null;
           })}
-          {pair.length === 1 && <View style={{ flex: 1 }} />}
+          {/* Keep the last row's tiles the same size as the rest. */}
+          {Array.from({ length: perRow - pair.length }).map((_, i) => <View key={`gap-${i}`} style={{ flex: 1 }} />)}
         </View>
       ))}
     </View>
@@ -523,6 +636,18 @@ const styles = StyleSheet.create({
   bodyText: { fontSize: 13, lineHeight: 20 },
   divider: { height: 0.5 },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  // Full-screen on iPad, but text stays a readable measure rather than
+  // stretching the whole width of the display.
+  contentWide: { width: '100%', maxWidth: 1120, alignSelf: 'center' },
+  photoEmpty: {
+    borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 14,
+    paddingVertical: 28, paddingHorizontal: 20, alignItems: 'center', gap: 8,
+  },
+  photoEmptyTitle: { fontSize: 14, fontWeight: '600' },
+  photoEmptySub: { fontSize: 12.5, lineHeight: 18, textAlign: 'center' },
+  treatmentRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9 },
+  treatmentName: { fontSize: 14, fontWeight: '600', flex: 1 },
+  treatmentMeta: { fontSize: 12.5 },
   hairRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   hairLabel: { fontSize: 13 },
   hairValue: { fontSize: 13, fontWeight: '500' },

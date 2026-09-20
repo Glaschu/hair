@@ -1,28 +1,26 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  View, Text, ScrollView, Pressable, TextInput, Modal, FlatList, StyleSheet, Linking, Platform, Image, KeyboardAvoidingView
+  View, Text, ScrollView, Pressable, TextInput, Modal, FlatList, StyleSheet, Linking, Platform, Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../data/AppContext';
 import { RootStackParamList } from '../navigation/types';
-import { Avatar, Icons, RoundBtn, useLocalDialog, ProductPicker } from '../components';
+import { Avatar, Icons, RoundBtn, useLocalDialog, ProductPicker, ProductUseRow, PhotoStrip, usePhotoAdd } from '../components';
 import { fmt } from '../data/utils';
-import { deductStock, restoreStock } from '../data/stock';
-import { notifyLowStock } from '../data/notifications';
-import { savePhoto, deletePhoto, getPhotoUri } from '../db/photos';
-import { Appointment, Product, ClientPhoto } from '../data/types';
+import { useVisitActions } from '../data/useVisitActions';
+import { Appointment, Product } from '../data/types';
 import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AppointmentDetail'>;
 
 export default function AppointmentDetailScreen() {
-  const { theme, appointments, setAppointments, clients, setClients, products, setProducts, services } = useApp();
+  const { theme, appointments, setAppointments, clients, setClients, products, services } = useApp();
   const { confirm, alert, actionSheet, dialog } = useLocalDialog();
+  const visit = useVisitActions();
+  const addPhotos = usePhotoAdd({ actionSheet, alert });
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -33,7 +31,6 @@ export default function AppointmentDetailScreen() {
   const priceEditRef = useRef({ editing: false, draft: '' });
   priceEditRef.current = { editing: editingPrice, draft: priceDraft };
   const [markPaid, setMarkPaid] = useState(true);
-  const [viewingPhoto, setViewingPhoto] = useState<ClientPhoto | null>(null);
 
   const apptId = route.params.appointmentId;
   const appt = appointments.find((a) => a.id === apptId);
@@ -54,57 +51,9 @@ export default function AppointmentDetailScreen() {
     return s + (up.product.cost * (up.amount / up.product.size));
   }, 0);
 
-  const addPhotos = async () => {
+  const addApptPhotos = async () => {
     if (!client) return;
-    const action = await actionSheet({
-      title: 'Add Photo',
-      actions: [{ label: 'Take Photo' }, { label: 'Choose from Library' }]
-    });
-    if (action === null) return;
-    
-    let result: ImagePicker.ImagePickerResult;
-    try {
-      if (action === 0) {
-        const perm = await ImagePicker.requestCameraPermissionsAsync();
-        if (perm.status !== 'granted') {
-          await alert({ title: 'Permission Denied', message: 'Camera access is required to take photos.' });
-          return;
-        }
-        result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
-      } else {
-        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (perm.status !== 'granted') {
-          await alert({ title: 'Permission Denied', message: 'Photo library access is required to choose photos.' });
-          return;
-        }
-        result = await ImagePicker.launchImageLibraryAsync({
-          allowsMultipleSelection: true, quality: 0.8,
-          mediaTypes: ['images'],
-        });
-      }
-    } catch (e) {
-      console.log("ImagePicker Error:", e);
-      await alert({ title: 'Error', message: 'Could not open the camera or library on this device.' });
-      return;
-    }
-
-    if (!result.canceled) {
-      try {
-        const saved = await Promise.all(result.assets.map(a => savePhoto(a.uri)));
-        const newPhotos: ClientPhoto[] = saved.map((uri) => ({
-          id: `ph-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          date: new Date().toISOString(),
-          url: uri,
-          label: '',
-          appointmentId: apptId,
-        }));
-        setClients((cs) => cs.map((c) => c.id === client.id
-          ? { ...c, photos: [...newPhotos, ...(c.photos || [])] }
-          : c));
-      } catch {
-        // failed
-      }
-    }
+    await addPhotos({ clientId: client.id, appointmentId: apptId });
   };
 
   const updateNotes = (text: string) => {
@@ -141,33 +90,16 @@ export default function AppointmentDetailScreen() {
   };
 
   const handleComplete = () => {
-    if (appt.status !== 'upcoming') {
-      setConfirmOpen(false);
-      return;
-    }
-    usedProducts.forEach((up) => {
-      const after = deductStock(up.product, up.amount);
-      if (after.status !== 'ok' && after.status !== up.product.status) {
-        notifyLowStock(up.product.name, after.status === 'out');
-      }
-    });
-    setProducts((prods) =>
-      prods.map((p) => {
-        const used = usedProducts.find((up) => up.productId === p.id);
-        return used ? deductStock(p, used.amount) : p;
-      })
-    );
-    setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'completed', paid: markPaid } : a));
+    visit.complete(appt, { paid: markPaid });
     setConfirmOpen(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
   const handleCancel = () => {
-    setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'cancelled' } : a));
+    visit.markCancelled(appt);
   };
 
   const handleNoShow = () => {
-    setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'no-show' } : a));
+    visit.markNoShow(appt);
   };
 
   const commitPrice = () => {
@@ -191,24 +123,28 @@ export default function AppointmentDetailScreen() {
   }, []);
 
   const handleUndo = () => {
-    if (isCompleted) {
-      setProducts((prods) =>
-        prods.map((p) => {
-          const used = usedProducts.find((up) => up.productId === p.id);
-          return used ? restoreStock(p, used.amount) : p;
-        })
-      );
-    }
-    setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'upcoming' } : a));
+    visit.undoComplete(appt);
   };
 
   const statusColor = isNoShow ? theme.danger : isCompleted ? theme.sage : isCancelled ? theme.ink3 : theme.accent;
   const statusBg = isNoShow ? theme.danger + '20' : isCompleted ? theme.sage + '20' : isCancelled ? theme.ink3 + '15' : theme.accent + '15';
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 140 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      {/*
+        No KeyboardAvoidingView here on purpose. This screen is a page sheet
+        on iPad, and KAV measures its own frame against the window — inside a
+        sheet that maths is wrong, so it over-pads and pushes the lower half
+        of the form out of reach exactly when the keyboard is up. UIKit does
+        the same job correctly from inside the scroll view, sheet geometry
+        included.
+      */}
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 140 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+      >
         {/* Top bar */}
         <View style={styles.topBar}>
           <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
@@ -356,7 +292,6 @@ export default function AppointmentDetailScreen() {
                   editable={!isCompleted && !isCancelled && !isNoShow}
                   onChangeAmount={(a) => updateProductAmount(up.productId, a)}
                   onRemove={() => removeProduct(up.productId)}
-                  theme={theme}
                 />
               ))}
             </View>
@@ -420,6 +355,49 @@ export default function AppointmentDetailScreen() {
           </View>
         )}
 
+        {/* Visit record — the structured wrap-up fields, once completed */}
+        {isCompleted && (
+          <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={[styles.sectionEye, { color: theme.ink3, marginBottom: 0 }]}>VISIT RECORD</Text>
+              <Pressable
+                onPress={() => nav.navigate('VisitWrapUp', { appointmentId: apptId })}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.accent + '15', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}
+              >
+                <Icons.clipboardCheck size={16} color={theme.accent} />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accent }}>
+                  {appt.technique || appt.timing || appt.nextNotes ? 'Edit visit notes' : 'Add visit notes'}
+                </Text>
+              </Pressable>
+            </View>
+            {(appt.technique || appt.timing || appt.nextNotes) ? (
+              <View style={[styles.notesCard, { backgroundColor: theme.card, borderColor: theme.line, padding: 14, gap: 10 }]}>
+                {!!appt.technique && (
+                  <View>
+                    <Text style={[styles.recordLabel, { color: theme.ink3 }]}>TECHNIQUE</Text>
+                    <Text style={[styles.recordValue, { color: theme.ink }]}>{appt.technique}</Text>
+                  </View>
+                )}
+                {!!appt.timing && (
+                  <View>
+                    <Text style={[styles.recordLabel, { color: theme.ink3 }]}>PROCESSING</Text>
+                    <Text style={[styles.recordValue, { color: theme.ink }]}>{appt.timing}</Text>
+                  </View>
+                )}
+                {!!appt.nextNotes && (
+                  <View>
+                    <Text style={[styles.recordLabel, { color: theme.accent }]}>NEXT TIME</Text>
+                    <Text style={[styles.recordValue, { color: theme.ink }]}>{appt.nextNotes}</Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <Text style={{ fontSize: 13, fontStyle: 'italic', color: theme.ink3 }}>
+                Technique, processing, and the plan for next time.
+              </Text>
+            )}
+          </View>
+        )}
 
         {/* Notes */}
         <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
@@ -440,33 +418,17 @@ export default function AppointmentDetailScreen() {
         <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <Text style={[styles.sectionEye, { color: theme.ink3, marginBottom: 0 }]}>PHOTOS</Text>
-            <Pressable onPress={addPhotos} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.accent + '15', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
+            <Pressable onPress={addApptPhotos} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.accent + '15', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
               <Icons.camera size={16} color={theme.accent} />
               <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accent }}>Add photo</Text>
             </Pressable>
           </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-            {client?.photos?.filter(p => p.appointmentId === apptId).map(p => (
-              <Pressable key={p.id} onPress={() => setViewingPhoto(p)} style={{ width: 80, height: 80, borderRadius: 10, overflow: 'hidden' }}>
-                <Image source={{ uri: getPhotoUri(p.url) }} style={{ flex: 1 }} resizeMode="cover" />
-              </Pressable>
-            ))}
-            {(!client?.photos || client.photos.filter(p => p.appointmentId === apptId).length === 0) && (
-              <Text style={{ fontSize: 13, fontStyle: 'italic', color: theme.ink3 }}>No photos for this appointment.</Text>
-            )}
-          </View>
+          <PhotoStrip
+            photos={client?.photos?.filter(p => p.appointmentId === apptId) ?? []}
+            emptyText="No photos for this appointment."
+          />
         </View>
       </ScrollView>
-
-      {/* Photo viewer modal */}
-      {viewingPhoto && (
-        <Modal visible animationType="fade" onRequestClose={() => setViewingPhoto(null)}>
-          <Pressable style={styles.photoViewer} onPress={() => setViewingPhoto(null)}>
-            <Image source={{ uri: getPhotoUri(viewingPhoto.url) }} style={styles.photoViewerImg} resizeMode="contain" />
-            <Text style={styles.photoViewerDate}>{fmt.rel(viewingPhoto.date)}</Text>
-          </Pressable>
-        </Modal>
-      )}
 
       {dialog}
 
@@ -571,73 +533,9 @@ export default function AppointmentDetailScreen() {
         </View>
       </Modal>
       </SafeAreaView>
-    </KeyboardAvoidingView>
   );
 }
 
-function ProductUseRow({
-  product, amount, editable, onChangeAmount, onRemove, theme,
-}: {
-  product: Product;
-  amount: number;
-  editable: boolean;
-  onChangeAmount: (a: number) => void;
-  onRemove: () => void;
-  theme: any;
-}) {
-  return (
-    <View style={[styles.productUseRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
-      <View style={[styles.productUseSwatch, { backgroundColor: theme.bg2 }]}>
-        <Text style={[styles.productUseSwatchText, { color: theme.ink3 }]}>
-          {product.brand.slice(0, 3).toUpperCase()}
-        </Text>
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[styles.productUseName, { color: theme.ink }]} numberOfLines={1}>{product.name}</Text>
-        <Text style={[styles.productUseBrand, { color: theme.ink2 }]}>{product.brand}</Text>
-      </View>
-      {editable ? (
-        <View style={styles.amtControl}>
-          <Pressable
-            onPress={() => onChangeAmount(Math.max(0, amount - 5))}
-            hitSlop={8}
-            style={({ pressed }) => [styles.amtBtn, { borderColor: theme.line, backgroundColor: theme.bg2, opacity: pressed ? 0.6 : 1 }]}
-          >
-            <Text style={[styles.amtBtnText, { color: theme.ink2 }]}>−</Text>
-          </Pressable>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minWidth: 48 }}>
-            <TextInput
-              style={[styles.amtText, { color: theme.ink, padding: 0, minWidth: 0 }]}
-              value={amount.toString()}
-              onChangeText={(t) => {
-                const n = parseFloat(t);
-                onChangeAmount(isNaN(n) ? 0 : n);
-              }}
-              keyboardType="numeric"
-            />
-            <Text style={[styles.amtText, { color: theme.ink, padding: 0, minWidth: 0 }]}>{product.unit}</Text>
-          </View>
-          <Pressable
-            onPress={() => onChangeAmount(amount + 5)}
-            hitSlop={8}
-            style={({ pressed }) => [styles.amtBtn, { borderColor: theme.line, backgroundColor: theme.bg2, opacity: pressed ? 0.6 : 1 }]}
-          >
-            <Text style={[styles.amtBtnText, { color: theme.ink2 }]}>+</Text>
-          </Pressable>
-          <Pressable
-            onPress={onRemove}
-            hitSlop={8}
-            style={({ pressed }) => [{ padding: 4, marginLeft: 2, opacity: pressed ? 0.5 : 1 }]}
-          >
-            <Icons.close size={14} color={theme.ink3} />
-          </Pressable>
-        </View>
-      ) : (
-        <Text style={[styles.amtText, { color: theme.ink }]}>{amount}{product.unit}</Text>
-      )}
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
@@ -742,6 +640,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 0.5,
   },
+  recordLabel: { fontSize: 9.5, fontWeight: '700', letterSpacing: 1.1, marginBottom: 3 },
+  recordValue: { fontSize: 14, lineHeight: 20 },
   notesText: { padding: 14, fontSize: 15, lineHeight: 22, minHeight: 60 },
   notesInput: {
     padding: 14,
@@ -790,36 +690,6 @@ const styles = StyleSheet.create({
   undoBtnText: { fontSize: 13, fontWeight: '500' },
 
   // Product use row
-  productUseRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 0.5,
-  },
-  productUseSwatch: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  productUseSwatchText: { fontSize: 7, fontWeight: '700', letterSpacing: 0.5 },
-  productUseName: { fontSize: 13, fontWeight: '600' },
-  productUseBrand: { fontSize: 11, marginTop: 1 },
-  amtControl: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  amtBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  amtBtnText: { fontSize: 20, fontWeight: '500', lineHeight: 24 },
-  amtText: { fontSize: 13, fontWeight: '600', minWidth: 48, textAlign: 'center' },
 
   // Sheets
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
@@ -878,7 +748,4 @@ const styles = StyleSheet.create({
     paddingVertical: 12, borderRadius: 12, borderWidth: 0.5,
   },
   paidControlText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.5 },
-  photoViewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  photoViewerImg: { width: '100%', flex: 1, borderRadius: 12 },
-  photoViewerDate: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 12 },
 });

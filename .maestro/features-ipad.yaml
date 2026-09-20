@@ -1,0 +1,100 @@
+appId: com.glaschu.iris
+name: Feature check — chair panel, visit wrap-up, What's New (iPad)
+env:
+  OUTPUT_DIR: screenshots/features-ipad
+---
+# Books a 10:45pm appointment for Margot (her demo history carries a
+# next-visit plan) so the chair-side panel renders at any hour.
+
+# ---- Seed demo data ----
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "Reset / wipe data.*"
+    direction: DOWN
+- tapOn: "Reset / wipe data.*"
+- tapOn: "Reset to demo data"
+- tapOn: "OK"
+- launchApp
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+
+# ---- Book Margot tonight so the panel has an occupant ----
+- tapOn: "New booking"
+- assertVisible: "Select Client"
+- tapOn: ".*Margot Lebreton.*"
+- assertVisible: "Select Service"
+- tapOn: "Deep Treatment.*"
+- assertVisible: "Pick a Time"
+- tapOn: "+ Custom time"
+# The hour strip starts at 6am — swipe it left until the last chip (10pm,
+# labeled "Hour 22") is visible. Labels are clock-format independent.
+- swipe:
+    from:
+      text: "Hour 6"
+    direction: LEFT
+- runFlow:
+    when:
+      notVisible: "Hour 22"
+    commands:
+      - swipe:
+          from:
+            text: "Hour 14"
+          direction: LEFT
+- runFlow:
+    when:
+      notVisible: "Hour 22"
+    commands:
+      - swipe:
+          from:
+            text: "Hour 18"
+          direction: LEFT
+- tapOn: "Hour 22"
+- tapOn: "Minute 45"
+- tapOn: "Continue"
+- assertVisible: "Products"
+- tapOn: "Review"
+- assertVisible: "Confirm Booking"
+- tapOn: "Confirm Booking"
+- runFlow:
+    when:
+      visible: "Book anyway"
+    commands:
+      - tapOn: "Book anyway"
+- assertVisible: "Booked!"
+- tapOn: "Done"
+
+# ---- Chair panel: allergies/formula/plan from her demo history ----
+- assertVisible: "UP NEXT.*"
+- assertVisible: "PLAN FROM LAST VISIT.*"
+- takeScreenshot: ${OUTPUT_DIR}/01-ipad-chair-panel
+
+# ---- Complete the next appointment; the row grows an Add visit notes bar ----
+- scrollUntilVisible:
+    element:
+      text: "Complete"
+    direction: DOWN
+- tapOn: "Complete"
+- assertVisible: "Add visit notes"
+- takeScreenshot: ${OUTPUT_DIR}/02-ipad-completed-row
+- tapOn: "Add visit notes"
+- assertVisible: "VISIT RECORD.*"
+- takeScreenshot: ${OUTPUT_DIR}/03-ipad-wrapup
+- tapOn: "Done"
+
+# ---- What's New lists the new features ----
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "What's New in Iris.*"
+    direction: DOWN
+- tapOn: "What's New in Iris.*"
+- assertVisible: "The chair-side view"
+- takeScreenshot: ${OUTPUT_DIR}/04-ipad-whats-new
+- tapOn: "Done"

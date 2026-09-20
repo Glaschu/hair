@@ -1,0 +1,132 @@
+appId: com.glaschu.iris
+name: Feature check — chair-side view, visit wrap-up, What's New (iPhone)
+env:
+  OUTPUT_DIR: screenshots/features-iphone
+---
+# Verifies the chair-side/visit-record features end to end and captures
+# screenshots for visual review. Books a 10:45pm appointment via custom
+# time so the chair card renders at any hour of the day.
+
+# ---- Seed demo data ----
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "Reset / wipe data.*"
+    direction: DOWN
+- tapOn: "Reset / wipe data.*"
+- tapOn: "Reset to demo data"
+- tapOn: "OK"
+- launchApp
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+
+# ---- Complete Margot's visit and fill in the full wrap-up record ----
+- tapOn:
+    text: ".*Margot Lebreton.*"
+    index: 0
+- assertVisible: "Complete"
+- tapOn: "Complete"
+- tapOn: "Confirm & complete"
+- scrollUntilVisible:
+    element:
+      text: "Add visit notes"
+    direction: DOWN
+- takeScreenshot: ${OUTPUT_DIR}/01-appt-completed
+- tapOn: "Add visit notes"
+- assertVisible: "VISIT RECORD.*"
+# hideKeyboard is unreliable on iOS — tapping the next field works with the
+# keyboard up, so fields are filled back-to-back and the screenshot accepts
+# a visible keyboard.
+- tapOn: "e.g. 30g 6N + 30g 20vol..."
+- inputText: "30g 6/0 + 30g 6/34 + 60ml 20vol"
+- tapOn: "e.g. balayage, foils on top section"
+- inputText: "Root smudge, gloss through mids"
+- tapOn: "e.g. 35 min @ 20vol"
+- inputText: "35 min @ 20vol"
+- tapOn: "Plan for the next visit — this shows chair-side when they're back."
+- inputText: "Gloss refresh; try 6/34 solo through mids"
+- takeScreenshot: ${OUTPUT_DIR}/02-visit-wrapup
+- tapOn: "Done"
+- assertVisible: "Edit visit notes"
+- waitForAnimationToEnd
+- takeScreenshot: ${OUTPUT_DIR}/03-visit-record
+
+# ---- Today shows the completed card with its Visit notes pill ----
+- launchApp
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+- assertVisible: ".*Visit notes.*"
+- takeScreenshot: ${OUTPUT_DIR}/04-today-completed
+
+# ---- Book Margot again tonight (custom time) ----
+- scrollUntilVisible:
+    element:
+      text: "New"
+    direction: DOWN
+- tapOn: "New"
+- assertVisible: "Select Client"
+- tapOn: ".*Margot Lebreton.*"
+- assertVisible: "Select Service"
+- tapOn: "Deep Treatment.*"
+- assertVisible: "Pick a Time"
+- tapOn: "+ Custom time"
+# The hour strip starts at 6am — swipe it left until the last chip (10pm,
+# labeled "Hour 22") is visible. Labels are clock-format independent.
+- swipe:
+    from:
+      text: "Hour 6"
+    direction: LEFT
+- runFlow:
+    when:
+      notVisible: "Hour 22"
+    commands:
+      - swipe:
+          from:
+            text: "Hour 14"
+          direction: LEFT
+- runFlow:
+    when:
+      notVisible: "Hour 22"
+    commands:
+      - swipe:
+          from:
+            text: "Hour 18"
+          direction: LEFT
+- tapOn: "Hour 22"
+- tapOn: "Minute 45"
+- tapOn: "Continue"
+- assertVisible: "Products"
+- tapOn: "Review"
+- assertVisible: "Confirm Booking"
+- tapOn: "Confirm Booking"
+- runFlow:
+    when:
+      visible: "Book anyway"
+    commands:
+      - tapOn: "Book anyway"
+- assertVisible: "Booked!"
+- tapOn: "Done"
+
+# ---- The chair card now shows her, with the plan recorded above ----
+- assertVisible: "UP NEXT.*"
+- assertVisible: ".*PLAN FROM LAST VISIT.*"
+- takeScreenshot: ${OUTPUT_DIR}/05-in-chair-card
+
+# ---- What's New lists the new features ----
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "What's new.*"
+    direction: DOWN
+- tapOn: "What's new.*"
+- assertVisible: "The chair-side view"
+- assertVisible: "Visit records"
+- assertVisible: "Next-time plans"
+- takeScreenshot: ${OUTPUT_DIR}/06-whats-new

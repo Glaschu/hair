@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
@@ -35,12 +35,30 @@ export default function ProductFormScreen() {
   const [reorder, setReorder] = useState(String(existing?.reorder || ''));
   const [perUse, setPerUse] = useState(String(existing?.perUse || ''));
   const [cost, setCost] = useState(String(existing?.cost || ''));
-  const [baseCost, setBaseCost] = useState(existing?.baseCost ? String(existing.baseCost) : '');
   const [vatApplied, setVatApplied] = useState(existing?.hasVat || false);
   const [barcode, setBarcode] = useState(existing?.barcode || '');
   const [scannerOpen, setScannerOpen] = useState(false);
 
   const [permission, requestPermission] = useCameraPermissions();
+
+  // `cost` is always what she pays in total. When VAT is on, the net is
+  // derived from it rather than kept alongside it — so editing the total
+  // re-splits the breakdown instead of silently dropping the VAT flag.
+  // Brands she has already typed, so the second tube of Goldwell doesn't
+  // become "goldwell" and split the shelf in two.
+  const knownBrands = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const p of products) {
+      const label = p.brand.trim();
+      if (!label) continue;
+      const key = label.toLowerCase();
+      if (!seen.has(key)) seen.set(key, label);
+    }
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  }, [products]);
+
+  const grossCost = parseFloat(cost) || 0;
+  const netCost = vatApplied ? grossCost / (1 + vatRate / 100) : grossCost;
 
   const fieldErrors = {
     size: numberFieldError(size, { positive: true }),
@@ -89,7 +107,7 @@ export default function ProductFormScreen() {
     const perUseNum = parseFloat(perUse) || 0;
     const costNum = parseFloat(cost) || 0;
     const status = stockNum === 0 ? 'out' as const : stockNum <= reorderNum ? 'low' as const : 'ok' as const;
-    const bCostNum = baseCost && vatApplied ? parseFloat(baseCost) : undefined;
+    const bCostNum = vatApplied ? Math.round(netCost * 100) / 100 : undefined;
 
     if (existing) {
       setProducts((prev) => prev.map((p) => p.id === existing.id ? {
@@ -162,6 +180,30 @@ export default function ProductFormScreen() {
           <FieldRow label="Brand" value={brand} onChangeText={setBrand} placeholder="e.g. Goldwell" theme={theme} />
         </View>
 
+        {knownBrands.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[styles.chipRow, { paddingTop: 10 }]}
+          >
+            {knownBrands.map((b) => {
+              const picked = brand.trim().toLowerCase() === b.toLowerCase();
+              return (
+                <Pressable
+                  key={b}
+                  onPress={() => setBrand(picked ? '' : b)}
+                  style={[styles.chip, { backgroundColor: picked ? theme.accent : theme.bg2 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Brand ${b}`}
+                >
+                  <Text style={[styles.chipText, { color: picked ? '#fff' : theme.ink2 }]}>{b}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
+
         {/* Category */}
         <SectionLabel label="CATEGORY" theme={theme} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
@@ -215,55 +257,60 @@ export default function ProductFormScreen() {
         {/* Cost */}
         <SectionLabel label="COST" theme={theme} />
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
-          <FieldRow 
-            label="Unit cost (£)" 
-            value={cost} 
-            onChangeText={(val: string) => {
-              setCost(val);
-              if (vatApplied) {
-                setVatApplied(false);
-                setBaseCost('');
-              }
-            }} 
-            placeholder="e.g. 12.50" 
-            keyboardType="decimal-pad" 
-            theme={theme} 
-            error={fieldErrors.cost} 
+          <FieldRow
+            label="Unit cost (£)"
+            value={cost}
+            onChangeText={setCost}
+            placeholder="e.g. 12.50"
+            keyboardType="decimal-pad"
+            theme={theme}
+            error={fieldErrors.cost}
           />
-          {vatApplied && baseCost ? (
-            <View style={{ padding: 16, backgroundColor: theme.bg2, borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
+          <View style={[styles.divider, { backgroundColor: theme.line }]} />
+          {vatApplied ? (
+            <View style={{ padding: 16 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
                 <Text style={{ fontSize: 13, color: theme.ink2 }}>Product cost</Text>
-                <Text style={{ fontSize: 13, color: theme.ink }}>£{parseFloat(baseCost).toFixed(2)}</Text>
+                <Text style={{ fontSize: 13, color: theme.ink }}>£{netCost.toFixed(2)}</Text>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
                 <Text style={{ fontSize: 13, color: theme.ink2 }}>+ {vatRate}% VAT</Text>
-                <Text style={{ fontSize: 13, color: theme.ink }}>£{(parseFloat(cost) - parseFloat(baseCost)).toFixed(2)}</Text>
+                <Text style={{ fontSize: 13, color: theme.ink }}>£{(grossCost - netCost).toFixed(2)}</Text>
               </View>
               <View style={{ height: 1, backgroundColor: theme.line, marginBottom: 10 }} />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 }}>
                 <Text style={{ fontSize: 13, fontWeight: '600', color: theme.ink }}>Total</Text>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: theme.ink }}>£{parseFloat(cost).toFixed(2)}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: theme.ink }}>£{grossCost.toFixed(2)}</Text>
               </View>
-            </View>
-          ) : (
-            <>
-              <View style={[styles.divider, { backgroundColor: theme.line }]} />
               <Pressable
                 onPress={() => {
-                  const current = parseFloat(cost) || 0;
-                  if (current > 0) {
-                    const withVat = current * (1 + vatRate / 100);
-                    setBaseCost(cost);
-                    setCost(withVat.toFixed(2));
-                    setVatApplied(true);
-                  }
+                  // Put the cost back to what it was before VAT went on.
+                  setCost(netCost > 0 ? netCost.toFixed(2) : '');
+                  setVatApplied(false);
                 }}
-                style={({ pressed }) => [{ padding: 12, alignItems: 'center', backgroundColor: pressed ? theme.bg2 : 'transparent' }]}
+                style={({ pressed }) => [{
+                  alignSelf: 'flex-start', paddingVertical: 6,
+                  opacity: pressed ? 0.6 : 1,
+                }]}
               >
-                <Text style={{ fontSize: 13, fontWeight: '500', color: theme.accent }}>+ Add {vatRate}% VAT</Text>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: theme.ink2 }}>
+                  Remove {vatRate}% VAT
+                </Text>
               </Pressable>
-            </>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => {
+                if (grossCost <= 0) return;
+                setCost((grossCost * (1 + vatRate / 100)).toFixed(2));
+                setVatApplied(true);
+              }}
+              style={({ pressed }) => [{ padding: 12, alignItems: 'center', backgroundColor: pressed ? theme.bg2 : 'transparent' }]}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '500', color: grossCost > 0 ? theme.accent : theme.ink3 }}>
+                + Add {vatRate}% VAT
+              </Text>
+            </Pressable>
           )}
         </View>
 

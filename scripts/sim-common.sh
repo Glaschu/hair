@@ -61,4 +61,7 @@ boot_and_prep() {
     --dataNetwork wifi --wifiMode active --wifiBars 3 \
     --cellularMode active --cellularBars 4 \
     --batteryState charged --batteryLevel 100
+  # Silence the "Slide to Type" keyboard tutorial — it is a system sheet that
+  # covers whatever sits under the keyboard and fails taps in every flow.
+  xcrun simctl spawn "$1" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true 2>/dev/null || true
 }

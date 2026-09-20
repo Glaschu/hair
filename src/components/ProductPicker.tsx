@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, Pressable, StyleSheet, Modal, FlatList, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../data/AppContext';
+import { useResponsive } from '../hooks/useResponsive';
 import { Icons } from './Icons';
 import { SERIF } from '../theme';
 
@@ -18,6 +20,8 @@ const EMPTY_ARRAY: string[] = [];
 
 export function ProductPicker({ visible, onClose, onSelect, excludeIds = EMPTY_ARRAY, initialSelectedIds = EMPTY_ARRAY, title = 'Add product', mode = 'single' }: ProductPickerProps) {
   const { theme, products } = useApp();
+  const { isLarge, height } = useResponsive();
+  const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
   const [activeBrand, setActiveBrand] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds);
@@ -54,10 +58,14 @@ export function ProductPicker({ visible, onClose, onSelect, excludeIds = EMPTY_A
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <View style={styles.sheetOverlay}>
-          <Pressable style={{ flex: 1 }} onPress={onClose} />
-          <View style={[styles.sheet, { backgroundColor: theme.bg }]}>
-            <View style={styles.sheetHandle} />
+        <View style={[styles.sheetOverlay, isLarge && styles.overlayCentred]}>
+          <Pressable style={isLarge ? StyleSheet.absoluteFill : { flex: 1 }} onPress={onClose} />
+          <View style={[
+            styles.sheet,
+            isLarge ? styles.sheetLarge : { paddingBottom: Math.max(12, insets.bottom) },
+            { backgroundColor: theme.bg },
+          ]}>
+            {!isLarge && <View style={styles.sheetHandle} />}
             <View style={styles.header}>
               <Text style={[styles.sheetTitle, { color: theme.ink }]}>{title}</Text>
               <Pressable onPress={onClose} style={styles.closeBtn}>
@@ -109,7 +117,7 @@ export function ProductPicker({ visible, onClose, onSelect, excludeIds = EMPTY_A
             <FlatList
               data={filtered}
               keyExtractor={(item) => item.id}
-              style={{ maxHeight: 400 }}
+              style={{ maxHeight: isLarge ? Math.round(height * 0.55) : 400 }}
               contentContainerStyle={{ paddingBottom: 20 }}
               keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => {
@@ -185,6 +193,11 @@ export function ProductPicker({ visible, onClose, onSelect, excludeIds = EMPTY_A
 const styles = StyleSheet.create({
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12 },
+  overlayCentred: { justifyContent: 'center', alignItems: 'center', padding: 32 },
+  sheetLarge: {
+    borderRadius: 24, paddingTop: 20, paddingBottom: 12,
+    width: '100%', maxWidth: 640, maxHeight: '85%',
+  },
   sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(150,150,150,0.3)', alignSelf: 'center', marginBottom: 12 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 16 },
   sheetTitle: { fontSize: 18, fontFamily: SERIF },

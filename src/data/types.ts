@@ -68,6 +68,12 @@ export interface Appointment {
   products: ApptProduct[];
   notes?: string;
   formula?: string;
+  /** Visit record: how it was done, e.g. "balayage, foils on top section". */
+  technique?: string;
+  /** Visit record: processing, e.g. "35 min @ 20vol". */
+  timing?: string;
+  /** Visit record: plan for the next visit — surfaced chair-side at the client's next appointment. */
+  nextNotes?: string;
   paid?: boolean;
   appleEventId?: string;
   updatedAt?: number;

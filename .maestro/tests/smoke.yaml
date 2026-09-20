@@ -36,6 +36,11 @@ name: Smoke test — seed demo data, browse every tab, book an appointment
 - tapOn: "Today, tab.*"
 
 # ---- Book an appointment end to end ----
+# The in-chair card can push the schedule section below the fold.
+- scrollUntilVisible:
+    element:
+      text: "New"
+    direction: DOWN
 - tapOn: "New"
 - assertVisible: "Select Client"
 - tapOn: ".*Margot Lebreton.*"
@@ -65,3 +70,23 @@ name: Smoke test — seed demo data, browse every tab, book an appointment
 - assertVisible: "Booked!"
 - tapOn: "Done"
 - assertVisible: "DAY AT A GLANCE.*"
+
+# ---- Complete a visit and fill in the wrap-up record ----
+# Margot has a demo appointment today; her name matches the in-chair card
+# and/or her schedule row — both open the same appointment detail.
+- tapOn:
+    text: ".*Margot Lebreton.*"
+    index: 0
+- assertVisible: "Complete"
+- tapOn: "Complete"
+- tapOn: "Confirm & complete"
+- scrollUntilVisible:
+    element:
+      text: "Add visit notes"
+    direction: DOWN
+- tapOn: "Add visit notes"
+- assertVisible: "VISIT RECORD.*"
+- tapOn: "e.g. balayage, foils on top section"
+- inputText: "Scissor over comb"
+- tapOn: "Done"
+- assertVisible: "Edit visit notes"

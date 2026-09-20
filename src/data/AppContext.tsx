@@ -75,6 +75,10 @@ interface AppState {
   calendarSyncEnabled: boolean;
   setCalendarSyncEnabled: (v: boolean) => void;
 
+  /** Off unless she runs her own booking service — hides the feature entirely. */
+  bookingEnabled: boolean;
+  setBookingEnabled: (v: boolean) => void;
+
   iCloudSyncEnabled: boolean;
   setICloudSyncEnabled: (v: boolean) => void;
 
@@ -111,6 +115,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [currency, setCurrencyState] = useState('£');
   const [hour24, setHour24State] = useState(false);
   const [calendarSyncEnabled, setCalendarSyncEnabledState] = useState(false);
+  const [bookingEnabled, setBookingEnabledState] = useState(false);
   const [iCloudSyncEnabled, setICloudSyncEnabledState] = useState(false);
   const [appleCalendarId, setAppleCalendarIdState] = useState<string | null>(null);
   const [lastExportAt, setLastExportAtState] = useState<string | null>(null);
@@ -156,6 +161,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setCurrencyState(savedCurrency);
       setHour24State(savedHour24);
       if (get('calendarSyncEnabled')) setCalendarSyncEnabledState(get('calendarSyncEnabled') === 'true');
+      if (get('bookingEnabled'))      setBookingEnabledState(get('bookingEnabled') === 'true');
       if (get('iCloudSyncEnabled'))   setICloudSyncEnabledState(get('iCloudSyncEnabled') === 'true');
       if (get('appleCalendarId'))     setAppleCalendarIdState(get('appleCalendarId')!);
       if (get('lastExportAt'))        setLastExportAtState(get('lastExportAt')!);
@@ -185,6 +191,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setCurrency = (c: string) => { configureFormats({ currency: c }); setCurrencyState(c); setSetting('currency', c); };
   const setHour24 = (v: boolean) => { configureFormats({ hour24: v }); setHour24State(v); setSetting('hour24', String(v)); };
   const setCalendarSyncEnabled = (v: boolean) => { setCalendarSyncEnabledState(v); setSetting('calendarSyncEnabled', String(v)); };
+  const setBookingEnabled = (v: boolean) => { setBookingEnabledState(v); setSetting('bookingEnabled', String(v)); };
   const setICloudSyncEnabled = (v: boolean) => { setICloudSyncEnabledState(v); setSetting('iCloudSyncEnabled', String(v)); };
   const setAppleCalendarId = (v: string | null) => { setAppleCalendarIdState(v); if (v) setSetting('appleCalendarId', v); };
 
@@ -597,6 +604,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       currency, setCurrency,
       hour24, setHour24,
       calendarSyncEnabled, setCalendarSyncEnabled,
+      bookingEnabled, setBookingEnabled,
       iCloudSyncEnabled, setICloudSyncEnabled,
       appleCalendarId, setAppleCalendarId,
       tombstones, setTombstones: setTombstonesState,

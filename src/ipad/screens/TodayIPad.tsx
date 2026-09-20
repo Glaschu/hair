@@ -2,17 +2,16 @@ import React, { useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as Haptics from 'expo-haptics';
 import { useApp } from '../../data/AppContext';
 import { useDialog } from '../../data/DialogContext';
 import { useResponsive } from '../../hooks/useResponsive';
 import { RootStackParamList } from '../../navigation/types';
 import { Avatar, Icons, RoundBtn } from '../../components';
 import { fmt, addDays, is24Hour } from '../../data/utils';
-import { deductStock } from '../../data/stock';
-import { notifyLowStock } from '../../data/notifications';
+import { useVisitActions } from '../../data/useVisitActions';
 import { Appointment } from '../../data/types';
 import { Eyebrow, Title, Btn, StatTile } from '../ui';
+import { ChairClientPanel } from '../ChairClientPanel';
 import { useShell } from '../shellContext';
 import { SERIF } from '../../theme';
 
@@ -221,6 +220,7 @@ export function TodayIPad() {
             </View>
             <View style={{ flex: 1, gap: 16 }}>
               {restock}
+              <ChairClientPanel />
               {forecastCard}
               {busiestCard}
             </View>
@@ -237,6 +237,7 @@ export function TodayIPad() {
       <ScrollView contentContainerStyle={{ paddingHorizontal: 28, paddingBottom: 28, gap: 16 }} showsVerticalScrollIndicator={false}>
         {hero}
         {restock}
+        <ChairClientPanel />
         <View>{scheduleHead}{scheduleList}</View>
         <View style={{ flexDirection: 'row', gap: 16 }}>{forecastCard}{busiestCard}</View>
         {comingUp}
@@ -309,8 +310,9 @@ function UpcomingRow({ appt, onPress }: { appt: Appointment; onPress: () => void
 
 // ──────────────── Schedule row with action bar ────────────────
 function IPadApptRow({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
-  const { theme, clients, products, setProducts, setAppointments } = useApp();
+  const { theme, clients } = useApp();
   const dialog = useDialog();
+  const visit = useVisitActions();
   const nav = useNavigation<Nav>();
   const client = clients.find((c) => c.id === appt.clientId);
   const d = new Date(appt.start);
@@ -321,25 +323,11 @@ function IPadApptRow({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
   const pale = isNext || completed;
   const showActions = isNext && appt.status === 'upcoming';
 
-  const complete = () => {
-    if (appt.status !== 'upcoming') return;
-    appt.products.forEach((ap) => {
-      const product = products.find((p) => p.id === ap.productId);
-      if (!product) return;
-      const after = deductStock(product, ap.amount);
-      if (after.status !== 'ok' && after.status !== product.status) notifyLowStock(product.name, after.status === 'out');
-    });
-    setProducts((prev) => prev.map((p) => {
-      const used = appt.products.find((ap) => ap.productId === p.id);
-      return used ? deductStock(p, used.amount) : p;
-    }));
-    setAppointments((prev) => prev.map((a) => a.id === appt.id ? { ...a, status: 'completed', paid: true } : a));
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  };
+  const complete = () => visit.complete(appt);
 
   const noShowAction = async () => {
     const ok = await dialog.confirm({ title: 'Mark as no-show?', message: `${client?.name ?? 'This client'} didn't show for ${appt.service}.`, confirmLabel: 'No-show', tone: 'destructive' });
-    if (ok) setAppointments((prev) => prev.map((a) => a.id === appt.id ? { ...a, status: 'no-show' } : a));
+    if (ok) visit.markNoShow(appt);
   };
 
   return (
@@ -374,6 +362,14 @@ function IPadApptRow({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
           <Btn compact variant="soft" textColor={theme.danger} icon={<Icons.close size={14} color={theme.danger} />} onPress={noShowAction}>No-show</Btn>
           <View style={{ flex: 1 }} />
           <Btn compact variant="dark" icon={<Icons.check size={14} color="#fff" />} onPress={complete}>Complete</Btn>
+        </View>
+      )}
+      {completed && (
+        <View style={[styles.actionBar, { borderTopColor: theme.line }]}>
+          <Btn compact variant="soft" icon={<Icons.clipboardCheck size={14} color={theme.ink2} />} onPress={() => nav.navigate('VisitWrapUp', { appointmentId: appt.id })}>
+            {appt.technique || appt.timing || appt.nextNotes ? 'Visit notes' : 'Add visit notes'}
+          </Btn>
+          <View style={{ flex: 1 }} />
         </View>
       )}
     </View>
