@@ -9,14 +9,16 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
 import { useApp, ExportPayload } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
+import { upcomingDaysOff, describeDayOff } from '../data/daysOff';
 import { DEFAULT_SCHEDULE } from '../data/mockData';
 import { RootStackParamList } from '../navigation/types';
-import { Card, Icons, RoundBtn } from '../components';
-import { accentOptions } from '../theme';
-import { fmt } from '../data/utils';
+import { Card, Icons, RoundBtn, useLocalDialog, PrivacyPolicyModal, appVersionLabel, WhatsNewList } from '../components';
+import { accentOptions, SERIF } from '../theme';
+import { fmt, CURRENCY_OPTIONS } from '../data/utils';
 import { requestNotificationPermission } from '../data/notifications';
+import { getOrCreateIrisCalendar, deleteIrisCalendar } from '../data/calendarSync';
 import { readAutoBackup } from '../data/backup';
+import { CloudStorage } from 'react-native-cloud-storage';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -37,14 +39,15 @@ for (let h = 6; h <= 22; h++) {
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SettingsScreen() {
-  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport } = useApp();
-  const dialog = useDialog();
+  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, daysOff, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, vatRate, setVatRate, currency, setCurrency, hour24, setHour24, calendarSyncEnabled, setCalendarSyncEnabled, bookingEnabled, setBookingEnabled, backend, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
+  const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(studioName);
   const [timePicker, setTimePicker] = useState<{ day: number; field: 'start' | 'end' } | null>(null);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
-  const [busy, setBusy] = useState<null | 'export' | 'import'>(null);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [busy, setBusy] = useState<null | 'export' | 'import' | 'sync'>(null);
 
   const handleExport = async () => {
     if (busy) return;
@@ -58,6 +61,7 @@ export default function SettingsScreen() {
         appointments,
         services,
         schedule,
+        daysOff,
       };
       const json = JSON.stringify(payload, null, 2);
       const file = new File(Paths.document, 'iris-export.json');
@@ -87,12 +91,12 @@ export default function SettingsScreen() {
         typeof data.schedule !== 'object' || data.schedule === null
       ) throw new Error('Invalid format');
       loadFromExport(data);
-      await dialog.alert({
+      await alert({
         title: 'Import complete',
         message: `Loaded ${data.clients.length} clients, ${data.products.length} products, ${data.appointments.length} appointments.`,
       });
     } catch {
-      await dialog.alert({
+      await alert({
         title: 'Import failed',
         message: 'The file could not be read. Make sure it was exported from Iris.',
       });
@@ -108,7 +112,7 @@ export default function SettingsScreen() {
     }
     const granted = await requestNotificationPermission();
     if (!granted) {
-      await dialog.alert({
+      await alert({
         title: 'Notifications are off',
         message: 'Turn on notifications for Iris in your device settings to get appointment reminders.',
       });
@@ -117,16 +121,82 @@ export default function SettingsScreen() {
     setRemindersEnabled(true);
   };
 
+  const handleToggleCalendarSync = async () => {
+    if (calendarSyncEnabled) {
+      if (appleCalendarId) {
+        await deleteIrisCalendar(appleCalendarId);
+      }
+      setCalendarSyncEnabled(false);
+      setAppleCalendarId(null);
+      return;
+    }
+    const calId = await getOrCreateIrisCalendar();
+    if (!calId) {
+      await alert({
+        title: 'Permission Denied',
+        message: 'Iris needs calendar access to sync appointments. Enable it in your device settings.',
+      });
+      return;
+    }
+    setAppleCalendarId(calId);
+    setCalendarSyncEnabled(true);
+  };
+
+  const handleToggleICloudSync = async () => {
+    if (iCloudSyncEnabled) {
+      setICloudSyncEnabled(false);
+      return;
+    }
+    // Attempting to read/write a test file to ensure iCloud is working
+    try {
+      const available = await CloudStorage.isCloudAvailable();
+      if (!available) {
+        await alert({
+          title: 'iCloud Error',
+          message: 'Could not enable iCloud sync. Ensure you are signed into an Apple ID with iCloud Drive enabled for Iris.',
+        });
+        return;
+      }
+      setICloudSyncEnabled(true);
+    } catch (e) {
+      await alert({
+        title: 'iCloud Error',
+        message: 'Could not enable iCloud sync. Ensure you are signed into iCloud and iCloud Drive is enabled for Iris.',
+      });
+    }
+  };
+
+  const handleManualSync = async () => {
+    if (busy) return;
+    setBusy('sync');
+    try {
+      const didPull = await forceSync();
+      await alert({
+        title: didPull ? 'Sync Complete' : 'Pushed to iCloud',
+        message: didPull 
+          ? 'iCloud has successfully synced the latest changes.' 
+          : 'Your data was pushed, but no new changes were found in iCloud to pull. If you expect changes, ensure iCloud Drive is enabled and wait a moment for Apple servers to sync.',
+      });
+    } catch (e: any) {
+      await alert({
+        title: 'Sync Error',
+        message: e?.message || 'Could not sync with iCloud.',
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const handleRestoreAuto = async () => {
     const data = readAutoBackup();
     if (!data) {
-      await dialog.alert({
+      await alert({
         title: 'No automatic backup yet',
         message: 'Iris saves a snapshot each time you close the app — there isn\'t one to restore yet.',
       });
       return;
     }
-    const ok = await dialog.confirm({
+    const ok = await confirm({
       title: 'Restore automatic backup',
       message: `This replaces all current data with the snapshot from ${fmt.day(data.exported)}.`,
       confirmLabel: 'Restore',
@@ -134,7 +204,7 @@ export default function SettingsScreen() {
     });
     if (!ok) return;
     loadFromExport(data);
-    await dialog.alert({
+    await alert({
       title: 'Backup restored',
       message: 'Your most recent automatic backup has been loaded.',
     });
@@ -145,7 +215,7 @@ export default function SettingsScreen() {
   const backupSub = lastExportAt ? `Last backed up ${fmt.ago(lastExportAt)}` : 'Not backed up yet';
 
   const handleReset = async () => {
-    const idx = await dialog.actionSheet({
+    const idx = await actionSheet({
       title: 'Reset data',
       message: 'Choose an option:',
       actions: [
@@ -155,10 +225,10 @@ export default function SettingsScreen() {
     });
     if (idx === 0) {
       resetToDemo();
-      await dialog.alert({ title: 'Done', message: 'Data reset to demo state.' });
+      await alert({ title: 'Done', message: 'Data reset to demo state.' });
     } else if (idx === 1) {
       loadFromExport({ version: 1, exported: '', clients: [], products: [], appointments: [], services: [], schedule: DEFAULT_SCHEDULE });
-      await dialog.alert({ title: 'Done', message: 'All data wiped.' });
+      await alert({ title: 'Done', message: 'All data wiped.' });
     }
   };
 
@@ -180,7 +250,7 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <RoundBtn onPress={() => nav.goBack()} size={38}>
+          <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
             <Icons.chevronLeft size={18} color={theme.ink} />
           </RoundBtn>
           <Text style={[styles.title, { color: theme.ink }]}>Settings</Text>
@@ -280,6 +350,49 @@ export default function SettingsScreen() {
               </View>
             </View>
             <View style={[styles.divider, { backgroundColor: theme.line }]} />
+            {/* Currency */}
+            <View style={[styles.settingRow, { flexDirection: 'column', alignItems: 'flex-start' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 12 }}>
+                <Text style={[styles.settingLabel, { color: theme.ink }]}>Currency</Text>
+                <Text style={{ fontSize: 11, color: theme.ink3 }}>Shown on prices and reports</Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                {CURRENCY_OPTIONS.map((c) => {
+                  const active = currency === c;
+                  return (
+                    <Pressable
+                      key={c}
+                      onPress={() => setCurrency(c)}
+                      style={[styles.densityChip, {
+                        backgroundColor: active ? theme.accent + '20' : theme.bg2,
+                        borderColor: active ? theme.accent : 'transparent',
+                      }]}
+                    >
+                      <Text style={[styles.densityChipText, { color: active ? theme.accent : theme.ink2, fontWeight: active ? '700' : '500' }]}>
+                        {c.trim()}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+            <View style={[styles.divider, { backgroundColor: theme.line }]} />
+            {/* Clock convention */}
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.settingLabel, { color: theme.ink }]}>24-hour time</Text>
+                <Text style={{ fontSize: 11, color: theme.ink3, marginTop: 2 }}>
+                  Show times as 14:30 instead of 2:30pm
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setHour24(!hour24)}
+                style={[styles.toggleTrack, { backgroundColor: hour24 ? theme.accent : theme.bg2 }]}
+              >
+                <View style={[styles.toggleThumb, { transform: [{ translateX: hour24 ? 22 : 2 }] }]} />
+              </Pressable>
+            </View>
+            <View style={[styles.divider, { backgroundColor: theme.line }]} />
             {/* Accent */}
             <View style={[styles.settingRow, { flexDirection: 'column', alignItems: 'flex-start' }]}>
               <Text style={[styles.settingLabel, { color: theme.ink, marginBottom: 12 }]}>Accent Colour</Text>
@@ -352,6 +465,194 @@ export default function SettingsScreen() {
           </Card>
         </View>
 
+        {/* Calendar Sync */}
+        <View style={[styles.section, { paddingHorizontal: 20 }]}>
+          <Text style={[styles.label, { color: theme.ink3 }]}>CALENDAR SYNC</Text>
+          <Card>
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.settingLabel, { color: theme.ink }]}>Sync with Apple Calendar</Text>
+                <Text style={{ fontSize: 11, color: theme.ink3, marginTop: 2 }}>
+                  Automatically mirror your appointments
+                </Text>
+              </View>
+              <Pressable
+                onPress={handleToggleCalendarSync}
+                style={[styles.toggleTrack, { backgroundColor: calendarSyncEnabled ? theme.accent : theme.bg2 }]}
+              >
+                <View style={[styles.toggleThumb, { transform: [{ translateX: calendarSyncEnabled ? 22 : 2 }] }]} />
+              </Pressable>
+            </View>
+
+            {/* Only useful to someone running their own booking page, so it
+                stays out of the way until it's switched on. */}
+            <View style={[styles.divider, { backgroundColor: theme.line }]} />
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.settingLabel, { color: theme.ink }]}>Online booking</Text>
+                <Text style={{ fontSize: 11, color: theme.ink3, marginTop: 2 }}>
+                  Send clients a link to book themselves
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setBookingEnabled(!bookingEnabled)}
+                accessibilityRole="switch"
+                accessibilityLabel="Online booking"
+                style={[styles.toggleTrack, { backgroundColor: bookingEnabled ? theme.accent : theme.bg2 }]}
+              >
+                <View style={[styles.toggleThumb, { transform: [{ translateX: bookingEnabled ? 22 : 2 }] }]} />
+              </Pressable>
+            </View>
+            {bookingEnabled && (
+              <>
+                {/* First, because setup is spread over three screens and a web
+                    page and nothing else says what order they go in. */}
+                <View style={[styles.divider, { backgroundColor: theme.line }]} />
+                <Pressable style={styles.dataRow} onPress={() => nav.navigate('BookingGuide')}>
+                  <View style={[styles.dataIcon, { backgroundColor: theme.sage + '18' }]}>
+                    <Icons.clipboardCheck size={16} color={theme.sage} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.dataLabel, { color: theme.ink }]}>How it works</Text>
+                    <Text style={[styles.dataSub, { color: theme.ink3 }]}>
+                      Setting it up and using it, step by step
+                    </Text>
+                  </View>
+                  <Icons.chevronRight size={16} color={theme.ink3} />
+                </Pressable>
+                <View style={[styles.divider, { backgroundColor: theme.line }]} />
+                <Pressable style={styles.dataRow} onPress={() => nav.navigate('BookingSetup')}>
+                  <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
+                    <Icons.calendar size={16} color={theme.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.dataLabel, { color: theme.ink }]}>
+                      {backend.has('booking-links') ? 'Booking service' : 'Set up booking service'}
+                    </Text>
+                    {/*
+                      What this deployment can actually do, not what the app can.
+                      A booking service with no Stripe key is a perfectly good
+                      booking service that cannot take deposits, and saying so
+                      here beats her finding out at a checkout.
+                    */}
+                    <Text style={[styles.dataSub, { color: theme.ink3 }]}>
+                      {!backend.has('booking-links')
+                        ? 'Connect this device to your own booking page'
+                        : backend.has('deposits')
+                          ? 'Linked · deposits go to your Stripe account'
+                          : 'Linked · connect Stripe to take deposits'}
+                    </Text>
+                  </View>
+                  <Icons.chevronRight size={16} color={theme.ink3} />
+                </Pressable>
+                {/*
+                  Her terms, shown to clients before they book — and on a
+                  service that takes deposits, how much comes back. Only once
+                  there is a service to keep them on.
+                */}
+                {backend.has('booking-links') && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.line }]} />
+                    <Pressable style={styles.dataRow} onPress={() => nav.navigate('CancellationPolicy')}>
+                      <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
+                        <Icons.calendar size={16} color={theme.accent} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.dataLabel, { color: theme.ink }]}>Cancellation policy</Text>
+                        <Text style={[styles.dataSub, { color: theme.ink3 }]}>
+                          {backend.has('deposits')
+                            ? 'What clients agree to, and what comes back'
+                            : 'What clients agree to before booking'}
+                        </Text>
+                      </View>
+                      <Icons.chevronRight size={16} color={theme.ink3} />
+                    </Pressable>
+                  </>
+                )}
+                {/*
+                  Only on a deployment that keeps its data in Firestore. The
+                  Cloudflare version has nothing to sign in to, so offering it
+                  would be a door to a room that does not exist.
+                */}
+                {backend.has('live-sync') && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.line }]} />
+                    <Pressable style={styles.dataRow} onPress={() => nav.navigate('CloudAccess')}>
+                      <View style={[styles.dataIcon, { backgroundColor: theme.sage + '18' }]}>
+                        <Icons.lock size={16} color={theme.sage} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.dataLabel, { color: theme.ink }]}>Your database</Text>
+                        <Text style={[styles.dataSub, { color: theme.ink3 }]}>
+                          Sign this device in to your own storage
+                        </Text>
+                      </View>
+                      <Icons.chevronRight size={16} color={theme.ink3} />
+                    </Pressable>
+                  </>
+                )}
+              </>
+            )}
+          </Card>
+        </View>
+
+        {/* iCloud Sync */}
+        <View style={[styles.section, { paddingHorizontal: 20 }]}>
+          <Text style={[styles.label, { color: theme.ink3 }]}>ICLOUD SYNC</Text>
+          <Card>
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.settingLabel, { color: theme.ink }]}>Sync Across Devices</Text>
+                <Text style={{ fontSize: 11, color: theme.ink3, marginTop: 2 }}>
+                  Securely sync your clients and appointments across your iPhone and iPad using iCloud.
+                </Text>
+              </View>
+              <Pressable
+                onPress={handleToggleICloudSync}
+                style={[styles.toggleTrack, { backgroundColor: iCloudSyncEnabled ? theme.accent : theme.bg2 }]}
+              >
+                <View style={[styles.toggleThumb, { transform: [{ translateX: iCloudSyncEnabled ? 22 : 2 }] }]} />
+              </Pressable>
+            </View>
+            {iCloudSyncEnabled && (
+              <>
+                <View style={[styles.divider, { backgroundColor: theme.line }]} />
+                <Pressable
+                  onPress={handleManualSync}
+                  style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12 }, { opacity: pressed ? 0.7 : 1 }]}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: theme.accent }}>Force Sync Now</Text>
+                </Pressable>
+              </>
+            )}
+          </Card>
+        </View>
+
+        {/* Preferences */}
+        <View style={[styles.section, { paddingHorizontal: 20 }]}>
+          <Text style={[styles.label, { color: theme.ink3 }]}>PREFERENCES</Text>
+          <Card>
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.settingLabel, { color: theme.ink }]}>Default VAT Rate (%)</Text>
+                <Text style={{ fontSize: 11, color: theme.ink3, marginTop: 2 }}>
+                  Used for calculating product costs
+                </Text>
+              </View>
+              <TextInput
+                value={String(vatRate)}
+                onChangeText={(t) => {
+                  const num = parseInt(t.replace(/[^0-9]/g, ''), 10);
+                  if (!isNaN(num)) setVatRate(num);
+                  else if (t === '') setVatRate(0);
+                }}
+                keyboardType="number-pad"
+                style={[styles.timeChip, styles.timeChipText, { backgroundColor: theme.bg2, color: theme.ink, minWidth: 60, textAlign: 'center', paddingVertical: 6 }]}
+              />
+            </View>
+          </Card>
+        </View>
+
         {/* Working hours */}
         <View style={[styles.section, { paddingHorizontal: 20 }]}>
           <Text style={[styles.label, { color: theme.ink3 }]}>WORKING HOURS</Text>
@@ -392,6 +693,27 @@ export default function SettingsScreen() {
                 </React.Fragment>
               );
             })}
+          </Card>
+          {/*
+            The exceptions to the week above — a holiday, a course. Never
+            offered in a link, closed on the calendar.
+          */}
+          <Card style={{ marginTop: 12 }}>
+            <Pressable style={styles.dataRow} onPress={() => nav.navigate('DaysOff')}>
+              <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
+                <Icons.calendar size={16} color={theme.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.dataLabel, { color: theme.ink }]}>Days off</Text>
+                <Text style={[styles.dataSub, { color: theme.ink3 }]}>
+                  {(() => {
+                    const next = upcomingDaysOff(daysOff)[0];
+                    return next ? `Next: ${describeDayOff(next)}${next.note ? ` · ${next.note}` : ''}` : 'Block off a holiday or a day away';
+                  })()}
+                </Text>
+              </View>
+              <Icons.chevronRight size={16} color={theme.ink3} />
+            </Pressable>
           </Card>
         </View>
 
@@ -497,9 +819,25 @@ export default function SettingsScreen() {
               </View>
               <Icons.chevronRight size={16} color={theme.ink3} />
             </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.line }]} />
+            <Pressable style={styles.dataRow} onPress={() => setPrivacyOpen(true)}>
+              <View style={[styles.dataIcon, { backgroundColor: theme.sage + '22' }]}>
+                <Icons.lock size={16} color={theme.sage} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.dataLabel, { color: theme.ink }]}>Privacy policy</Text>
+                <Text style={[styles.dataSub, { color: theme.ink3 }]}>Your data stays on your device</Text>
+              </View>
+              <Icons.chevronRight size={16} color={theme.ink3} />
+            </Pressable>
           </Card>
+          <Text style={[styles.dataNote, { color: theme.ink3, textAlign: 'center' }]}>
+            Iris · Version {appVersionLabel()}
+          </Text>
         </View>
       </ScrollView>
+
+      <PrivacyPolicyModal visible={privacyOpen} onClose={() => setPrivacyOpen(false)} />
 
       {/* Time picker modal */}
       <Modal visible={timePicker !== null} transparent animationType="slide" onRequestClose={() => setTimePicker(null)}>
@@ -544,47 +882,7 @@ export default function SettingsScreen() {
             <View style={styles.timePickerHandle} />
             <Text style={[styles.timePickerTitle, { color: theme.ink, fontSize: 20, marginBottom: 24 }]}>What's New</Text>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}>
-              
-              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
-                <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
-                  <Icons.calendar size={18} color={theme.accent} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Month Calendar Picker</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Easily jump between months using the new horizontal strip at the top of the calendar.</Text>
-                </View>
-              </View>
-
-              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
-                <View style={[styles.dataIcon, { backgroundColor: theme.sage + '25' }]}>
-                  <Icons.camera size={18} color={theme.sage} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Appointment Photos</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Attach photos directly to an appointment and see them inline when viewing a client's history. You can now use your camera straight from the app.</Text>
-                </View>
-              </View>
-
-              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
-                <View style={[styles.dataIcon, { backgroundColor: '#8a3ab925' }]}>
-                  <Icons.instagram size={18} color="#8a3ab9" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Instagram Direct Messages</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Save an Instagram handle for a client, and easily jump directly into an IG Direct Message thread from their profile.</Text>
-                </View>
-              </View>
-
-              <View style={{ marginBottom: 24, flexDirection: 'row', gap: 16 }}>
-                <View style={[styles.dataIcon, { backgroundColor: theme.danger + '15' }]}>
-                  <Icons.edit size={18} color={theme.danger} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, { color: theme.ink }]}>Precise Formula Editing</Text>
-                  <Text style={{ fontSize: 13, color: theme.ink2, marginTop: 4, lineHeight: 18 }}>Tap the number between the − and + buttons to type out an exact product amount manually.</Text>
-                </View>
-              </View>
-
+              <WhatsNewList />
             </ScrollView>
             <SafeAreaView edges={['bottom']}>
               <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
@@ -596,6 +894,7 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+      {dialog}
     </SafeAreaView>
   );
 }
@@ -607,7 +906,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20,
   },
-  title: { fontSize: 20, fontWeight: '600', fontStyle: 'italic' },
+  title: { fontSize: 20, fontFamily: SERIF },
   section: { marginBottom: 24 },
   sectionHead: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -615,7 +914,7 @@ const styles = StyleSheet.create({
   },
   label: { fontSize: 10, letterSpacing: 1.4, fontWeight: '600', marginBottom: 10 },
   nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  nameValue: { fontSize: 17, fontWeight: '500', fontStyle: 'italic' },
+  nameValue: { fontSize: 17, fontFamily: SERIF },
   nameEditRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   nameInput: { flex: 1, fontSize: 17, borderWidth: 0.5, borderRadius: 10, padding: 10 },
   saveBtn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },

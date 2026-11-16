@@ -63,12 +63,16 @@ export const accentOptions = [
   '#2A201A',
 ];
 
+/** The display serif. Use via `typography.serif` — never pair with fontWeight/fontStyle,
+ *  Android falls back to a synthesized system font when they conflict with a custom family. */
+export const SERIF = 'CormorantGaramond_500Medium_Italic';
+
 export const typography = {
-  serif: (size: number, weight: TextStyle['fontWeight'] = '500'): TextStyle => ({
-    fontFamily: 'CormorantGaramond_500Medium_Italic',
+  serif: (size: number): TextStyle => ({
+    fontFamily: SERIF,
     fontSize: size,
-    fontWeight: weight,
-    letterSpacing: -0.015 * size,
+    lineHeight: size * 1.1,
+    letterSpacing: -0.01 * size,
   }),
   sans: (size: number, weight: TextStyle['fontWeight'] = '400'): TextStyle => ({
     fontFamily: 'DMSans_400Regular',
@@ -85,3 +89,15 @@ export const typography = {
     letterSpacing: 0.05 * size,
   }),
 };
+
+/**
+ * Whether a visit actually happened is what she scans the calendar for, so it
+ * reads as colour instead of needing a tap. Green for done; the ones that
+ * never happened fade back rather than compete for attention. `null` means
+ * "nothing special" — an upcoming appointment keeps the accent.
+ */
+export function appointmentTint(status: string, theme: Theme): { edge: string; dim: boolean } | null {
+  if (status === 'completed') return { edge: theme.sage, dim: false };
+  if (status === 'cancelled' || status === 'no-show') return { edge: theme.ink3, dim: true };
+  return null;
+}

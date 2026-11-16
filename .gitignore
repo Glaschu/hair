@@ -39,3 +39,15 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Maestro screenshot/test output
+screenshots/
+
+# Firebase rules tooling — heavy, and reinstallable from firebase/package.json
+/firebase/node_modules
+/firebase/.firebase
+firestore-debug.log
+firebase-debug.log
+/firebase/public
+# Copied from firebase/src on every deploy — the tested copy is the only one to commit.
+/firebase/functions/src

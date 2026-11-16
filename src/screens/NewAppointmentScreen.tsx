@@ -1,17 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, TextInput, Modal, FlatList,
+  View, Text, ScrollView, Pressable, StyleSheet, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
-import { Avatar, Card, Icons, RoundBtn, StatusBadge, CustomTimeRow } from '../components';
+import { Avatar, Card, Icons, RoundBtn, StatusBadge, CustomTimeRow, ProductPicker, useLocalDialog } from '../components';
 import { Client, Service, Product } from '../data/types';
 import { fmt, isSameDay, addDays, checkSchedule, fmtHHMM, DAY_NAMES, generateTimeSlots, createClient, clientMatchesQuery } from '../data/utils';
 import { hasConflict } from '../data/booking';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'NewAppointment'>;
@@ -30,8 +30,8 @@ const REPEAT_OPTIONS: { weeks: number; label: string }[] = [
 ];
 
 export default function NewAppointmentScreen() {
-  const { theme, clients, setClients, services, products, appointments, setAppointments, schedule, bookingWindowDays } = useApp();
-  const dialog = useDialog();
+  const { theme, clients, setClients, services, products, appointments, setAppointments, schedule, daysOff, bookingWindowDays } = useApp();
+  const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -48,7 +48,7 @@ export default function NewAppointmentScreen() {
     route.params?.clientId ? clients.find((c) => c.id === route.params.clientId) || null : null
   );
   const [selectedService, setSelectedService] = useState<Service | null>(prefillSvc);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(route.params?.date ? new Date(route.params.date) : new Date());
   const [selectedTime, setSelectedTime] = useState<{ h: number; m: number }>({ h: 10, m: 0 });
   const [selectedProducts, setSelectedProducts] = useState<string[]>(
     prefillSvc ? [...prefillSvc.defaults] : []
@@ -59,6 +59,19 @@ export default function NewAppointmentScreen() {
   const [showCustomTime, setShowCustomTime] = useState(false);
   const [repeatWeeks, setRepeatWeeks] = useState(0);
   const [repeatTimes, setRepeatTimes] = useState(4);
+  const scrollRef = React.useRef<ScrollView>(null);
+
+  React.useEffect(() => {
+    if (step === 'time' && scrollRef.current) {
+      const idx = Array.from({ length: bookingWindowDays }, (_, i) => addDays(new Date(), i))
+        .findIndex(d => isSameDay(d, selectedDate));
+      if (idx > 0) {
+        setTimeout(() => {
+          scrollRef.current?.scrollTo({ x: Math.max(0, idx * 56 - 60), animated: true });
+        }, 50);
+      }
+    }
+  }, [step]);
   const [showNewClient, setShowNewClient] = useState(false);
   const [newClientName, setNewClientName] = useState('');
   const [newClientPhone, setNewClientPhone] = useState('');
@@ -84,8 +97,8 @@ export default function NewAppointmentScreen() {
   const scheduleCheck = useMemo(() => {
     const d = new Date(selectedDate);
     d.setHours(selectedTime.h, selectedTime.m, 0, 0);
-    return checkSchedule(schedule, d, selectedService?.duration ?? 60);
-  }, [schedule, selectedDate, selectedTime, selectedService]);
+    return checkSchedule(schedule, d, selectedService?.duration ?? 60, daysOff);
+  }, [schedule, daysOff, selectedDate, selectedTime, selectedService]);
 
   const timeSlots = useMemo(
     () => generateTimeSlots(schedule, selectedDate),
@@ -134,7 +147,7 @@ export default function NewAppointmentScreen() {
     const start = new Date(selectedDate);
     start.setHours(selectedTime.h, selectedTime.m, 0, 0);
     if (start.getTime() < Date.now()) {
-      await dialog.alert({
+      await alert({
         title: 'Time is in the past',
         message: 'Pick a time later than now for this booking.',
       });
@@ -147,6 +160,12 @@ export default function NewAppointmentScreen() {
       const p = products.find((pr) => pr.id === pid);
       return { productId: pid, amount: p?.perUse || 0 };
     });
+    
+    const lastCompleted = appointments
+      .filter((a) => a.clientId === client.id && a.status === 'completed')
+      .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime())[0];
+    const defaultFormula = lastCompleted?.formula || client.formula || undefined;
+
     const series = Array.from({ length: count }, (_, i) => {
       const s = new Date(start);
       s.setDate(s.getDate() + i * repeatWeeks * 7);
@@ -162,40 +181,58 @@ export default function NewAppointmentScreen() {
         price: service.price,
         products: products_.map((p) => ({ ...p })),
         notes: notes.trim() || undefined,
+        formula: defaultFormula,
       };
     });
+
+    // The slot grid greys out taken times, but a custom time or the later visits
+    // of a repeat series can still land on an existing booking — warn first.
+    const busy = appointments
+      .filter((a) => a.status !== 'cancelled')
+      .map((a) => ({ start: new Date(a.start), end: new Date(a.end) }));
+    const clashes = series.filter((s) => hasConflict(new Date(s.start), new Date(s.end), busy));
+    if (clashes.length > 0) {
+      const when = clashes.map((s) => `${fmt.day(s.start)} at ${fmt.timeShort(s.start)}`).join(', ');
+      const ok = await confirm({
+        title: 'Time conflict',
+        message: count > 1
+          ? `${clashes.length} of ${count} visits overlap existing appointments: ${when}.`
+          : `This overlaps an existing appointment (${when}).`,
+        confirmLabel: 'Book anyway',
+        tone: 'destructive',
+      });
+      if (!ok) return;
+    }
 
     setAppointments((prev) => [...prev, ...series]);
     setConfirmed(true);
   };
 
-  if (confirmed) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
-        <View style={styles.confirmedWrap}>
-          <View style={[styles.confirmedCircle, { backgroundColor: theme.sage + '20' }]}>
-            <Icons.check size={40} color={theme.sage} />
-          </View>
-          <Text style={[styles.confirmedTitle, { color: theme.ink }]}>Booked!</Text>
-          <Text style={[styles.confirmedSub, { color: theme.ink2 }]}>
-            {selectedClient?.name} · {selectedService?.name}{'\n'}
-            {repeatWeeks > 0
-              ? `${repeatTimes} visits · every ${repeatWeeks} weeks`
-              : `${fmt.rel(selectedDate.toISOString())} at ${selectedTime.h % 12 || 12}:${selectedTime.m.toString().padStart(2, '0')}${selectedTime.h >= 12 ? 'pm' : 'am'}`}
-          </Text>
-          <Pressable
-            style={[styles.doneBtn, { backgroundColor: theme.accent }]}
-            onPress={() => nav.goBack()}
-          >
-            <Text style={styles.doneBtnText}>Done</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {confirmed ? (
+        <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
+          <View style={styles.confirmedWrap}>
+            <View style={[styles.confirmedCircle, { backgroundColor: theme.sage + '20' }]}>
+              <Icons.check size={40} color={theme.sage} />
+            </View>
+            <Text style={[styles.confirmedTitle, { color: theme.ink }]}>Booked!</Text>
+            <Text style={[styles.confirmedSub, { color: theme.ink2 }]}>
+              {selectedClient?.name} · {selectedService?.name}{'\n'}
+              {repeatWeeks > 0
+                ? `${repeatTimes} visits · every ${repeatWeeks} weeks`
+                : `${fmt.rel(selectedDate.toISOString())} at ${fmt.clock(selectedTime.h, selectedTime.m)}`}
+            </Text>
+            <Pressable
+              style={({ pressed }) => [styles.doneBtn, { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 }]}
+              onPress={() => nav.goBack()}
+            >
+              <Text style={styles.doneBtnText}>Done</Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      ) : (
+        <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
       {/* Header */}
       <View style={styles.header}>
         <RoundBtn onPress={goBack} size={38}>
@@ -229,9 +266,10 @@ export default function NewAppointmentScreen() {
         Step {currentStepIdx + 1} — {STEP_LABELS[currentStepIdx]}
       </Text>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+      <View style={{ flex: 1 }}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-        {/* Step 1: Client */}
+          {/* Step 1: Client */}
         {step === 'client' && (
           <View style={{ padding: 20 }}>
             <Text style={[styles.stepTitle, { color: theme.ink }]}>Select Client</Text>
@@ -352,7 +390,7 @@ export default function NewAppointmentScreen() {
             <Text style={[styles.stepTitle, { color: theme.ink }]}>Pick a Time</Text>
 
             {/* Date strip */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+            <ScrollView ref={scrollRef} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 {Array.from({ length: bookingWindowDays }, (_, i) => addDays(new Date(), i)).map((day, i, arr) => {
                   const isSelected = isSameDay(day, selectedDate);
@@ -362,7 +400,7 @@ export default function NewAppointmentScreen() {
                       {showMonth && (
                         <View style={styles.monthDivider}>
                           <Text style={[styles.monthDividerText, { color: theme.ink3 }]}>
-                            {day.toLocaleDateString('en-GB', { month: 'long' })}
+                            {day.toLocaleDateString(undefined, { month: 'long' })}
                           </Text>
                         </View>
                       )}
@@ -373,7 +411,7 @@ export default function NewAppointmentScreen() {
                         }]}
                       >
                         <Text style={[styles.datePillDay, { color: isSelected ? '#fff' : theme.ink3 }]}>
-                          {day.toLocaleDateString('en-GB', { weekday: 'short' })}
+                          {day.toLocaleDateString(undefined, { weekday: 'short' })}
                         </Text>
                         <Text style={[styles.datePillNum, { color: isSelected ? '#fff' : theme.ink }]}>
                           {day.getDate()}
@@ -390,7 +428,7 @@ export default function NewAppointmentScreen() {
               {timeSlots.map(({ h, m }) => {
                 const taken = isSlotTaken(h, m);
                 const selected = selectedTime.h === h && selectedTime.m === m;
-                const label = `${h % 12 || 12}:${m.toString().padStart(2, '0')}${h >= 12 ? 'pm' : 'am'}`;
+                const label = fmt.clock(h, m);
                 return (
                   <Pressable
                     key={`${h}${m}`}
@@ -427,7 +465,9 @@ export default function NewAppointmentScreen() {
                     {scheduleCheck.dayClosed ? 'Booking on a day off' : 'Outside working hours'}
                   </Text>
                   <Text style={[styles.schedWarnSub, { color: theme.ink2 }]}>
-                    {scheduleCheck.dayClosed
+                    {scheduleCheck.dayOff
+                      ? `You've blocked this day off${scheduleCheck.dayOff.note ? ` (${scheduleCheck.dayOff.note})` : ''}.`
+                      : scheduleCheck.dayClosed
                       ? `${DAY_NAMES[selectedDate.getDay()]} is marked as closed.`
                       : scheduleCheck.day
                         ? `${DAY_NAMES[selectedDate.getDay()]} runs ${fmtHHMM(scheduleCheck.day.start)}–${fmtHHMM(scheduleCheck.day.end)}`
@@ -438,7 +478,7 @@ export default function NewAppointmentScreen() {
             )}
 
             <Pressable
-              style={[styles.nextBtn, { backgroundColor: theme.accent }]}
+              style={({ pressed }) => [styles.nextBtn, { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 }]}
               onPress={goNext}
             >
               <Text style={styles.nextBtnText}>Continue</Text>
@@ -509,52 +549,26 @@ export default function NewAppointmentScreen() {
             />
 
             <Pressable
-              style={[styles.nextBtn, { backgroundColor: theme.accent }]}
+              style={({ pressed }) => [styles.nextBtn, { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 }]}
               onPress={goNext}
             >
               <Text style={styles.nextBtnText}>Review</Text>
               <Icons.arrowRight size={18} color="#fff" />
             </Pressable>
+
+            <ProductPicker
+              visible={showProductPicker}
+              onClose={() => setShowProductPicker(false)}
+              onSelect={(ids) => {
+                if (Array.isArray(ids)) {
+                  setSelectedProducts(ids);
+                }
+              }}
+              initialSelectedIds={selectedProducts}
+              mode="multiple"
+            />
           </View>
         )}
-
-        {/* Product picker modal */}
-        <Modal visible={showProductPicker} transparent animationType="slide" onRequestClose={() => setShowProductPicker(false)}>
-          <Pressable style={styles.modalBackdrop} onPress={() => setShowProductPicker(false)} />
-          <View style={[styles.pickerSheet, { backgroundColor: theme.card }]}>
-            <View style={styles.pickerHandle} />
-            <Text style={[styles.pickerTitle, { color: theme.ink }]}>All Products</Text>
-            <FlatList
-              data={products}
-              keyExtractor={(p) => p.id}
-              style={{ maxHeight: 380 }}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item: p }) => (
-                <Pressable
-                  onPress={() => { toggleProduct(p.id); }}
-                  style={[styles.pickerRow, { borderBottomColor: theme.line }]}
-                >
-                  <View style={[styles.pickerCheck, {
-                    backgroundColor: selectedProducts.includes(p.id) ? theme.accent : 'transparent',
-                    borderColor: selectedProducts.includes(p.id) ? theme.accent : theme.ink3,
-                  }]}>
-                    {selectedProducts.includes(p.id) && <Icons.check size={12} color="#fff" />}
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[styles.pickerRowName, { color: theme.ink }]}>{p.name}</Text>
-                    <Text style={[styles.pickerRowSub, { color: theme.ink3 }]}>{p.brand} · {p.stock} in stock</Text>
-                  </View>
-                </Pressable>
-              )}
-            />
-            <Pressable
-              onPress={() => setShowProductPicker(false)}
-              style={[styles.pickerDone, { backgroundColor: theme.accent }]}
-            >
-              <Text style={styles.pickerDoneText}>Done ({selectedProducts.length} selected)</Text>
-            </Pressable>
-          </View>
-        </Modal>
 
         {/* Step 5: Review */}
         {step === 'review' && selectedClient && selectedService && (
@@ -570,7 +584,9 @@ export default function NewAppointmentScreen() {
                     {scheduleCheck.dayClosed ? 'Booking on a day off' : 'Outside working hours'}
                   </Text>
                   <Text style={[styles.schedWarnSub, { color: theme.ink2 }]}>
-                    {scheduleCheck.dayClosed
+                    {scheduleCheck.dayOff
+                      ? `You've blocked this day off${scheduleCheck.dayOff.note ? ` (${scheduleCheck.dayOff.note})` : ''}. You can still proceed.`
+                      : scheduleCheck.dayClosed
                       ? `${DAY_NAMES[selectedDate.getDay()]} is marked closed. You can still proceed.`
                       : scheduleCheck.day
                         ? `${DAY_NAMES[selectedDate.getDay()]} runs ${fmtHHMM(scheduleCheck.day.start)}–${fmtHHMM(scheduleCheck.day.end)}. You can still proceed.`
@@ -583,7 +599,7 @@ export default function NewAppointmentScreen() {
             <Card style={{ marginBottom: 16 }}>
               <ReviewRow icon={<Icons.users size={16} color={theme.accent} />} label="Client" value={selectedClient.name} theme={theme} />
               <ReviewRow icon={<Icons.scissors size={16} color={theme.accent} />} label="Service" value={selectedService.name} theme={theme} />
-              <ReviewRow icon={<Icons.clock size={16} color={theme.accent} />} label="Time" value={`${fmt.rel(selectedDate.toISOString())} at ${selectedTime.h % 12 || 12}:${selectedTime.m.toString().padStart(2, '0')}${selectedTime.h >= 12 ? 'pm' : 'am'}`} theme={theme} />
+              <ReviewRow icon={<Icons.clock size={16} color={theme.accent} />} label="Time" value={`${fmt.rel(selectedDate.toISOString())} at ${fmt.clock(selectedTime.h, selectedTime.m)}`} theme={theme} />
               <ReviewRow icon={<Icons.clock size={16} color={theme.accent} />} label="Duration" value={fmt.duration(selectedService.duration)} theme={theme} />
               <ReviewRow icon={<Icons.trend size={16} color={theme.accent} />} label="Price" value={fmt.currency(selectedService.price)} theme={theme} />
             </Card>
@@ -644,7 +660,7 @@ export default function NewAppointmentScreen() {
             </Card>
 
             <Pressable
-              style={[styles.nextBtn, { backgroundColor: theme.accent }]}
+              style={({ pressed }) => [styles.nextBtn, { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 }]}
               onPress={submit}
             >
               <Icons.check size={18} color="#fff" />
@@ -655,7 +671,11 @@ export default function NewAppointmentScreen() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+      </View>
+      </SafeAreaView>
+      )}
+      {dialog}
+    </KeyboardAvoidingView>
   );
 }
 
@@ -702,7 +722,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12,
   },
-  headerTitle: { fontSize: 17, fontWeight: '600', fontStyle: 'italic' },
+  headerTitle: { fontSize: 17, fontFamily: SERIF },
   progress: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 6 },
   progressDot: {
     width: 20, height: 20, borderRadius: 10,
@@ -711,7 +731,7 @@ const styles = StyleSheet.create({
   },
   progressLine: { flex: 1, height: 2, borderRadius: 1, marginHorizontal: 4 },
   stepLabel: { fontSize: 11, letterSpacing: 0.5, paddingHorizontal: 20, paddingBottom: 16, fontWeight: '500' },
-  stepTitle: { fontSize: 24, fontWeight: '600', fontStyle: 'italic', marginBottom: 20, letterSpacing: -0.3 },
+  stepTitle: { fontSize: 24, fontFamily: SERIF, marginBottom: 20, letterSpacing: -0.3 },
   selectRow: {
     flexDirection: 'row', alignItems: 'center',
     borderWidth: 0.5, borderRadius: 14, padding: 14, marginBottom: 10,
@@ -726,7 +746,7 @@ const styles = StyleSheet.create({
   noMatch: { fontSize: 14, fontStyle: 'italic', textAlign: 'center', paddingVertical: 20 },
   newClientToggle: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 13, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', marginBottom: 14,
+    paddingVertical: 13, borderRadius: 12, borderWidth: 1, marginBottom: 14,
   },
   newClientToggleText: { fontSize: 14, fontWeight: '600' },
   newClientCard: { borderRadius: 14, borderWidth: 0.5, padding: 14, gap: 10, marginBottom: 14 },
@@ -786,7 +806,7 @@ const styles = StyleSheet.create({
   addProductBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, marginTop: 12, marginBottom: 4, paddingVertical: 12,
-    borderRadius: 12, borderWidth: 1, borderStyle: 'dashed',
+    borderRadius: 12, borderWidth: 1,
   },
   addProductBtnText: { fontSize: 14, fontWeight: '600' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
@@ -807,7 +827,7 @@ const styles = StyleSheet.create({
     width: 96, height: 96, borderRadius: 48,
     alignItems: 'center', justifyContent: 'center', marginBottom: 24,
   },
-  confirmedTitle: { fontSize: 34, fontWeight: '600', fontStyle: 'italic', marginBottom: 12 },
+  confirmedTitle: { fontSize: 34, fontFamily: SERIF, marginBottom: 12 },
   confirmedSub: { fontSize: 15, textAlign: 'center', lineHeight: 22, marginBottom: 32 },
   doneBtn: { paddingHorizontal: 40, paddingVertical: 16, borderRadius: 16 },
   doneBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },

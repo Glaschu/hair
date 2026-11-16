@@ -1,0 +1,28 @@
+appId: com.glaschu.iris
+name: Repro 2 — iPad wrap-up scroll while the keyboard is up
+env:
+  OUTPUT_DIR: screenshots/repro
+---
+# Continues from repro 1's state: Margot's visit record already has 9 products.
+- launchApp
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Add visit notes"
+    timeout: 10000
+- tapOn: "Add visit notes"
+- assertVisible: "VISIT RECORD.*"
+
+# Put the keyboard up, the way she does while writing the record.
+- tapOn: "Anything to remember about this visit…"
+- inputText: "Toner pulled warm at the ends"
+- takeScreenshot: ${OUTPUT_DIR}/kb-01-keyboard-up
+
+# With the keyboard up, can she still reach the bottom of the record?
+- scrollUntilVisible:
+    element:
+      text: "PHOTOS"
+    direction: DOWN
+    timeout: 12000
+- takeScreenshot: ${OUTPUT_DIR}/kb-02-scrolled-with-keyboard

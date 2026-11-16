@@ -1,19 +1,20 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet,
+  View, Text, ScrollView, Pressable, StyleSheet, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as Haptics from 'expo-haptics';
 import { useApp } from '../data/AppContext';
 import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
-import { Avatar, Icons, RoundBtn } from '../components';
-import { fmt, addDays, isSameDay } from '../data/utils';
-import { deductStock, restoreStock } from '../data/stock';
-import { notifyLowStock } from '../data/notifications';
+import { Avatar, Icons, RoundBtn, InChairCard } from '../components';
+import { fmt, addDays, isSameDay, is24Hour } from '../data/utils';
+import { useVisitActions } from '../data/useVisitActions';
+import { useBookingRefresh } from '../data/useBookingRefresh';
+import { MoneyAlertBanner } from '../components/MoneyAlertBanner';
 import { Appointment } from '../data/types';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -24,19 +25,22 @@ function greetingFor(): string {
   return 'Good evening';
 }
 
+// The schedule card's big hour column: "2 / PM" on a 12-hour clock, "14 / :30" on 24-hour.
 function timeHour(iso: string): string {
   const d = new Date(iso);
-  const h = d.getHours() % 12 || 12;
-  return String(h);
+  return String(is24Hour() ? d.getHours() : d.getHours() % 12 || 12);
 }
 
 function timeAmPm(iso: string): string {
-  return new Date(iso).getHours() >= 12 ? 'PM' : 'AM';
+  const d = new Date(iso);
+  if (is24Hour()) return `:${d.getMinutes().toString().padStart(2, '0')}`;
+  return d.getHours() >= 12 ? 'PM' : 'AM';
 }
 
 export default function TodayScreen() {
   const { theme, appointments, clients, products, studioName } = useApp();
   const nav = useNavigation<Nav>();
+  const { refreshing, onRefresh } = useBookingRefresh();
 
   const today = useMemo(() => {
     const d = new Date();
@@ -59,10 +63,12 @@ export default function TodayScreen() {
   const lowStock = products.filter((p) => p.status === 'low' || p.status === 'out');
 
   const now = new Date();
-  const nextApptId = todayAppts.find((a) => new Date(a.start) > now)?.id;
+  const nextApptId = todayAppts.find((a) => a.status === 'upcoming' && new Date(a.start) > now)?.id;
 
-  const totalRevenue = todayAppts.reduce((s, a) => s + a.price, 0);
-  const totalHours = todayAppts.reduce((s, a) => {
+  // Cancelled and no-show bookings stay visible in the list but don't earn anything.
+  const activeAppts = todayAppts.filter((a) => a.status === 'upcoming' || a.status === 'completed');
+  const totalRevenue = activeAppts.reduce((s, a) => s + a.price, 0);
+  const totalHours = activeAppts.reduce((s, a) => {
     return s + (new Date(a.end).getTime() - new Date(a.start).getTime()) / 3600000;
   }, 0);
 
@@ -85,23 +91,29 @@ export default function TodayScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.ink3} />
+        }
       >
         {/* Header */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.eyebrow, { color: theme.ink3 }]}>
-              {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}
+              {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}
             </Text>
             <Text style={[styles.greeting, { color: theme.ink }]}>
-              {greetingFor()},{'\n'}<Text style={{ fontStyle: 'italic', fontWeight: '400' }}>{studioName}</Text>
+              {greetingFor()},{'\n'}<Text style={{ fontFamily: SERIF }}>{studioName}</Text>
             </Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <RoundBtn onPress={() => nav.navigate('Settings')} size={40}>
+            <RoundBtn label="Settings" onPress={() => nav.navigate('Settings')} size={40}>
               <Icons.settings size={18} color={theme.ink2} />
             </RoundBtn>
           </View>
         </View>
+
+        {/* Money that needs her — only when there is some. */}
+        <MoneyAlertBanner style={{ marginHorizontal: 20, marginBottom: 16 }} />
 
         {/* Day at a glance — dark hero card */}
         <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
@@ -113,8 +125,8 @@ export default function TodayScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.heroEyebrow}>DAY AT A GLANCE</Text>
                 <Text style={styles.heroAppts}>
-                  {todayAppts.length}{' '}
-                  <Text style={{ fontStyle: 'italic', opacity: 0.7 }}>appointments</Text>
+                  {activeAppts.length}{' '}
+                  <Text style={{ fontFamily: SERIF, opacity: 0.7 }}>appointments</Text>
                 </Text>
               </View>
               <View style={[styles.heroIcon, { backgroundColor: theme.accent }]}>
@@ -162,6 +174,9 @@ export default function TodayScreen() {
             </Pressable>
           </View>
         )}
+
+        {/* Who's in the chair (or up next) — rich client context at a glance */}
+        <InChairCard />
 
         {/* Schedule */}
         <View style={styles.sectionHead}>
@@ -215,8 +230,9 @@ export default function TodayScreen() {
 }
 
 function ApptCard({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
-  const { theme, clients, products, setProducts, setAppointments, remindersEnabled } = useApp();
+  const { theme, clients } = useApp();
   const dialog = useDialog();
+  const visit = useVisitActions();
   const nav = useNavigation<Nav>();
   const client = clients.find((c) => c.id === appt.clientId);
 
@@ -228,29 +244,10 @@ function ApptCard({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
     });
     if (idx === null || appt.status !== 'upcoming') return;
     if (idx === 1) {
-      setAppointments((prev) => prev.map((a) =>
-        a.id === appt.id ? { ...a, status: 'no-show' } : a
-      ));
+      visit.markNoShow(appt);
       return;
     }
-    if (remindersEnabled) {
-      appt.products.forEach((ap) => {
-        const product = products.find((p) => p.id === ap.productId);
-        if (!product) return;
-        const after = deductStock(product, ap.amount);
-        if (after.status !== 'ok' && after.status !== product.status) {
-          notifyLowStock(product.name, after.status === 'out');
-        }
-      });
-    }
-    setProducts((prev) => prev.map((p) => {
-      const used = appt.products.find((ap) => ap.productId === p.id);
-      return used ? deductStock(p, used.amount) : p;
-    }));
-    setAppointments((prev) => prev.map((a) =>
-      a.id === appt.id ? { ...a, status: 'completed' } : a
-    ));
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    visit.complete(appt);
   };
 
   const handleQuickUndo = async () => {
@@ -261,13 +258,7 @@ function ApptCard({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
     });
     if (!ok) return;
     if (appt.status !== 'completed') return;
-    setProducts((prev) => prev.map((p) => {
-      const used = appt.products.find((ap) => ap.productId === p.id);
-      return used ? restoreStock(p, used.amount) : p;
-    }));
-    setAppointments((prev) => prev.map((a) =>
-      a.id === appt.id ? { ...a, status: 'upcoming' } : a
-    ));
+    visit.undoComplete(appt);
   };
 
   return (
@@ -297,6 +288,24 @@ function ApptCard({ appt, isNext }: { appt: Appointment; isNext: boolean }) {
         <Text style={[styles.apptService, { color: theme.ink2 }]} numberOfLines={1}>{appt.service}</Text>
         {appt.status === 'completed' && !appt.paid && (
           <Text style={[styles.unpaidTag, { color: theme.warn }]}>UNPAID</Text>
+        )}
+        {appt.status === 'cancelled' && (
+          <Text style={[styles.unpaidTag, { color: theme.ink3 }]}>CANCELLED</Text>
+        )}
+        {appt.status === 'no-show' && (
+          <Text style={[styles.unpaidTag, { color: theme.danger }]}>NO-SHOW</Text>
+        )}
+        {appt.status === 'completed' && (
+          <Pressable
+            onPress={() => nav.navigate('VisitWrapUp', { appointmentId: appt.id })}
+            hitSlop={6}
+            style={[styles.visitNotesPill, { backgroundColor: theme.accent + '12' }]}
+          >
+            <Icons.clipboardCheck size={11} color={theme.accent} />
+            <Text style={[styles.visitNotesPillText, { color: theme.accent }]}>
+              {appt.technique || appt.timing || appt.nextNotes ? 'Visit notes' : 'Add visit notes'}
+            </Text>
+          </Pressable>
         )}
       </View>
       {/* Next badge */}
@@ -378,7 +387,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   heroEyebrow: {
-    fontFamily: 'System',
+
     fontSize: 10,
     letterSpacing: 1.4,
     color: 'rgba(255,255,255,0.55)',
@@ -450,7 +459,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sectionEye: { fontSize: 10, letterSpacing: 1.4, fontWeight: '400', marginBottom: 4 },
-  sectionTitle: { fontSize: 22, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.3 },
+  sectionTitle: { fontSize: 22, fontFamily: SERIF, letterSpacing: -0.3 },
   newBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingBottom: 2 },
   newBtnText: { fontSize: 13, fontWeight: '500' },
   seeAll: { fontSize: 13, paddingBottom: 2 },
@@ -475,6 +484,11 @@ const styles = StyleSheet.create({
   apptName: { fontSize: 15, fontWeight: '600', marginBottom: 2 },
   apptService: { fontSize: 12 },
   unpaidTag: { fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginTop: 3 },
+  visitNotesPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginTop: 5,
+  },
+  visitNotesPillText: { fontSize: 11, fontWeight: '600' },
   nextBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,

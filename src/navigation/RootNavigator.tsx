@@ -1,8 +1,9 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from './types';
-import { TabNavigator } from './TabNavigator';
+import { Main } from './Main';
 import { useApp } from '../data/AppContext';
+import { useResponsive } from '../hooks/useResponsive';
 import ClientDetailScreen from '../screens/ClientDetailScreen';
 import ProductDetailScreen from '../screens/ProductDetailScreen';
 import AppointmentDetailScreen from '../screens/AppointmentDetailScreen';
@@ -16,11 +17,28 @@ import ProductFormScreen from '../screens/ProductFormScreen';
 import ServiceFormScreen from '../screens/ServiceFormScreen';
 import RescheduleModal from '../screens/RescheduleModal';
 import AppointmentEditScreen from '../screens/AppointmentEditScreen';
+import VisitWrapUpScreen from '../screens/VisitWrapUpScreen';
+import BookingSetupScreen from '../screens/BookingSetupScreen';
+import BookingGuideScreen from '../screens/BookingGuideScreen';
+import CloudAccessScreen from '../screens/CloudAccessScreen';
+import CancellationPolicyScreen from '../screens/CancellationPolicyScreen';
+import MoneyAlertsScreen from '../screens/MoneyAlertsScreen';
+import DaysOffScreen from '../screens/DaysOffScreen';
+import SendBookingLinkScreen from '../screens/SendBookingLinkScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
   const { theme } = useApp();
+  const { isLarge } = useResponsive();
+
+  // On iPad, present the detail/edit screens as sheets (the design's slide-over
+  // pattern). 'modal' renders as a scrollable page-sheet on iPad; we avoid
+  // 'formSheet' because it clips the inner ScrollViews.
+  const sheet = isLarge
+    ? ({ presentation: 'modal' } as const)
+    : undefined;
+  const bottomModal = ({ presentation: 'modal', animation: 'slide_from_bottom' } as const);
 
   return (
     <Stack.Navigator
@@ -30,17 +48,19 @@ export function RootNavigator() {
         animation: 'slide_from_right',
       }}
     >
-      <Stack.Screen name="MainTabs" component={TabNavigator} />
+      <Stack.Screen name="MainTabs" component={Main} />
+      {/* Full screen on every device — this is the record card she reads
+          with a client beside her, so it never sits in a narrow sheet. */}
       <Stack.Screen name="ClientDetail" component={ClientDetailScreen} />
-      <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
-      <Stack.Screen name="AppointmentDetail" component={AppointmentDetailScreen} />
+      <Stack.Screen name="ProductDetail" component={ProductDetailScreen} options={sheet} />
+      <Stack.Screen name="AppointmentDetail" component={AppointmentDetailScreen} options={sheet} />
       <Stack.Screen
         name="NewAppointment"
         component={NewAppointmentScreen}
-        options={{ animation: 'slide_from_bottom', presentation: 'modal' }}
+        options={bottomModal}
       />
-      <Stack.Screen name="Settings" component={SettingsScreen} />
-      <Stack.Screen name="Reports" component={ReportsScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} options={sheet} />
+      <Stack.Screen name="Reports" component={ReportsScreen} options={sheet} />
       <Stack.Screen
         name="ScanModal"
         component={ScanModal}
@@ -49,17 +69,29 @@ export function RootNavigator() {
       <Stack.Screen
         name="StockTake"
         component={StockTakeScreen}
-        options={{ animation: 'slide_from_bottom', presentation: 'modal' }}
+        options={bottomModal}
       />
-      <Stack.Screen name="ClientForm" component={ClientFormScreen} />
-      <Stack.Screen name="ProductForm" component={ProductFormScreen} />
-      <Stack.Screen name="ServiceForm" component={ServiceFormScreen} />
+      <Stack.Screen name="ClientForm" component={ClientFormScreen} options={sheet} />
+      <Stack.Screen name="ProductForm" component={ProductFormScreen} options={sheet} />
+      <Stack.Screen name="ServiceForm" component={ServiceFormScreen} options={sheet} />
       <Stack.Screen
         name="RescheduleModal"
         component={RescheduleModal}
-        options={{ animation: 'slide_from_bottom', presentation: 'modal' }}
+        options={bottomModal}
       />
-      <Stack.Screen name="AppointmentEdit" component={AppointmentEditScreen} />
+      <Stack.Screen name="AppointmentEdit" component={AppointmentEditScreen} options={sheet} />
+      <Stack.Screen
+        name="VisitWrapUp"
+        component={VisitWrapUpScreen}
+        options={bottomModal}
+      />
+      <Stack.Screen name="BookingSetup" component={BookingSetupScreen} options={sheet} />
+      <Stack.Screen name="BookingGuide" component={BookingGuideScreen} options={sheet} />
+      <Stack.Screen name="CloudAccess" component={CloudAccessScreen} options={sheet} />
+      <Stack.Screen name="CancellationPolicy" component={CancellationPolicyScreen} options={sheet} />
+      <Stack.Screen name="MoneyAlerts" component={MoneyAlertsScreen} options={sheet} />
+      <Stack.Screen name="DaysOff" component={DaysOffScreen} options={sheet} />
+      <Stack.Screen name="SendBookingLink" component={SendBookingLinkScreen} options={bottomModal} />
     </Stack.Navigator>
   );
 }

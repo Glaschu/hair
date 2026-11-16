@@ -1,0 +1,19 @@
+appId: com.glaschu.iris
+name: Drill 7 — a pull that is refused says why, not "check your connection"
+env:
+  OUTPUT_DIR: screenshots/drill
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+- swipe:
+    start: "50%, 30%"
+    end: "50%, 80%"
+    duration: 900
+- extendedWaitUntil:
+    visible: "Could not check for bookings"
+    timeout: 30000
+- takeScreenshot: ${OUTPUT_DIR}/18-pull-refused
+- assertVisible: ".*isn't allowed into your booking service yet.*"
+- assertNotVisible: ".*Check your connection.*"

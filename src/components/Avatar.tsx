@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import { initials } from '../data/utils';
 import { useApp } from '../data/AppContext';
+import { getPhotoUri } from '../db/photos';
 
 interface Props {
   name: string;
@@ -16,9 +17,12 @@ export function Avatar({ name, tone, size = 44, photo }: Props) {
   const fontSize = size * 0.38;
 
   if (photo) {
+    // Profile photos are stored as bare filenames in the app's photo
+    // directory; anything with a scheme (http, file) passes through.
+    const uri = photo.includes('://') ? photo : getPhotoUri(photo);
     return (
       <Image
-        source={{ uri: photo }}
+        source={{ uri }}
         style={[styles.circle, { width: size, height: size, borderRadius: size / 2 }]}
       />
     );

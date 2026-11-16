@@ -1,0 +1,37 @@
+appId: com.glaschu.iris
+name: Repro 4 — the product picker on iPad
+env:
+  OUTPUT_DIR: screenshots/repro
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Add visit notes"
+    timeout: 10000
+- tapOn: "Add visit notes"
+- assertVisible: "VISIT RECORD.*"
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+- takeScreenshot: ${OUTPUT_DIR}/picker-01-open
+
+# Reach the end of the product list — the last item is Blondifier Cool.
+- scrollUntilVisible:
+    element:
+      text: ".*Blondifier Cool.*"
+    direction: DOWN
+    timeout: 12000
+- takeScreenshot: ${OUTPUT_DIR}/picker-02-scrolled-to-end
+
+# Now with the search keyboard up, which is how she filters while adding.
+- tapOn: "Search products..."
+- takeScreenshot: ${OUTPUT_DIR}/picker-03-keyboard-up
+- scrollUntilVisible:
+    element:
+      text: ".*Matte Clay.*"
+    direction: DOWN
+    timeout: 12000
+- takeScreenshot: ${OUTPUT_DIR}/picker-04-scroll-with-keyboard

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useApp } from '../data/AppContext';
+import { SERIF } from '../theme';
 
 interface Props {
   icon?: React.ReactNode;
@@ -34,9 +35,9 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   title: {
-    fontSize: 17,
-    fontWeight: '500',
-    fontStyle: 'italic',
+    fontFamily: SERIF,
+    fontSize: 19,
+    lineHeight: 23,
     textAlign: 'center',
     marginBottom: 6,
   },

@@ -8,20 +8,25 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
-import { savePhoto, deletePhoto } from '../db/photos';
+import { useLocalDialog } from '../components/Dialog';
+import { savePhoto, deletePhoto, getPhotoUri } from '../db/photos';
 import { RootStackParamList } from '../navigation/types';
-import { Avatar, Card, Icons, RoundBtn, EmptyState } from '../components';
+import { Avatar, Card, Icons, RoundBtn, EmptyState, PhotoStrip } from '../components';
+import { useResponsive } from '../hooks/useResponsive';
 import { fmt } from '../data/utils';
+import { treatmentSummary, TreatmentSummaryRow } from '../data/visits';
+import { openInstagram } from '../data/links';
 import { ClientPhoto, Appointment } from '../data/types';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'ClientDetail'>;
 type Tab = 'overview' | 'history' | 'photos';
 
 export default function ClientDetailScreen() {
-  const { theme, clients, setClients, appointments, products } = useApp();
-  const dialog = useDialog();
+  const { theme, clients, setClients, appointments, products, bookingEnabled, backend } = useApp();
+  const { isLarge } = useResponsive();
+  const { confirm, alert, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
   const [tab, setTab] = useState<Tab>('overview');
@@ -40,7 +45,7 @@ export default function ClientDetailScreen() {
     .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
 
   const historyAppts = clientAppts
-    .filter((a) => a.status === 'completed' || a.status === 'no-show')
+    .filter((a) => a.status === 'completed' || a.status === 'no-show' || a.status === 'cancelled')
     .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
 
   const lastVisit = completedAppts[0]?.start;
@@ -50,26 +55,43 @@ export default function ClientDetailScreen() {
 
   const pickProfilePhoto = async () => {
     const perform = async (useCamera: boolean) => {
-      const result = useCamera
-        ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8 })
-        : await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-      if (!result.canceled && result.assets[0]) {
-        setSavingPhoto(true);
-        try {
-          const uri = await savePhoto(result.assets[0].uri);
-          if (client.photo) await deletePhoto(client.photo);
-          setClients((cs) => cs.map((c) => c.id === client.id ? { ...c, photo: uri } : c));
-        } catch {
-          await dialog.alert({
-            title: "Couldn't save photo",
-            message: 'The photo could not be saved. Please try again.',
-          });
-        } finally {
-          setSavingPhoto(false);
+      try {
+        if (useCamera) {
+          const perm = await ImagePicker.requestCameraPermissionsAsync();
+          if (perm.status !== 'granted') {
+            await alert({ title: 'Permission Denied', message: 'Camera access is required to take photos.' });
+            return;
+          }
+        } else {
+          const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (perm.status !== 'granted') {
+            await alert({ title: 'Permission Denied', message: 'Photo library access is required to choose photos.' });
+            return;
+          }
         }
+        const result = useCamera
+          ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8 })
+          : await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8, mediaTypes: ['images'] });
+        if (!result.canceled && result.assets[0]) {
+          setSavingPhoto(true);
+          try {
+            const uri = await savePhoto(result.assets[0].uri);
+            if (client.photo) await deletePhoto(client.photo);
+            setClients((cs) => cs.map((c) => c.id === client.id ? { ...c, photo: uri, updatedAt: Date.now() } : c));
+          } catch {
+            await alert({
+              title: "Couldn't save photo",
+              message: 'The photo could not be saved. Please try again.',
+            });
+          } finally {
+            setSavingPhoto(false);
+          }
+        }
+      } catch (e) {
+        await alert({ title: 'Error', message: 'Could not open camera or library.' });
       }
     };
-    const idx = await dialog.actionSheet({
+    const idx = await actionSheet({
       title: 'Photo',
       actions: [{ label: 'Take Photo' }, { label: 'Choose from Library' }],
     });
@@ -78,9 +100,14 @@ export default function ClientDetailScreen() {
   };
 
   const addPhotos = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm.status !== 'granted') {
+      await alert({ title: 'Permission Denied', message: 'Photo library access is required to choose photos.' });
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: true, quality: 0.8,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
     });
     if (!result.canceled) {
       try {
@@ -92,10 +119,10 @@ export default function ClientDetailScreen() {
           label: '',
         }));
         setClients((cs) => cs.map((c) => c.id === client.id
-          ? { ...c, photos: [...newPhotos, ...(c.photos || [])] }
+          ? { ...c, photos: [...newPhotos, ...(c.photos || [])], updatedAt: Date.now() }
           : c));
       } catch {
-        await dialog.alert({
+        await alert({
           title: "Couldn't save photos",
           message: 'The photos could not be saved. Please try again.',
         });
@@ -113,7 +140,7 @@ export default function ClientDetailScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top']}>
       {/* Nav bar */}
       <View style={styles.navRow}>
-        <RoundBtn onPress={() => nav.goBack()} size={38}>
+        <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
           <Icons.chevronLeft size={18} color={theme.ink} />
         </RoundBtn>
         <RoundBtn onPress={() => nav.navigate('ClientForm', { clientId: client.id })} size={38}>
@@ -122,6 +149,7 @@ export default function ClientDetailScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 50 }} showsVerticalScrollIndicator={false}>
+       <View style={isLarge ? styles.contentWide : undefined}>
         {/* Hero — centred */}
         <View style={styles.hero}>
           <Pressable onPress={pickProfilePhoto} style={styles.avatarWrap} disabled={savingPhoto}>
@@ -150,11 +178,29 @@ export default function ClientDetailScreen() {
             {[
               { icon: <Icons.phone size={18} color={theme.ink} />, label: 'Call', onPress: () => Linking.openURL(`tel:${client.phone}`) },
               { icon: <Icons.message size={18} color={theme.ink} />, label: 'Message', onPress: () => Linking.openURL(`sms:${client.phone}`) },
-              ...(client.instagram ? [{ icon: <Icons.instagram size={18} color={theme.ink} />, label: 'Insta', onPress: () => {
-                const handle = client.instagram?.replace('@', '');
-                Linking.openURL(`https://ig.me/m/${handle}`).catch(() => Linking.openURL(`https://instagram.com/${handle}`));
-              } }] : []),
+              ...(client.instagram ? [{ icon: <Icons.instagram size={18} color={theme.ink} />, label: 'Insta', onPress: () => { openInstagram(client.instagram); } }] : []),
               { icon: <Icons.plus size={18} color={theme.ink} />, label: 'Book', onPress: () => nav.navigate('NewAppointment', { clientId: client.id, prefillService: completedAppts[0]?.service }) },
+              // Shown whenever she has the feature switched on. If there is no
+              // service behind it yet, the tap explains and offers to set one up
+              // — she used to get all the way through picking times before
+              // finding out.
+              ...(bookingEnabled ? [{
+                icon: <Icons.calendar size={18} color={theme.ink} />,
+                label: 'Send link',
+                onPress: async () => {
+                  if (backend.has('booking-links')) {
+                    nav.navigate('SendBookingLink', { clientId: client.id });
+                    return;
+                  }
+                  const { why, action } = backend.why('booking-links');
+                  const go = await confirm({
+                    title: 'Not set up yet',
+                    message: why,
+                    confirmLabel: action?.label ?? 'OK',
+                  });
+                  if (go && action) nav.navigate(action.route as 'BookingSetup');
+                },
+              }] : []),
             ].map((a) => (
               <Pressable key={a.label} onPress={a.onPress}
                 style={({ pressed }) => [styles.actionBtn, { backgroundColor: pressed ? theme.bg2 : theme.card, borderColor: theme.line }]}>
@@ -191,33 +237,83 @@ export default function ClientDetailScreen() {
 
         {/* Tab content */}
         {tab === 'overview' && (
-          <OverviewTab client={client} upcomingAppts={upcomingAppts} nav={nav} />
+          <OverviewTab
+            client={client}
+            upcomingAppts={upcomingAppts}
+            lastFinishedAppt={completedAppts[0]}
+            treatments={treatmentSummary(client.id, completedAppts)}
+            nav={nav}
+            isLarge={isLarge}
+            onAddPhotos={addPhotos}
+          />
         )}
         {tab === 'history' && (
-          <HistoryTab historyAppts={historyAppts} products={products} nav={nav} client={client} onViewPhoto={setViewingPhoto} />
+          <HistoryTab historyAppts={historyAppts} products={products} nav={nav} client={client} onViewPhoto={setViewingPhoto} photoSize={isLarge ? 88 : 48} />
         )}
         {tab === 'photos' && (
-          <PhotosTab client={client} onAdd={addPhotos} onView={setViewingPhoto} />
+          <PhotosTab client={client} onAdd={addPhotos} onView={setViewingPhoto} perRow={isLarge ? 3 : 2} />
         )}
+       </View>
       </ScrollView>
 
       {/* Photo viewer modal */}
       {viewingPhoto && (
         <Modal visible animationType="fade" onRequestClose={() => setViewingPhoto(null)}>
           <Pressable style={styles.photoViewer} onPress={() => setViewingPhoto(null)}>
-            <Image source={{ uri: viewingPhoto.url }} style={styles.photoViewerImg} resizeMode="contain" />
+            <Image source={{ uri: getPhotoUri(viewingPhoto.url) }} style={styles.photoViewerImg} resizeMode="contain" />
             <Text style={styles.photoViewerDate}>{fmt.rel(viewingPhoto.date)}</Text>
           </Pressable>
         </Modal>
       )}
+      {dialog}
     </SafeAreaView>
   );
 }
 
-function OverviewTab({ client, upcomingAppts, nav }: { client: any; upcomingAppts: Appointment[]; nav: any }) {
+function OverviewTab({ client, upcomingAppts, lastFinishedAppt, treatments, nav, isLarge, onAddPhotos }: {
+  client: any; upcomingAppts: Appointment[]; lastFinishedAppt?: Appointment;
+  treatments: TreatmentSummaryRow[]; nav: any; isLarge: boolean; onAddPhotos: () => void;
+}) {
   const { theme } = useApp();
-  return (
-    <View style={{ padding: 20, gap: 14 }}>
+
+  // Photos belong next to the formula — the pair she shows clients in the
+  // chair. iPad has room for a column beside it; the phone stacks a
+  // swipeable strip directly under the formula instead.
+  const photos: ClientPhoto[] = client.photos || [];
+  const photoCard = (size: number, horizontal: boolean) => (
+    <Card>
+      <View style={styles.cardHead}>
+        <Icons.camera size={16} color={theme.accent} />
+        <Text style={[styles.sectionLabel, { color: theme.ink3, marginBottom: 0, flex: 1 }]}>PHOTOS</Text>
+        {photos.length > 0 && (
+          <Text style={[styles.sectionLabel, { color: theme.ink3, marginBottom: 0 }]}>{photos.length}</Text>
+        )}
+      </View>
+      {photos.length === 0 ? (
+        // Most clients start with none — say what belongs here rather than
+        // leaving a lone tile floating in an empty panel.
+        <Pressable
+          onPress={onAddPhotos}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.photoEmpty, {
+            borderColor: theme.accent + '55',
+            backgroundColor: pressed ? theme.accent + '14' : theme.accent + '08',
+          }]}
+        >
+          <Icons.camera size={26} color={theme.accent} />
+          <Text style={[styles.photoEmptyTitle, { color: theme.ink }]}>Add before & after photos</Text>
+          <Text style={[styles.photoEmptySub, { color: theme.ink3 }]}>
+            They show up here with the formula — handy for showing {String(client.name).split(' ')[0]} what you did last time.
+          </Text>
+        </Pressable>
+      ) : (
+        <PhotoStrip photos={photos} size={size} horizontal={horizontal} onAdd={onAddPhotos} />
+      )}
+    </Card>
+  );
+
+  const detailsTop = (
+    <>
       {/* Upcoming */}
       {upcomingAppts.length > 0 && (
         <View>
@@ -228,7 +324,7 @@ function OverviewTab({ client, upcomingAppts, nav }: { client: any; upcomingAppt
               style={[styles.upcomingCard, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '40' }]}>
               <View style={[styles.upcomingDate, { borderRightColor: theme.accent + '60' }]}>
                 <Text style={[styles.upcomingMonth, { color: theme.accent }]}>
-                  {new Date(appt.start).toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}
+                  {new Date(appt.start).toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}
                 </Text>
                 <Text style={[styles.upcomingDay, { color: theme.accent }]}>
                   {new Date(appt.start).getDate()}
@@ -256,19 +352,56 @@ function OverviewTab({ client, upcomingAppts, nav }: { client: any; upcomingAppt
         <HairRow label="Length" value={client.hair.length} theme={theme} />
         <HairRow label="Natural" value={client.hair.natural} theme={theme} />
         <View style={[styles.divider, { backgroundColor: theme.line }]} />
-        <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>FORMULA</Text>
+        <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>
+          {lastFinishedAppt ? `FORMULA (LAST APPT: ${new Date(lastFinishedAppt.start).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toUpperCase()})` : 'FORMULA'}
+        </Text>
         <View style={[styles.formulaBox, { backgroundColor: theme.bg2 }]}>
-          <Text style={[styles.formulaText, { color: theme.ink }]}>{client.formula || 'Not recorded'}</Text>
+          <Text style={[styles.formulaText, { color: theme.ink }]}>
+            {(lastFinishedAppt?.formula) || client.formula || 'Not recorded'}
+          </Text>
         </View>
       </Card>
+
+    </>
+  );
+
+  const detailsRest = (
+    <>
+      {/* Treatments — what they have done, how often, when last */}
+      {treatments.length > 0 && (
+        <Card>
+          <View style={styles.cardHead}>
+            <Icons.scissors size={16} color={theme.accent} />
+            <Text style={[styles.sectionLabel, { color: theme.ink3, marginBottom: 0 }]}>TREATMENTS</Text>
+          </View>
+          {treatments.map((t, i) => (
+            <View key={t.service}>
+              {i > 0 && <View style={[styles.divider, { backgroundColor: theme.line }]} />}
+              <View style={styles.treatmentRow}>
+                <Text style={[styles.treatmentName, { color: theme.ink }]} numberOfLines={1}>{t.service}</Text>
+                <Text style={[styles.treatmentMeta, { color: theme.ink3 }]}>
+                  ×{t.count} · {fmt.ago(t.last)}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </Card>
+      )}
 
       {/* Allergies + notes */}
       <Card>
         <Text style={[styles.sectionLabel, { color: theme.warn }]}>ALLERGIES & SENSITIVITIES</Text>
         <Text style={[styles.bodyText, { color: theme.ink }]}>{client.allergies}</Text>
         <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 14 }]} />
-        <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>PREFERENCES</Text>
+        <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>PREFERENCES / CLIENT NOTES</Text>
         <Text style={[styles.bodyText, { color: theme.ink }]}>{client.notes || '—'}</Text>
+        {lastFinishedAppt?.notes && (
+          <>
+            <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 14 }]} />
+            <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>LATEST APPOINTMENT NOTES</Text>
+            <Text style={[styles.bodyText, { color: theme.ink }]}>{lastFinishedAppt.notes}</Text>
+          </>
+        )}
       </Card>
 
       {/* Contact */}
@@ -279,12 +412,30 @@ function OverviewTab({ client, upcomingAppts, nav }: { client: any; upcomingAppt
         <ContactRow icon={<Icons.message size={16} color={theme.accent} />} label={client.email}
           onPress={() => Linking.openURL(`mailto:${client.email}`)} theme={theme} />
       </Card>
+    </>
+  );
+
+  if (isLarge) {
+    return (
+      <View style={{ flexDirection: 'row', gap: 16, padding: 20, alignItems: 'flex-start' }}>
+        <View style={{ flex: 1.15, minWidth: 0, gap: 14 }}>{detailsTop}{detailsRest}</View>
+        <View style={{ flex: 1, minWidth: 0 }}>{photoCard(156, false)}</View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ padding: 20, gap: 14 }}>
+      {detailsTop}
+      {photoCard(112, true)}
+      {detailsRest}
     </View>
   );
 }
 
-function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
-  historyAppts: Appointment[]; products: any[]; nav: any; client: any; onViewPhoto: (p: ClientPhoto) => void;
+function HistoryTab({ historyAppts, products, nav, client, onViewPhoto, photoSize }: {
+  historyAppts: Appointment[]; products: any[]; nav: any; client: any;
+  onViewPhoto: (p: ClientPhoto) => void; photoSize: number;
 }) {
   const { theme } = useApp();
 
@@ -307,7 +458,7 @@ function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
             <View style={styles.timelineRow}>
               <View style={styles.timelineDateCol}>
                 <Text style={[styles.timelineMon, { color: isNoShow ? theme.danger : theme.ink3 }]}>
-                  {new Date(appt.start).toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}
+                  {new Date(appt.start).toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}
                 </Text>
                 <Text style={[styles.timelineDay, { color: isNoShow ? theme.danger : theme.ink }]}>
                   {new Date(appt.start).getDate()}
@@ -328,6 +479,36 @@ function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
                     <Text style={[styles.histPrice, { color: theme.ink }]}>{fmt.currency(appt.price)}</Text>
                   )}
                 </View>
+                {!isNoShow && appt.formula && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 8 }]} />
+                    <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>FORMULA</Text>
+                    <Text style={[styles.bodyText, { color: theme.ink }]}>{appt.formula}</Text>
+                  </>
+                )}
+                {!isNoShow && (appt.technique || appt.timing) && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 8 }]} />
+                    <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>TECHNIQUE</Text>
+                    <Text style={[styles.bodyText, { color: theme.ink }]}>
+                      {[appt.technique, appt.timing].filter(Boolean).join(' · ')}
+                    </Text>
+                  </>
+                )}
+                {!isNoShow && appt.nextNotes && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 8 }]} />
+                    <Text style={[styles.sectionLabel, { color: theme.accent }]}>NEXT TIME</Text>
+                    <Text style={[styles.bodyText, { color: theme.ink }]}>{appt.nextNotes}</Text>
+                  </>
+                )}
+                {!isNoShow && appt.notes && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 8 }]} />
+                    <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>NOTES</Text>
+                    <Text style={[styles.bodyText, { color: theme.ink }]}>{appt.notes}</Text>
+                  </>
+                )}
                 {!isNoShow && appt.products.length > 0 && (
                   <>
                     <View style={[styles.divider, { backgroundColor: theme.line, marginVertical: 8 }]} />
@@ -348,8 +529,8 @@ function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
                 {client?.photos?.some((p: any) => p.appointmentId === appt.id) && (
                   <View style={{ marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
                     {client.photos.filter((p: any) => p.appointmentId === appt.id).map((p: any) => (
-                      <Pressable key={p.id} onPress={() => onViewPhoto(p)} style={{ width: 48, height: 48, borderRadius: 8, overflow: 'hidden' }}>
-                        <Image source={{ uri: p.url }} style={{ flex: 1 }} resizeMode="cover" />
+                      <Pressable key={p.id} onPress={() => onViewPhoto(p)} style={{ width: photoSize, height: photoSize, borderRadius: 8, overflow: 'hidden' }}>
+                        <Image source={{ uri: getPhotoUri(p.url) }} style={{ flex: 1 }} resizeMode="cover" />
                       </Pressable>
                     ))}
                   </View>
@@ -363,15 +544,15 @@ function HistoryTab({ historyAppts, products, nav, client, onViewPhoto }: {
   );
 }
 
-function PhotosTab({ client, onAdd, onView }: {
-  client: any; onAdd: () => void; onView: (p: ClientPhoto) => void;
+function PhotosTab({ client, onAdd, onView, perRow }: {
+  client: any; onAdd: () => void; onView: (p: ClientPhoto) => void; perRow: number;
 }) {
   const { theme } = useApp();
   const photos: ClientPhoto[] = client.photos || [];
 
   const allItems = [{ type: 'add' as const }, ...photos.map((p) => ({ type: 'photo' as const, data: p }))];
   const pairs: typeof allItems[] = [];
-  for (let i = 0; i < allItems.length; i += 2) pairs.push(allItems.slice(i, i + 2));
+  for (let i = 0; i < allItems.length; i += perRow) pairs.push(allItems.slice(i, i + perRow));
 
   return (
     <View style={{ padding: 20, gap: 10 }}>
@@ -387,7 +568,7 @@ function PhotosTab({ client, onAdd, onView }: {
             if (item.type === 'add') {
               return (
                 <Pressable key="add" onPress={onAdd}
-                  style={[styles.photoTile, { backgroundColor: theme.bg2, borderColor: theme.ink3 + '60', borderStyle: 'dashed', borderWidth: 1 }]}>
+                  style={[styles.photoTile, { backgroundColor: theme.bg2, borderColor: theme.ink3 + '60', borderWidth: 1 }]}>
                   <Icons.camera size={22} color={theme.ink3} />
                   <Text style={[styles.addPhotoLabel, { color: theme.ink2 }]}>Add photo</Text>
                 </Pressable>
@@ -397,7 +578,7 @@ function PhotosTab({ client, onAdd, onView }: {
               const p = item.data as ClientPhoto;
               return (
                 <Pressable key={p.id} onPress={() => onView(p)} style={[styles.photoTile, { overflow: 'hidden' }]}>
-                  <Image source={{ uri: p.url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                  <Image source={{ uri: getPhotoUri(p.url) }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                   <View style={styles.photoDateOverlay}>
                     <Text style={styles.photoDateText}>{fmt.rel(p.date)}</Text>
                   </View>
@@ -406,7 +587,8 @@ function PhotosTab({ client, onAdd, onView }: {
             }
             return null;
           })}
-          {pair.length === 1 && <View style={{ flex: 1 }} />}
+          {/* Keep the last row's tiles the same size as the rest. */}
+          {Array.from({ length: perRow - pair.length }).map((_, i) => <View key={`gap-${i}`} style={{ flex: 1 }} />)}
         </View>
       ))}
     </View>
@@ -447,7 +629,7 @@ const styles = StyleSheet.create({
     width: 30, height: 30, borderRadius: 15, borderWidth: 0.5,
     alignItems: 'center', justifyContent: 'center',
   },
-  heroName: { fontSize: 30, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.4, lineHeight: 34, textAlign: 'center' },
+  heroName: { fontSize: 30, fontFamily: SERIF, letterSpacing: -0.4, lineHeight: 34, textAlign: 'center' },
   vipBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   vipText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
   heroSince: { fontSize: 10, letterSpacing: 1.4, fontWeight: '500', textAlign: 'center' },
@@ -462,7 +644,7 @@ const styles = StyleSheet.create({
 
   statsStrip: { flexDirection: 'row', borderTopWidth: 0.5, borderBottomWidth: 0.5, marginVertical: 4 },
   statCell: { flex: 1, alignItems: 'center', paddingVertical: 14 },
-  statValue: { fontSize: 20, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.3 },
+  statValue: { fontSize: 20, fontFamily: SERIF, letterSpacing: -0.3 },
   statLabel: { fontSize: 9, letterSpacing: 1, fontWeight: '500', marginTop: 2 },
 
   tabBar: { flexDirection: 'row', borderBottomWidth: 0.5, paddingHorizontal: 6 },
@@ -474,11 +656,23 @@ const styles = StyleSheet.create({
   bodyText: { fontSize: 13, lineHeight: 20 },
   divider: { height: 0.5 },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  // Full-screen on iPad, but text stays a readable measure rather than
+  // stretching the whole width of the display.
+  contentWide: { width: '100%', maxWidth: 1120, alignSelf: 'center' },
+  photoEmpty: {
+    borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 14,
+    paddingVertical: 28, paddingHorizontal: 20, alignItems: 'center', gap: 8,
+  },
+  photoEmptyTitle: { fontSize: 14, fontWeight: '600' },
+  photoEmptySub: { fontSize: 12.5, lineHeight: 18, textAlign: 'center' },
+  treatmentRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9 },
+  treatmentName: { fontSize: 14, fontWeight: '600', flex: 1 },
+  treatmentMeta: { fontSize: 12.5 },
   hairRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   hairLabel: { fontSize: 13 },
   hairValue: { fontSize: 13, fontWeight: '500' },
   formulaBox: { borderRadius: 10, padding: 12 },
-  formulaText: { fontFamily: 'monospace', fontSize: 12, lineHeight: 18 },
+  formulaText: { fontFamily: 'DMMono_400Regular', fontSize: 12, lineHeight: 18 },
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
   contactLabel: { flex: 1, fontSize: 14 },
 
@@ -488,19 +682,19 @@ const styles = StyleSheet.create({
   },
   upcomingDate: { width: 46, alignItems: 'center', borderRightWidth: 0.5, paddingRight: 14 },
   upcomingMonth: { fontSize: 9, letterSpacing: 0.8, fontWeight: '600' },
-  upcomingDay: { fontSize: 24, fontWeight: '500', fontStyle: 'italic', lineHeight: 26 },
+  upcomingDay: { fontSize: 24, fontFamily: SERIF, lineHeight: 26 },
   upcomingService: { fontSize: 14, fontWeight: '600' },
   upcomingTime: { fontSize: 12, marginTop: 2 },
 
   timelineRow: { flexDirection: 'row', gap: 14 },
   timelineDateCol: { width: 44, flexShrink: 0, paddingTop: 4, alignItems: 'flex-start' },
   timelineMon: { fontSize: 9, letterSpacing: 0.8, fontWeight: '500' },
-  timelineDay: { fontSize: 24, fontWeight: '500', fontStyle: 'italic', lineHeight: 26, marginTop: 2 },
+  timelineDay: { fontSize: 24, fontFamily: SERIF, lineHeight: 26, marginTop: 2 },
   timelineYear: { fontSize: 10, marginTop: 2 },
   histCardHead: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 },
   histService: { fontSize: 14, fontWeight: '600' },
   histAgo: { fontSize: 11, marginTop: 2 },
-  histPrice: { fontSize: 18, fontWeight: '500', fontStyle: 'italic' },
+  histPrice: { fontSize: 18, fontFamily: SERIF },
   noShowBadge: {
     paddingHorizontal: 8, paddingVertical: 4,
     borderRadius: 6, borderWidth: 0.5,
@@ -512,7 +706,7 @@ const styles = StyleSheet.create({
 
   photoRow: { flexDirection: 'row', gap: 10 },
   photoTile: { flex: 1, aspectRatio: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center', gap: 6 },
-  addPhotoFullTile: { borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', padding: 40, alignItems: 'center', gap: 8 },
+  addPhotoFullTile: { borderRadius: 14, borderWidth: 1, padding: 40, alignItems: 'center', gap: 8 },
   addPhotoLabel: { fontSize: 11, fontWeight: '500' },
   photoDateOverlay: {
     position: 'absolute', left: 0, right: 0, bottom: 0,

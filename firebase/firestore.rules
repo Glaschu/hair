@@ -1,0 +1,221 @@
+rules_version = '2';
+
+/**
+ * Iris — Firestore security rules.
+ *
+ * The premise that removes a whole class of leak: NO UNAUTHENTICATED PRINCIPAL
+ * EVER TOUCHES FIRESTORE. The public booking page talks to the Cloudflare
+ * Worker, which writes with a service account. The only clients holding
+ * Firestore credentials are her own devices. So these rules are not a public
+ * API surface — they are "deny everything, then allow the stylist a few narrow
+ * shapes".
+ *
+ * Two things these rules deliberately CANNOT do, stated here so nobody relies
+ * on them for it:
+ *
+ *   1. They are not a revocation mechanism. Custom claims live in the ID token
+ *      and only refresh when it does, so a revoked stylist keeps her claim
+ *      until then. Anything that moves money goes through a callable that
+ *      checks live state.
+ *   2. They do not constrain the resolver or any Admin SDK code, which bypasses
+ *      rules entirely. The resolver is server code that must be tested, not a
+ *      rule that is enforced.
+ */
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- who ----
+
+    /**
+     * Every claim is read with `.get(name, default)`, never `token.name`.
+     *
+     * Reading an absent claim THROWS rather than returning null, and a thrown
+     * condition denies — so a stylist whose token simply lacks a claim added in
+     * a later release is locked out of her own salon until she signs in again.
+     * The emulator caught exactly that.
+     */
+    function signedIn() {
+      // Anonymous auth satisfies `request.auth != null`, so enabling it anywhere
+      // in the project would otherwise make every such rule public.
+      return request.auth != null
+          && request.auth.token.get(['firebase','sign_in_provider'], '') != 'anonymous';
+    }
+
+    /**
+     * Whether this is her.
+     *
+     * Two ways in, because self-hosting has a bootstrap problem. Custom claims
+     * are the better mechanism — no read cost, nothing to look up — but setting
+     * one needs the Admin SDK, which means either a Cloud Function (Blaze, so a
+     * card) or a downloaded service-account key (a file you should not ask a
+     * hairdresser to look after).
+     *
+     * So an allowlist document is the second door: she signs in, and her uid
+     * goes in `config/access`. One manual step, written down, and no secret
+     * leaves the project. The claim path stays for the hosted deployment, where
+     * there is a Function to set it anyway.
+     */
+    function stylist() {
+      return signedIn()
+          && (request.auth.token.get('stylist', false) == true || allowlisted());
+    }
+
+    function allowlisted() {
+      return exists(/databases/$(database)/documents/config/access)
+          && request.auth.uid in
+             get(/databases/$(database)/documents/config/access).data.get('uids', []);
+    }
+
+    function tenant(sid) {
+      return signedIn()
+          && request.auth.token.get('salonId', '') == sid
+          && request.auth.token.get('suspended', false) != true;
+    }
+
+    // ---- shapes ----
+
+    function changed(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    /**
+     * Optimistic concurrency, enforced by the database.
+     *
+     * This is what turns last-write-wins into compare-and-swap: a write queued
+     * offline carrying version 42, replaying after the server reached 45,
+     * requires 42 == 46 and is rejected rather than quietly winning.
+     */
+    function bumpsVersion() {
+      return request.resource.data.version == resource.data.version + 1;
+    }
+
+    /** An intent is a proposal. It is never edited, and never pre-resolved. */
+    function wellFormedIntent() {
+      return request.resource.data.keys().hasOnly(
+               ['op','target','payload','basisVersion','date',
+                'clientMadeAt','serverReceivedAt','result'])
+          && request.resource.data.op in ['book','move','cancel','block']
+          && request.resource.data.result == null
+          // Server time, so a device clock cannot backdate a stale intent into
+          // looking fresh.
+          && request.resource.data.serverReceivedAt == request.time
+          && request.resource.data.target.s is int
+          && request.resource.data.target.e is int
+          && request.resource.data.target.e > request.resource.data.target.s
+          && request.resource.data.payload.sealed is string
+          && request.resource.data.payload.sealed.size() < 4096;
+    }
+
+    // ================================================================
+    // SELF-HOSTED — one salon, her devices only
+    // ================================================================
+
+    // Functions only. Her devices have no business here at all.
+    match /holds/{hold}           { allow read, write: if false; }
+    match /processedEvents/{ev}   { allow read, write: if false; }
+    match /outbox/{msg}           { allow read, write: if false; }
+    match /days/{day}             { allow read: if stylist(); allow write: if false; }
+    match /payments/{payment}     { allow read: if stylist(); allow write: if false; }
+
+    match /intents/{intent} {
+      allow read:   if stylist();
+      allow create: if stylist() && wellFormedIntent();
+      // Immutable: a replayed offline write must not be able to mutate an
+      // intent the resolver has already decided.
+      allow update, delete: if false;
+    }
+
+    match /bookings/{booking} {
+      allow read: if stylist();
+      // She may annotate; she may never touch money or status. This is what
+      // stops a stale replayed write resurrecting a refunded booking by
+      // rewriting the one field that says it is dead.
+      allow update: if stylist()
+                    && changed(['sealed','kid','clientNote','seenAt','version'])
+                    && bumpsVersion();
+      allow create, delete: if false;
+    }
+
+    match /services/{svc} {
+      allow read:   if stylist();
+      allow create: if stylist() && request.resource.data.version == 0;
+      allow update: if stylist() && bumpsVersion();
+      allow delete: if stylist();
+    }
+
+    match /clients/{client} {
+      allow read:   if stylist();
+      allow create: if stylist() && request.resource.data.version == 0;
+      allow update: if stylist() && bumpsVersion();
+      allow delete: if stylist();
+    }
+
+    // The only document a stranger may read: enough to render a booking page,
+    // and nothing that names anyone.
+    match /public/profile {
+      allow read:  if true;
+      allow write: if false;
+    }
+
+    /**
+     * Who is allowed in. Readable by nobody and writable by nobody — it is
+     * edited from the console or by the setup script, never by the app.
+     *
+     * A client-writable allowlist is not an allowlist. `stylist()` reads it
+     * through `get()`, which is evaluated by the rules engine rather than by
+     * the caller, so denying reads here costs nothing.
+     */
+    match /config/access {
+      allow read, write: if false;
+    }
+
+    // ================================================================
+    // MAIN-HOSTED — many salons, tenancy in the path
+    // ================================================================
+
+    match /salons/{sid} {
+      allow read:  if tenant(sid);
+      allow write: if false;
+
+      match /intents/{intent} {
+        allow read:   if tenant(sid);
+        allow create: if tenant(sid)
+                      && wellFormedIntent()
+                      // Belt as well as braces. The token is the authority; this
+                      // only stops a mislabelled document existing at all.
+                      && request.resource.data.get('salonId', sid) == sid;
+        allow update, delete: if false;
+      }
+
+      match /bookings/{booking} {
+        allow read: if tenant(sid);
+        allow update: if tenant(sid)
+                      && changed(['sealed','kid','clientNote','seenAt','version'])
+                      && bumpsVersion();
+        allow create, delete: if false;
+      }
+
+      match /clients/{client} {
+        allow read:   if tenant(sid);
+        allow create: if tenant(sid) && request.resource.data.version == 0;
+        allow update: if tenant(sid) && bumpsVersion();
+        allow delete: if tenant(sid);
+      }
+
+      // Everything else inside a tenant is closed until someone writes a rule
+      // for it on purpose.
+      match /{rest=**} { allow read, write: if false; }
+    }
+
+    // Collection-group queries are evaluated against wildcard rules, NOT against
+    // the path rules above — so `collectionGroup('clients')` would route around
+    // every tenant boundary in this file. Denying it explicitly is what stops
+    // one query returning every salon's data.
+    match /{path=**}/clients/{client}  { allow read, write: if false; }
+    match /{path=**}/bookings/{booking} { allow read, write: if false; }
+    match /{path=**}/intents/{intent}   { allow read, write: if false; }
+
+    // Anything not named above is closed.
+    match /{document=**} { allow read, write: if false; }
+  }
+}

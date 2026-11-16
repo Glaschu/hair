@@ -1,0 +1,16 @@
+appId: com.glaschu.iris
+name: Drill 5 — the booking arrives in her diary
+env:
+  OUTPUT_DIR: screenshots/drill
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+- swipe:
+    start: "50%, 30%"
+    end: "50%, 80%"
+    duration: 900
+- waitForAnimationToEnd:
+    timeout: 10000
+- takeScreenshot: ${OUTPUT_DIR}/12-after-pull

@@ -3,7 +3,7 @@ export type RootStackParamList = {
   ClientDetail: { clientId: string };
   ProductDetail: { productId: string };
   AppointmentDetail: { appointmentId: string };
-  NewAppointment: { clientId?: string; prefillService?: string };
+  NewAppointment: { clientId?: string; prefillService?: string; date?: string };
   Settings: undefined;
   Reports: undefined;
   ScanModal: undefined;
@@ -13,6 +13,14 @@ export type RootStackParamList = {
   ServiceForm: { serviceId?: string };
   RescheduleModal: { appointmentId: string };
   AppointmentEdit: { appointmentId: string };
+  VisitWrapUp: { appointmentId: string };
+  BookingSetup: undefined;
+  BookingGuide: undefined;
+  CloudAccess: undefined;
+  CancellationPolicy: undefined;
+  DaysOff: undefined;
+  MoneyAlerts: undefined;
+  SendBookingLink: { clientId: string };
 };
 
 export type TabParamList = {

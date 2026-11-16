@@ -1,0 +1,65 @@
+{
+  "indexes": [
+    {
+      "_comment": "The drainer queries state == pending ordered by nextAttemptAt. A composite of an equality and a different order-by field needs an index, and the emulator does NOT enforce that — so this query passes every test here and fails on the first real deploy. Deploy it with: firebase deploy --only firestore:indexes",
+      "collectionGroup": "outbox",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nextAttemptAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "_comment": "tidyOutbox: pending rows older than two weeks, oldest first. Equality on state plus a range on createdAt needs a composite index; the emulator does not enforce it.",
+      "collectionGroup": "outbox",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "_comment": "The inbox: unseen bookings, oldest first.",
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "_comment": "createLink's clash check: live links (revoked == false) not yet expired (expiresAt > now). An equality plus a range on a different field needs a composite index; the emulator does not enforce it, so without this the check passes every test and fails the first time she makes a link on the real service.",
+      "collectionGroup": "links",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "revoked",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expiresAt",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

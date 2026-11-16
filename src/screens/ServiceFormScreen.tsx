@@ -6,17 +6,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
-import { Icons, RoundBtn } from '../components';
+import { Icons, RoundBtn, ProductPicker, useLocalDialog } from '../components';
 import { numberFieldError } from '../data/utils';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'ServiceForm'>;
 
 export default function ServiceFormScreen() {
   const { theme, services, setServices, products } = useApp();
-  const dialog = useDialog();
+  const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -60,7 +60,7 @@ export default function ServiceFormScreen() {
   };
 
   const deleteService = async () => {
-    const ok = await dialog.confirm({
+    const ok = await confirm({
       title: 'Delete service',
       message: 'Remove this service?',
       confirmLabel: 'Delete',
@@ -80,7 +80,7 @@ export default function ServiceFormScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
       {/* Header */}
       <View style={styles.header}>
-        <RoundBtn onPress={() => nav.goBack()} size={38}>
+        <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
           <Icons.chevronLeft size={18} color={theme.ink} />
         </RoundBtn>
         <Text style={[styles.headerTitle, { color: theme.ink }]}>
@@ -187,52 +187,19 @@ export default function ServiceFormScreen() {
       </KeyboardAvoidingView>
 
       {/* Product picker modal */}
-      <Modal
+      <ProductPicker
         visible={productPicker !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setProductPicker(null)}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={() => setProductPicker(null)} />
-        <View style={[styles.pickerSheet, { backgroundColor: theme.card }]}>
-          <View style={styles.pickerHandle} />
-          <Text style={[styles.pickerTitle, { color: theme.ink }]}>
-            {productPicker === 'defaults' ? 'Default Products' : 'Recommended Products'}
-          </Text>
-          <FlatList
-            data={products}
-            keyExtractor={(p) => p.id}
-            style={{ maxHeight: 360 }}
-            showsVerticalScrollIndicator={false}
-            renderItem={({ item: p }) => {
-              const isSelected = activeList.includes(p.id);
-              return (
-                <Pressable
-                  onPress={() => toggleInList(activeList, setActiveList, p.id)}
-                  style={[styles.pickerRow, { borderBottomColor: theme.line }]}
-                >
-                  <View style={[styles.pickerCheck, {
-                    backgroundColor: isSelected ? theme.accent : 'transparent',
-                    borderColor: isSelected ? theme.accent : theme.ink3,
-                  }]}>
-                    {isSelected && <Icons.check size={12} color="#fff" />}
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[styles.pickerRowName, { color: theme.ink }]}>{p.name}</Text>
-                    <Text style={[styles.pickerRowSub, { color: theme.ink3 }]}>{p.brand} · {p.stock} in stock</Text>
-                  </View>
-                </Pressable>
-              );
-            }}
-          />
-          <Pressable
-            onPress={() => setProductPicker(null)}
-            style={[styles.pickerDone, { backgroundColor: theme.accent }]}
-          >
-            <Text style={styles.pickerDoneText}>Done</Text>
-          </Pressable>
-        </View>
-      </Modal>
+        onClose={() => setProductPicker(null)}
+        title={productPicker === 'defaults' ? 'Default Products' : 'Recommended Products'}
+        mode="multiple"
+        initialSelectedIds={activeList}
+        onSelect={(ids) => {
+          if (Array.isArray(ids)) {
+            setActiveList(ids);
+          }
+        }}
+      />
+      {dialog}
     </SafeAreaView>
   );
 }
@@ -277,7 +244,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, gap: 12,
   },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: '600', fontStyle: 'italic' },
+  headerTitle: { flex: 1, fontSize: 18, fontFamily: SERIF },
   saveBtn: { paddingHorizontal: 18, paddingVertical: 9, borderRadius: 999 },
   saveBtnText: { fontSize: 14, fontWeight: '600' },
 

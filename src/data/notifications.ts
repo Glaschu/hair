@@ -29,6 +29,10 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return requested.granted;
 }
 
+// iOS silently drops scheduled notifications beyond 64 pending, so schedule the
+// soonest reminders first and leave headroom for the immediate low-stock alerts.
+const MAX_SCHEDULED_REMINDERS = 60;
+
 /**
  * Clears all scheduled notifications and, when enabled, reschedules one reminder per
  * future `upcoming` appointment whose reminder time is still ahead. Cancel-all then
@@ -44,11 +48,14 @@ export async function syncAppointmentReminders(
   if (!enabled) return;
 
   const now = Date.now();
-  for (const appt of appointments) {
-    if (appt.status !== 'upcoming') continue;
-    const fireAt = new Date(new Date(appt.start).getTime() - leadMinutes * 60_000);
-    if (fireAt.getTime() <= now) continue;
+  const upcoming = appointments
+    .filter((a) => a.status === 'upcoming')
+    .map((a) => ({ appt: a, fireAt: new Date(new Date(a.start).getTime() - leadMinutes * 60_000) }))
+    .filter(({ fireAt }) => fireAt.getTime() > now)
+    .sort((a, b) => a.fireAt.getTime() - b.fireAt.getTime())
+    .slice(0, MAX_SCHEDULED_REMINDERS);
 
+  for (const { appt, fireAt } of upcoming) {
     const client = clients.find((c) => c.id === appt.clientId);
     await Notifications.scheduleNotificationAsync({
       content: {

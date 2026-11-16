@@ -9,9 +9,11 @@ interface Props {
   size?: number;
   filled?: boolean;
   style?: ViewStyle;
+  /** Spoken name for this icon-only button (VoiceOver / TalkBack). */
+  label?: string;
 }
 
-export function RoundBtn({ onPress, children, size = 38, filled = false, style }: Props) {
+export function RoundBtn({ onPress, children, size = 38, filled = false, style, label }: Props) {
   const { theme } = useApp();
 
   const handlePress = () => {
@@ -23,6 +25,9 @@ export function RoundBtn({ onPress, children, size = 38, filled = false, style }
   return (
     <Pressable
       onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={size < 40 ? 6 : 0}
       style={({ pressed }) => [
         styles.btn,
         {

@@ -1,4 +1,4 @@
-import { deductStock, restoreStock, stockStatus } from '../stock';
+import { deductStock, restoreStock, stockStatus, sanitizeStockInput, parseStockInput, formatStockInput } from '../stock';
 import { Product } from '../types';
 
 const mkProduct = (over: Partial<Product> = {}): Product => ({
@@ -52,5 +52,37 @@ describe('restoreStock', () => {
     const p = restoreStock(mkProduct({ stock: 2, reorder: 3, status: 'low' }), 200);
     expect(p.stock).toBe(4);
     expect(p.status).toBe('ok');
+  });
+});
+
+describe('stock count input', () => {
+  it('lets a decimal point be typed without being swallowed', () => {
+    // The sequence a stylist actually types for "3.5 left".
+    expect(sanitizeStockInput('3')).toBe('3');
+    expect(sanitizeStockInput('3.')).toBe('3.');
+    expect(sanitizeStockInput('3.5')).toBe('3.5');
+    // The text keeps the dot on screen; committing mid-type reads as 3.
+    expect(parseStockInput('3.')).toBe(3);
+    expect(parseStockInput('3.5')).toBe(3.5);
+  });
+
+  it('accepts a comma separator and drops junk', () => {
+    expect(sanitizeStockInput('3,5')).toBe('3.5');
+    expect(sanitizeStockInput('3.5.7')).toBe('3.57');
+    expect(sanitizeStockInput('abc')).toBe('');
+    expect(sanitizeStockInput('-2')).toBe('2');
+  });
+
+  it('treats blank and negative as "no number yet"', () => {
+    expect(parseStockInput('')).toBeNull();
+    expect(parseStockInput('  ')).toBeNull();
+    expect(parseStockInput('-1')).toBeNull();
+    expect(parseStockInput('0')).toBe(0);       // a real zero still counts
+  });
+
+  it('formats counts without floating-point noise', () => {
+    expect(formatStockInput(3)).toBe('3');
+    expect(formatStockInput(3.5)).toBe('3.5');
+    expect(formatStockInput(0.1 + 0.2)).toBe('0.3');
   });
 });

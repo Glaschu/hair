@@ -1,0 +1,28 @@
+appId: com.glaschu.iris
+name: Repro 5 — swipe inside the picker list itself
+env:
+  OUTPUT_DIR: screenshots/repro
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Add visit notes"
+    timeout: 10000
+- tapOn: "Add visit notes"
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add product"
+    timeout: 8000
+
+# Swipe with the finger inside the list area (bottom of the screen),
+# not the dimmed backdrop where the previous test swiped.
+- repeat:
+    times: 4
+    commands:
+      - swipe:
+          start: 50%, 95%
+          end: 50%, 78%
+- takeScreenshot: ${OUTPUT_DIR}/picker-05-swiped-in-list
+- assertVisible: ".*Blondifier Cool.*"

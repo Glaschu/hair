@@ -18,6 +18,7 @@ export const clients = sqliteTable('clients', {
   notes:       text('notes').notNull().default(''),
   vip:         integer('vip', { mode: 'boolean' }).notNull().default(false),
   photo:       text('photo'),
+  updatedAt:   integer('updated_at').$defaultFn(() => Date.now()).$onUpdateFn(() => Date.now()),
 });
 
 export const clientPhotos = sqliteTable('client_photos', {
@@ -27,6 +28,7 @@ export const clientPhotos = sqliteTable('client_photos', {
   date:     text('date').notNull(),
   url:      text('url').notNull(),
   label:    text('label').notNull().default(''),
+  updatedAt: integer('updated_at').$defaultFn(() => Date.now()).$onUpdateFn(() => Date.now()),
 });
 
 export const products = sqliteTable('products', {
@@ -42,24 +44,34 @@ export const products = sqliteTable('products', {
   cost:     real('cost').notNull().default(0),
   status:   text('status', { enum: ['ok', 'low', 'out'] }).notNull().default('ok'),
   barcode:  text('barcode'),
+  hasVat:   integer('has_vat', { mode: 'boolean' }).notNull().default(false),
+  baseCost: real('base_cost'),
+  updatedAt: integer('updated_at').$defaultFn(() => Date.now()).$onUpdateFn(() => Date.now()),
 });
 
 export const appointments = sqliteTable('appointments', {
-  id:       text('id').primaryKey(),
-  clientId: text('client_id').notNull(),
-  start:    text('start').notNull(),
-  end:      text('end').notNull(),
-  service:  text('service').notNull().default(''),
-  status:   text('status', { enum: ['upcoming', 'completed', 'cancelled', 'no-show'] }).notNull().default('upcoming'),
-  price:    real('price').notNull().default(0),
-  notes:    text('notes'),
-  paid:     integer('paid', { mode: 'boolean' }).notNull().default(false),
+  id:           text('id').primaryKey(),
+  clientId:     text('client_id').notNull(),
+  start:        text('start').notNull(),
+  end:          text('end').notNull(),
+  service:      text('service').notNull().default(''),
+  status:       text('status', { enum: ['upcoming', 'completed', 'cancelled', 'no-show'] }).notNull().default('upcoming'),
+  price:        real('price').notNull().default(0),
+  notes:        text('notes'),
+  formula:      text('formula'),
+  technique:    text('technique'),
+  timing:       text('timing'),
+  nextNotes:    text('next_notes'),
+  paid:         integer('paid', { mode: 'boolean' }).notNull().default(false),
+  appleEventId: text('apple_event_id'),
+  updatedAt:    integer('updated_at').$defaultFn(() => Date.now()).$onUpdateFn(() => Date.now()),
 });
 
 export const appointmentProducts = sqliteTable('appointment_products', {
   appointmentId: text('appointment_id').notNull().references(() => appointments.id, { onDelete: 'cascade' }),
   productId:     text('product_id').notNull(),
   amount:        real('amount').notNull().default(0),
+  updatedAt:     integer('updated_at').$defaultFn(() => Date.now()).$onUpdateFn(() => Date.now()),
 });
 
 export const services = sqliteTable('services', {
@@ -67,12 +79,14 @@ export const services = sqliteTable('services', {
   name:     text('name').notNull(),
   duration: integer('duration').notNull().default(60),
   price:    real('price').notNull().default(0),
+  updatedAt: integer('updated_at').$defaultFn(() => Date.now()).$onUpdateFn(() => Date.now()),
 });
 
 export const serviceProducts = sqliteTable('service_products', {
   serviceId: text('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
   productId: text('product_id').notNull(),
   type:      text('type', { enum: ['default', 'recommended'] }).notNull(),
+  updatedAt: integer('updated_at').$defaultFn(() => Date.now()).$onUpdateFn(() => Date.now()),
 });
 
 export const schedule = sqliteTable('schedule', {
@@ -85,4 +99,34 @@ export const schedule = sqliteTable('schedule', {
 export const settings = sqliteTable('settings', {
   key:   text('key').primaryKey(),
   value: text('value').notNull(),
+});
+
+/**
+ * Booking links she has sent, and who each one went to.
+ *
+ * `clientRef` is a fresh random string per link — the service never learns
+ * that two links belong to the same person, and only this table can say.
+ * Deliberately outside the iCloud export: these expire in weeks and a
+ * secret that syncs is a secret in a file.
+ */
+export const bookingLinks = sqliteTable('booking_links', {
+  token:       text('token').primaryKey(),
+  clientRef:   text('client_ref').notNull(),
+  clientId:    text('client_id').notNull(),
+  serviceName: text('service_name').notNull(),
+  url:         text('url').notNull(),
+  createdAt:   integer('created_at').notNull(),
+  expiresAt:   integer('expires_at').notNull(),
+});
+
+/**
+ * Days she has blocked off: a holiday, a course, a day she is ill. Local
+ * calendar dates, both ends inclusive — see data/daysOff.ts.
+ */
+export const daysOff = sqliteTable('days_off', {
+  id:        text('id').primaryKey(),
+  start:     text('start').notNull(),
+  end:       text('end').notNull(),
+  note:      text('note'),
+  updatedAt: integer('updated_at').$defaultFn(() => Date.now()).$onUpdateFn(() => Date.now()),
 });

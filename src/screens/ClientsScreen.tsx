@@ -10,6 +10,7 @@ import { RootStackParamList } from '../navigation/types';
 import { Avatar, Icons, Chip, RoundBtn } from '../components';
 import { groupByLetter, clientMatchesQuery } from '../data/utils';
 import { Client } from '../data/types';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -57,7 +58,7 @@ export default function ClientsScreen() {
           <Text style={[styles.eyebrow, { color: theme.ink3 }]}>DIRECTORY</Text>
           <Text style={[styles.title, { color: theme.ink }]}>Clients</Text>
         </View>
-        <RoundBtn onPress={() => nav.navigate('ClientForm', {})} filled size={40}>
+        <RoundBtn label="Add client" onPress={() => nav.navigate('ClientForm', {})} filled size={40}>
           <Icons.plus size={18} color={theme.bg} />
         </RoundBtn>
       </View>
@@ -145,7 +146,7 @@ const ClientRow = React.memo(function ClientRow({ client }: { client: Client }) 
         </View>
         <Text style={[styles.rowSub, { color: theme.ink3 }]}>
           {nextAppt
-            ? `Next: ${new Date(nextAppt.start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+            ? `Next: ${new Date(nextAppt.start).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`
             : `${visitCount} visits · Since ${client.since}`}
         </Text>
       </View>
@@ -164,7 +165,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   eyebrow: { fontSize: 10, letterSpacing: 1.4, marginBottom: 4 },
-  title: { fontSize: 34, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5 },
+  title: { fontSize: 34, fontFamily: SERIF, letterSpacing: -0.5 },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',

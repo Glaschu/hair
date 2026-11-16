@@ -1,0 +1,16 @@
+appId: com.glaschu.iris
+name: Drill 2 — let in, and the salon registered
+env:
+  OUTPUT_DIR: screenshots/drill
+---
+# iOS offers to save the new account's password; it covers the screen.
+- runFlow:
+    when:
+      visible: "Not Now"
+    commands:
+      - tapOn: "Not Now"
+- tapOn: "Check again"
+- extendedWaitUntil:
+    visible: "Connected"
+    timeout: 30000
+- takeScreenshot: ${OUTPUT_DIR}/04-connected

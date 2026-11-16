@@ -1,0 +1,27 @@
+appId: com.glaschu.iris
+name: Drill 6 (free) — she cancels a web booking with no deposit, then presses Undo
+env:
+  OUTPUT_DIR: screenshots/drill
+---
+- tapOn: ".*Ada Drill.*"
+- extendedWaitUntil:
+    visible: "No show"
+    timeout: 10000
+- tapOn: "Cancel"
+- extendedWaitUntil:
+    visible: ".*cancelled on your booking page too.*"
+    timeout: 20000
+- takeScreenshot: ${OUTPUT_DIR}/15-cancel-free
+- tapOn: "Cancel appointment"
+- extendedWaitUntil:
+    visible: "Undo cancel"
+    timeout: 20000
+- takeScreenshot: ${OUTPUT_DIR}/16-cancelled-free
+# The service acknowledged it, so Undo must say so — not quietly put it back.
+- tapOn: "Undo cancel"
+- extendedWaitUntil:
+    visible: ".*already cancelled on your booking page.*"
+    timeout: 10000
+- takeScreenshot: ${OUTPUT_DIR}/17-undo-says-sent
+- tapOn: "Leave it cancelled"
+- assertVisible: "Undo cancel"

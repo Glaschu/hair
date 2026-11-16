@@ -1,0 +1,27 @@
+appId: com.apple.mobilesafari
+name: Drill 4b (free) — the client books with no deposit
+env:
+  OUTPUT_DIR: screenshots/drill
+---
+- tapOn: "10:00"
+- tapOn: "YOUR NAME"
+- inputText: "Ada Drill"
+- tapOn: "MOBILE"
+- inputText: "07700 900123"
+- tapOn: "Done"
+- scrollUntilVisible:
+    element:
+      text: ".*read the cancellation policy and agree.*"
+    direction: DOWN
+    centerElement: true
+- tapOn: ".*read the cancellation policy and agree.*"
+- scrollUntilVisible:
+    element:
+      text: "Book .*"
+    direction: DOWN
+    centerElement: true
+- tapOn: "Book .*"
+- extendedWaitUntil:
+    visible: ".*in the book.*"
+    timeout: 45000
+- takeScreenshot: ${OUTPUT_DIR}/11-booked-free

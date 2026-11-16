@@ -1,0 +1,29 @@
+appId: com.glaschu.iris
+name: Repro 8 — appointment detail, landscape, lots of products
+env:
+  OUTPUT_DIR: screenshots/repro
+---
+# The appointment already carries 11 products from the portrait run.
+- launchApp
+- setOrientation: LANDSCAPE_LEFT
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- tapOn:
+    text: ".*Margot Lebreton.*"
+    index: 0
+- assertVisible: "Products"
+- takeScreenshot: ${OUTPUT_DIR}/land-appt-01-top
+
+# Try to work down to the bottom of the appointment.
+- repeat:
+    times: 8
+    commands:
+      - swipe:
+          start: 50%, 70%
+          end: 50%, 30%
+- takeScreenshot: ${OUTPUT_DIR}/land-appt-02-scrolled
+
+# The two things she needs at the end of the appointment.
+- assertVisible: "PHOTOS"
+- assertVisible: "Complete"

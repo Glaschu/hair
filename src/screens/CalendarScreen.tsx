@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet,
+  View, Text, ScrollView, FlatList, Pressable, StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,9 +10,13 @@ const COL_W = '14.2857%' as const;
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
+import { DayOffBanner } from '../components/DayOffBanner';
+import { dayOffOn } from '../data/daysOff';
 import { RootStackParamList } from '../navigation/types';
 import { Avatar, Icons, RoundBtn } from '../components';
-import { fmt, isSameDay, addDays, startOfWeek } from '../data/utils';
+import { fmt, isSameDay, addDays, startOfWeek, is24Hour } from '../data/utils';
+import { SERIF, appointmentTint } from '../theme';
+
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CalView = 'day' | 'week' | 'month';
@@ -32,7 +36,7 @@ const shiftMonth = (date: Date, offset: number) => {
 };
 
 export default function CalendarScreen() {
-  const { theme, appointments, clients, density } = useApp();
+  const { theme, appointments, clients, density, daysOff } = useApp();
   const nav = useNavigation<Nav>();
   const [view, setView] = useState<CalView>('week');
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -71,7 +75,7 @@ export default function CalendarScreen() {
             <Text style={[styles.todayBtnText, { color: theme.accent }]}>Today</Text>
           </Pressable>
         )}
-        <RoundBtn onPress={() => nav.navigate('NewAppointment', {})} filled size={40}>
+        <RoundBtn onPress={() => nav.navigate('NewAppointment', { date: selectedDate.toISOString() })} filled size={40}>
           <Icons.plus size={18} color={theme.bg} />
         </RoundBtn>
       </View>
@@ -102,6 +106,7 @@ export default function CalendarScreen() {
               const isSelected = isSameDay(day, selectedDate);
               const isToday = isSameDay(day, new Date());
               const dayAppts = appointments.filter((a) => isSameDay(new Date(a.start), day));
+              const isOff = !!dayOffOn(daysOff, day);
               return (
                 <Pressable
                   key={day.toISOString()}
@@ -116,11 +121,16 @@ export default function CalendarScreen() {
                     isSelected && { backgroundColor: theme.accent },
                     isToday && !isSelected && { borderWidth: 1.5, borderColor: theme.accent },
                   ]}>
-                    <Text style={[styles.dayNumText, { color: isSelected ? '#fff' : isToday ? theme.accent : theme.ink }]}>
+                    <Text style={[styles.dayNumText, {
+                      color: isSelected ? '#fff' : isToday ? theme.accent : isOff ? theme.ink3 : theme.ink,
+                      textDecorationLine: isOff && !isSelected ? 'line-through' : 'none',
+                    }]}>
                       {day.getDate()}
                     </Text>
                   </View>
-                  {dayAppts.length > 0 && (
+                  {isOff ? (
+                    <Text style={{ fontSize: 9, fontWeight: '700', letterSpacing: 0.5, color: theme.ink3 }}>OFF</Text>
+                  ) : dayAppts.length > 0 && (
                     <View style={[styles.dot, { backgroundColor: isSelected ? '#fff' : theme.accent }]} />
                   )}
                 </Pressable>
@@ -160,7 +170,7 @@ export default function CalendarScreen() {
                     isCurrentMonth && !isSelected && { borderWidth: 1.5, borderColor: theme.accent },
                   ]}>
                     <Text style={[styles.dayNumText, { fontSize: 12, color: isSelected ? '#fff' : isCurrentMonth ? theme.accent : theme.ink }]}>
-                      {mDate.toLocaleDateString('en-GB', { month: 'short' })}
+                      {mDate.toLocaleDateString(undefined, { month: 'short' })}
                     </Text>
                   </View>
                 </Pressable>
@@ -176,15 +186,16 @@ export default function CalendarScreen() {
       {/* Day view content */}
       {view === 'day' && (
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
+          <DayOffBanner date={selectedDate} style={{ marginHorizontal: 20, marginBottom: 10 }} />
           <DayHourGrid appts={todayAppts} date={selectedDate} density={density} />
         </ScrollView>
       )}
 
       {/* Week view */}
       {view === 'week' && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
-          <WeekView days={weekDays} allAppts={weekAppts} onSelectDay={setSelectedDate} density={density} />
-        </ScrollView>
+        <View style={{ flex: 1 }}>
+          <WeekView days={weekDays} allAppts={weekAppts} selectedDate={selectedDate} onSelectDay={setSelectedDate} density={density} />
+        </View>
       )}
 
       {/* Month view — appointment list for selected day */}
@@ -217,7 +228,7 @@ function DayHourGrid({ appts, date, density }: { appts: any[]; date: Date; densi
         {hours.map((h) => (
           <View key={h} style={{ height: HOUR_HEIGHT, flexDirection: 'row', alignItems: 'flex-start' }}>
             <Text style={[styles.hourLabel, { color: theme.ink3 }]}>
-              {h % 12 || 12}{h < 12 ? 'am' : 'pm'}
+              {is24Hour() ? `${h.toString().padStart(2, '0')}:00` : `${h % 12 || 12}${h < 12 ? 'am' : 'pm'}`}
             </Text>
             <View style={[styles.hourLine, { backgroundColor: theme.line }]} />
           </View>
@@ -260,61 +271,90 @@ function DayHourGrid({ appts, date, density }: { appts: any[]; date: Date; densi
   );
 }
 
-function WeekView({ days, allAppts, onSelectDay, density: _density }: { days: Date[]; allAppts: any[]; onSelectDay: (d: Date) => void; density: string }) {
+function WeekView({ days, allAppts, selectedDate, onSelectDay, density: _density }: { days: Date[]; allAppts: any[]; selectedDate: Date; onSelectDay: (d: Date) => void; density: string }) {
   const { theme, clients } = useApp();
   const nav = useNavigation<Nav>();
+  const listRef = React.useRef<FlatList>(null);
+
+  React.useEffect(() => {
+    const index = days.findIndex(d => isSameDay(d, selectedDate));
+    if (index >= 0 && listRef.current) {
+      listRef.current.scrollToIndex({ index, animated: true, viewPosition: 0 });
+    }
+  }, [selectedDate, days]);
+
+
+  const renderItem = ({ item: day }: { item: Date }) => {
+    const dayAppts = allAppts
+      .filter((a) => isSameDay(new Date(a.start), day))
+      .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+    const isToday = isSameDay(day, new Date());
+
+    return (
+      <View style={styles.weekDaySection}>
+        <Pressable onPress={() => onSelectDay(day)} style={styles.weekDayHead}>
+          <Text style={[styles.weekDayLabel, {
+            color: isToday ? theme.accent : theme.ink2,
+            fontWeight: isToday ? '700' : '500',
+          }]}>
+            {day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
+          </Text>
+          {dayAppts.length > 0 && (
+            <Text style={[styles.weekDayCount, { color: theme.ink3 }]}>{dayAppts.length} appt{dayAppts.length > 1 ? 's' : ''}</Text>
+          )}
+        </Pressable>
+        {dayAppts.length === 0 ? (
+          <View style={[styles.weekEmpty, { borderColor: theme.line }]}>
+            <Text style={[styles.weekEmptyText, { color: theme.ink3 }]}>Free</Text>
+          </View>
+        ) : (
+          dayAppts.map((appt) => {
+            const client = clients.find((c) => c.id === appt.clientId);
+            const tint = appointmentTint(appt.status, theme);
+            return (
+              <Pressable
+                key={appt.id}
+                onPress={() => nav.navigate('AppointmentDetail', { appointmentId: appt.id })}
+                style={({ pressed }) => [styles.weekAppt, {
+                  backgroundColor: pressed ? theme.bg2 : theme.card,
+                  borderColor: tint ? tint.edge + '55' : theme.line,
+                  borderLeftWidth: tint ? 4 : 0.5,
+                  borderLeftColor: tint ? tint.edge : theme.line,
+                  opacity: tint?.dim ? 0.6 : 1,
+                }]}
+                accessibilityLabel={`${client?.name ?? ''} ${appt.service} ${fmt.timeShort(appt.start)}${appt.status === 'completed' ? ', done' : ''}`}
+              >
+                {client && <Avatar name={client.name} tone={client.tone} size={34} />}
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.weekApptName, { color: theme.ink }]}>{client?.name}</Text>
+                  <Text style={[styles.weekApptSvc, { color: theme.ink2 }]}>{appt.service}</Text>
+                </View>
+                {appt.status === 'completed' && (
+                  <Icons.check size={15} color={theme.sage} strokeWidth={2.4} />
+                )}
+                <Text style={[styles.weekApptTime, { color: theme.ink3, marginLeft: 8 }]}>{fmt.timeShort(appt.start)}</Text>
+              </Pressable>
+            );
+          })
+        )}
+      </View>
+    );
+  };
 
   return (
-    <View style={{ paddingTop: 10 }}>
-      {days.map((day) => {
-        const dayAppts = allAppts
-          .filter((a) => isSameDay(new Date(a.start), day))
-          .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
-        const isToday = isSameDay(day, new Date());
-
-        return (
-          <View key={day.toISOString()} style={styles.weekDaySection}>
-            <Pressable onPress={() => onSelectDay(day)} style={styles.weekDayHead}>
-              <Text style={[styles.weekDayLabel, {
-                color: isToday ? theme.accent : theme.ink2,
-                fontWeight: isToday ? '700' : '500',
-              }]}>
-                {day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-              </Text>
-              {dayAppts.length > 0 && (
-                <Text style={[styles.weekDayCount, { color: theme.ink3 }]}>{dayAppts.length} appt{dayAppts.length > 1 ? 's' : ''}</Text>
-              )}
-            </Pressable>
-            {dayAppts.length === 0 ? (
-              <View style={[styles.weekEmpty, { borderColor: theme.line }]}>
-                <Text style={[styles.weekEmptyText, { color: theme.ink3 }]}>Free</Text>
-              </View>
-            ) : (
-              dayAppts.map((appt) => {
-                const client = clients.find((c) => c.id === appt.clientId);
-                return (
-                  <Pressable
-                    key={appt.id}
-                    onPress={() => nav.navigate('AppointmentDetail', { appointmentId: appt.id })}
-                    style={({ pressed }) => [styles.weekAppt, {
-                      backgroundColor: pressed ? theme.bg2 : theme.card,
-                      borderColor: theme.line,
-                    }]}
-                  >
-                    {client && <Avatar name={client.name} tone={client.tone} size={34} />}
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <Text style={[styles.weekApptName, { color: theme.ink }]}>{client?.name}</Text>
-                      <Text style={[styles.weekApptSvc, { color: theme.ink2 }]}>{appt.service}</Text>
-                    </View>
-                    <Text style={[styles.weekApptTime, { color: theme.ink3 }]}>{fmt.timeShort(appt.start)}</Text>
-                  </Pressable>
-                );
-              })
-            )}
-          </View>
-        );
-      })}
-    </View>
+    <FlatList
+      ref={listRef}
+      data={days}
+      keyExtractor={(d) => d.toISOString()}
+      contentContainerStyle={{ paddingTop: 10, paddingBottom: 30 }}
+      showsVerticalScrollIndicator={false}
+      renderItem={renderItem}
+      onScrollToIndexFailed={(info) => {
+        setTimeout(() => {
+          listRef.current?.scrollToIndex({ index: info.index, animated: true });
+        }, 100);
+      }}
+    />
   );
 }
 
@@ -323,7 +363,7 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
   onSelectDate: (d: Date) => void;
   appts: any[];
 }) {
-  const { theme, clients } = useApp();
+  const { theme, clients, daysOff } = useApp();
   const nav = useNavigation<Nav>();
 
   const year = selectedDate.getFullYear();
@@ -348,6 +388,7 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
           const isSelected = isSameDay(day, selectedDate);
           const isToday = isSameDay(day, new Date());
           const hasAppts = appts.some((a) => isSameDay(new Date(a.start), day));
+          const isOff = !!dayOffOn(daysOff, day);
           return (
             <Pressable
               key={day.toISOString()}
@@ -360,8 +401,9 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
                 isToday && !isSelected && { borderWidth: 1.5, borderColor: theme.accent },
               ]}>
                 <Text style={[styles.monthCellText, {
-                  color: isSelected ? '#fff' : isToday ? theme.accent : theme.ink,
+                  color: isSelected ? '#fff' : isToday ? theme.accent : isOff ? theme.ink3 : theme.ink,
                   fontWeight: isToday || isSelected ? '700' : '400',
+                  textDecorationLine: isOff && !isSelected ? 'line-through' : 'none',
                 }]}>
                   {day.getDate()}
                 </Text>
@@ -377,8 +419,9 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
       {/* Selected day appts */}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 30 }}>
         <Text style={[styles.monthDayTitle, { color: theme.ink3 }]}>
-          {selectedDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}
+          {selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}
         </Text>
+        <DayOffBanner date={selectedDate} style={{ marginBottom: 12 }} />
         {dayAppts.length === 0 ? (
           <Text style={[styles.noAppts, { color: theme.ink3 }]}>No appointments</Text>
         ) : (
@@ -386,13 +429,17 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
             .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
             .map((appt) => {
               const client = clients.find((c) => c.id === appt.clientId);
+              const tint = appointmentTint(appt.status, theme);
               return (
                 <Pressable
                   key={appt.id}
                   onPress={() => nav.navigate('AppointmentDetail', { appointmentId: appt.id })}
                   style={({ pressed }) => [styles.monthAppt, {
                     backgroundColor: pressed ? theme.bg2 : theme.card,
-                    borderColor: theme.line,
+                    borderColor: tint ? tint.edge + '55' : theme.line,
+                    borderLeftWidth: tint ? 4 : 0.5,
+                    borderLeftColor: tint ? tint.edge : theme.line,
+                    opacity: tint?.dim ? 0.6 : 1,
                   }]}
                 >
                   {client && <Avatar name={client.name} tone={client.tone} size={36} />}
@@ -400,7 +447,9 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
                     <Text style={[styles.weekApptName, { color: theme.ink }]}>{client?.name}</Text>
                     <Text style={[styles.weekApptSvc, { color: theme.ink2 }]}>{appt.service} · {fmt.timeShort(appt.start)}</Text>
                   </View>
-                  <Icons.chevronRight size={16} color={theme.ink3} />
+                  {appt.status === 'completed'
+                    ? <Icons.check size={16} color={theme.sage} strokeWidth={2.4} />
+                    : <Icons.chevronRight size={16} color={theme.ink3} />}
                 </Pressable>
               );
             })
@@ -414,7 +463,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12 },
   eyebrow: { fontSize: 10, letterSpacing: 1.4, marginBottom: 4 },
-  title: { fontSize: 34, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5 },
+  title: { fontSize: 34, fontFamily: SERIF, letterSpacing: -0.5 },
   todayBtn: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, marginRight: 10 },
   todayBtnText: { fontSize: 13, fontWeight: '600' },
   toggleRow: { flexDirection: 'row', marginHorizontal: 20, marginBottom: 12, padding: 3, borderRadius: 12 },

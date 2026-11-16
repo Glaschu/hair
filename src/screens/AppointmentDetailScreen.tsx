@@ -1,28 +1,34 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, Modal, FlatList, StyleSheet, Linking, Platform, Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
-import { Avatar, Icons, RoundBtn } from '../components';
+import { Avatar, Icons, RoundBtn, useLocalDialog, ProductPicker, ProductUseRow, PhotoStrip, usePhotoAdd } from '../components';
 import { fmt } from '../data/utils';
-import { deductStock, restoreStock } from '../data/stock';
-import { notifyLowStock } from '../data/notifications';
-import { savePhoto } from '../db/photos';
-import { Appointment, Product, ClientPhoto } from '../data/types';
+import { useVisitActions } from '../data/useVisitActions';
+import { webBookingIdOf } from '../data/webCancels';
+import { previewWebCancel } from '../data/bookingApi';
+import { describeFailure, type Failure } from '../data/serviceErrors';
+import { depositMoney } from '../data/policy';
+import { loadCredentials } from '../data/bookingStore';
+import { Appointment, Product } from '../data/types';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AppointmentDetail'>;
 
 export default function AppointmentDetailScreen() {
-  const { theme, appointments, setAppointments, clients, setClients, products, setProducts, services, remindersEnabled } = useApp();
-  const dialog = useDialog();
+  const {
+    theme, appointments, setAppointments, clients, setClients, products, services,
+    backend, cancelWebBooking, withdrawWebCancel,
+  } = useApp();
+  const { confirm, alert, actionSheet, dialog } = useLocalDialog();
+  const visit = useVisitActions();
+  const addPhotos = usePhotoAdd({ actionSheet, alert });
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -30,8 +36,9 @@ export default function AppointmentDetailScreen() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceDraft, setPriceDraft] = useState('');
+  const priceEditRef = useRef({ editing: false, draft: '' });
+  priceEditRef.current = { editing: editingPrice, draft: priceDraft };
   const [markPaid, setMarkPaid] = useState(true);
-  const [viewingPhoto, setViewingPhoto] = useState<ClientPhoto | null>(null);
 
   const apptId = route.params.appointmentId;
   const appt = appointments.find((a) => a.id === apptId);
@@ -52,42 +59,17 @@ export default function AppointmentDetailScreen() {
     return s + (up.product.cost * (up.amount / up.product.size));
   }, 0);
 
-  const addPhotos = async () => {
+  const addApptPhotos = async () => {
     if (!client) return;
-    const action = await dialog.actionSheet({
-      title: 'Add Photo',
-      actions: [{ label: 'Take Photo' }, { label: 'Choose from Library' }]
-    });
-    if (action === null) return;
-    
-    const result = action === 0
-      ? await ImagePicker.launchCameraAsync({ allowsMultipleSelection: true, quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({
-          allowsMultipleSelection: true, quality: 0.8,
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        });
-
-    if (!result.canceled) {
-      try {
-        const saved = await Promise.all(result.assets.map(a => savePhoto(a.uri)));
-        const newPhotos: ClientPhoto[] = saved.map((uri) => ({
-          id: `ph-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          date: new Date().toISOString(),
-          url: uri,
-          label: '',
-          appointmentId: apptId,
-        }));
-        setClients((cs) => cs.map((c) => c.id === client.id
-          ? { ...c, photos: [...newPhotos, ...(c.photos || [])] }
-          : c));
-      } catch {
-        // failed
-      }
-    }
+    await addPhotos({ clientId: client.id, appointmentId: apptId });
   };
 
   const updateNotes = (text: string) => {
     setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, notes: text } : a));
+  };
+
+  const updateFormula = (text: string) => {
+    setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, formula: text } : a));
   };
 
   const updateProductAmount = (productId: string, amount: number) => {
@@ -116,35 +98,112 @@ export default function AppointmentDetailScreen() {
   };
 
   const handleComplete = () => {
-    if (appt.status !== 'upcoming') {
-      setConfirmOpen(false);
-      return;
-    }
-    if (remindersEnabled) {
-      usedProducts.forEach((up) => {
-        const after = deductStock(up.product, up.amount);
-        if (after.status !== 'ok' && after.status !== up.product.status) {
-          notifyLowStock(up.product.name, after.status === 'out');
-        }
-      });
-    }
-    setProducts((prods) =>
-      prods.map((p) => {
-        const used = usedProducts.find((up) => up.productId === p.id);
-        return used ? deductStock(p, used.amount) : p;
-      })
-    );
-    setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'completed', paid: markPaid } : a));
+    visit.complete(appt, { paid: markPaid });
     setConfirmOpen(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  const handleCancel = () => {
-    setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'cancelled' } : a));
+  /**
+   * Cancelling. For an appointment made in the app, as before. For one that
+   * came in online, the booking service has to be told — to give the hour back
+   * and, where a deposit was taken, to refund it — and when a deposit is held,
+   * how much goes back depends on who is cancelling, which only she knows.
+   */
+  const handleCancel = async () => {
+    const bookingId = webBookingIdOf(appt.id);
+    // Linked is what matters, not whether the online-booking buttons are
+    // switched on: a booking that came in online is on the service either way,
+    // and hiding the buttons must not stop the service hearing she cancelled.
+    if (!bookingId || !backend.has('booking-links')) {
+      visit.markCancelled(appt);
+      return;
+    }
+
+    const who = client?.name?.trim().split(/\s+/)[0] ?? 'this';
+    const title = who === 'this' ? 'Cancel this appointment?' : `Cancel ${who}'s appointment?`;
+    let refund: 'full' | 'policy' | null = null;
+
+
+    // Why the service could not be asked, when it could not. Not always the
+    // signal: a sign-in that has lapsed holds the cancellation here until she
+    // signs in again, and she has to be told that, not that she is offline.
+    let failure = null as Failure | null;
+
+    if (backend.has('deposits')) {
+      const creds = await loadCredentials().catch(() => null);
+      // undefined: could not ask. null: this service takes no deposits.
+      const preview = creds
+        ? await previewWebCancel(creds, bookingId).catch((e) => {
+          failure = describeFailure(e, '');
+          return undefined;
+        })
+        : undefined;
+
+      if (preview && preview.depositMinor > 0) {
+        // In pounds, exactly: what the service charged and will refund.
+        const deposit = depositMoney(preview.depositMinor);
+        const backMinor = Math.round(preview.depositMinor * preview.policyRefundPct / 100);
+        const idx = await actionSheet({
+          title,
+          message: `They paid a ${deposit} deposit when they booked. How much goes back?`,
+          actions: [
+            { label: `I'm cancelling: refund all ${deposit}` },
+            { label: backMinor > 0
+              ? `They asked: refund ${depositMoney(backMinor)} (your policy)`
+              : 'They asked: no refund at this notice (your policy)' },
+          ],
+          cancelLabel: 'Keep the appointment',
+        });
+        if (idx === null) return;
+        refund = idx === 0 ? 'full' : 'policy';
+      } else if (preview === undefined) {
+        // Could not ask: the amounts cannot be checked, but the choice can
+        // still be made — it is sent, with the time she made it, once the
+        // service can be reached.
+        const why = failure;
+        const idx = await actionSheet({
+          title,
+          message: why && !why.offline
+            ? `If they paid a deposit, how much goes back? The amounts can't be shown: ${why.message} Your choice is kept and sent once that's done.`
+            : "If they paid a deposit, how much goes back? You're offline, so the amounts can't be shown — your booking page is updated as soon as you're back.",
+          actions: [
+            { label: "I'm cancelling: refund the deposit in full" },
+            { label: 'They asked: use my cancellation policy' },
+          ],
+          cancelLabel: 'Keep the appointment',
+        });
+        if (idx === null) return;
+        refund = idx === 0 ? 'full' : 'policy';
+      }
+    }
+
+    if (!refund) {
+      const ok = await confirm({
+        title,
+        message: 'They booked online, so their booking is cancelled on your booking page too, and the time is free to offer to someone else.',
+        confirmLabel: 'Cancel appointment',
+        cancelLabel: 'Keep it',
+        tone: 'destructive',
+      });
+      if (!ok) return;
+      // No deposit is held, so nothing is refunded either way.
+      refund = 'full';
+    }
+
+    visit.markCancelled(appt);
+    const { reached } = await cancelWebBooking(appt.id, refund);
+    if (!reached) {
+      const why = failure;
+      await alert({
+        title: 'Cancelled here',
+        message: why && !why.offline
+          ? `Your booking page will be updated, and any refund sent, once this is sorted: ${why.message}`
+          : "Your booking page will be updated, and any refund sent, as soon as you're back online.",
+      });
+    }
   };
 
   const handleNoShow = () => {
-    setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'no-show' } : a));
+    visit.markNoShow(appt);
   };
 
   const commitPrice = () => {
@@ -155,14 +214,52 @@ export default function AppointmentDetailScreen() {
     setEditingPrice(false);
   };
 
-  const handleUndo = () => {
-    setProducts((prods) =>
-      prods.map((p) => {
-        const used = usedProducts.find((up) => up.productId === p.id);
-        return used ? restoreStock(p, used.amount) : p;
-      })
-    );
-    setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'upcoming' } : a));
+  // The decimal-pad keyboard has no return key and navigating back unmounts
+  // the screen without firing onBlur, so commit any pending edit on unmount.
+  useEffect(() => () => {
+    const { editing, draft } = priceEditRef.current;
+    if (!editing) return;
+    const n = parseFloat(draft);
+    if (Number.isFinite(n) && n >= 0) {
+      setAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, price: n } : a));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleUndo = async () => {
+    if (isCancelled) {
+      const was = withdrawWebCancel(appt.id);
+      // Still waiting to be sent: taken back, so the service never cancels it
+      // or refunds anything. Nothing more to say.
+      if (was === 'unknown') {
+        // This device never sent a cancellation for it. The client may have
+        // cancelled from their link, or her other device may have — or the
+        // service may still hold it. Only what is known is said.
+        const ok = await confirm({
+          title: 'Put it back in your diary?',
+          message:
+            'This booking came in online. If it was cancelled on your booking page — by the client, or from your ' +
+            "other device — putting it back only changes your diary: the client won't see it. " +
+            'To book them in properly, send them a new link.',
+          confirmLabel: 'Put it back',
+          cancelLabel: 'Leave it cancelled',
+        });
+        if (!ok) return;
+      }
+      if (was === 'sent') {
+        const ok = await confirm({
+          title: 'Put it back in your diary?',
+          message:
+            'This booking is already cancelled on your booking page: any deposit is being refunded, and ' +
+            "their link no longer works. Putting it back only changes your diary — the client won't see it. " +
+            'To book them in properly, send them a new link.',
+          confirmLabel: 'Put it back anyway',
+          cancelLabel: 'Leave it cancelled',
+        });
+        if (!ok) return;
+      }
+    }
+    visit.undoComplete(appt);
   };
 
   const statusColor = isNoShow ? theme.danger : isCompleted ? theme.sage : isCancelled ? theme.ink3 : theme.accent;
@@ -170,10 +267,23 @@ export default function AppointmentDetailScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 140 }} showsVerticalScrollIndicator={false}>
+      {/*
+        No KeyboardAvoidingView here on purpose. This screen is a page sheet
+        on iPad, and KAV measures its own frame against the window — inside a
+        sheet that maths is wrong, so it over-pads and pushes the lower half
+        of the form out of reach exactly when the keyboard is up. UIKit does
+        the same job correctly from inside the scroll view, sheet geometry
+        included.
+      */}
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 140 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+      >
         {/* Top bar */}
         <View style={styles.topBar}>
-          <RoundBtn onPress={() => nav.goBack()} size={38}>
+          <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
             <Icons.chevronLeft size={18} color={theme.ink} />
           </RoundBtn>
           <View style={{ width: 38 }} />
@@ -261,26 +371,33 @@ export default function AppointmentDetailScreen() {
           </View>
         )}
 
-        {/* At the chair — formula & allergies */}
-        {client && (client.formula || (client.allergies && client.allergies !== 'None on file')) && (
+        {/* At the chair — allergies */}
+        {client && client.allergies && client.allergies !== 'None on file' && (
           <View style={{ paddingHorizontal: 20, marginBottom: 16, gap: 10 }}>
-            {client.allergies && client.allergies !== 'None on file' && (
-              <View style={[styles.allergyBanner, { backgroundColor: theme.warn + '18', borderColor: theme.warn }]}>
-                <Icons.alert size={14} color={theme.warn} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.allergyLabel, { color: theme.warn }]}>ALLERGIES & SENSITIVITIES</Text>
-                  <Text style={[styles.allergyText, { color: theme.ink }]}>{client.allergies}</Text>
-                </View>
+            <View style={[styles.allergyBanner, { backgroundColor: theme.warn + '18', borderColor: theme.warn }]}>
+              <Icons.alert size={14} color={theme.warn} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.allergyLabel, { color: theme.warn }]}>ALLERGIES & SENSITIVITIES</Text>
+                <Text style={[styles.allergyText, { color: theme.ink }]}>{client.allergies}</Text>
               </View>
-            )}
-            <View style={[styles.formulaCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-              <Text style={[styles.sectionEye, { color: theme.ink3, marginBottom: 6 }]}>COLOUR FORMULA</Text>
-              <Text style={[styles.formulaText, { color: client.formula ? theme.ink : theme.ink3 }]}>
-                {client.formula || 'Not recorded'}
-              </Text>
             </View>
           </View>
         )}
+
+        {/* Formula */}
+        <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
+          <Text style={[styles.sectionEye, { color: theme.ink3, marginBottom: 8 }]}>COLOR FORMULA</Text>
+          <View style={[styles.notesCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+            <TextInput
+              style={[styles.notesInput, { color: theme.ink }]}
+              value={appt.formula || ''}
+              onChangeText={updateFormula}
+              placeholder="e.g. 30g 6N + 30g 20vol..."
+              placeholderTextColor={theme.ink3}
+              multiline
+            />
+          </View>
+        </View>
 
         {/* Products section */}
         <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
@@ -311,7 +428,6 @@ export default function AppointmentDetailScreen() {
                   editable={!isCompleted && !isCancelled && !isNoShow}
                   onChangeAmount={(a) => updateProductAmount(up.productId, a)}
                   onRemove={() => removeProduct(up.productId)}
-                  theme={theme}
                 />
               ))}
             </View>
@@ -329,7 +445,7 @@ export default function AppointmentDetailScreen() {
         <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
           <Pressable
             onPress={() => {
-              if (appt.status === 'upcoming') {
+              if (appt.status === 'upcoming' && !editingPrice) {
                 setPriceDraft(String(appt.price));
                 setEditingPrice(true);
               }
@@ -375,27 +491,62 @@ export default function AppointmentDetailScreen() {
           </View>
         )}
 
+        {/* Visit record — the structured wrap-up fields, once completed */}
+        {isCompleted && (
+          <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={[styles.sectionEye, { color: theme.ink3, marginBottom: 0 }]}>VISIT RECORD</Text>
+              <Pressable
+                onPress={() => nav.navigate('VisitWrapUp', { appointmentId: apptId })}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.accent + '15', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}
+              >
+                <Icons.clipboardCheck size={16} color={theme.accent} />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accent }}>
+                  {appt.technique || appt.timing || appt.nextNotes ? 'Edit visit notes' : 'Add visit notes'}
+                </Text>
+              </Pressable>
+            </View>
+            {(appt.technique || appt.timing || appt.nextNotes) ? (
+              <View style={[styles.notesCard, { backgroundColor: theme.card, borderColor: theme.line, padding: 14, gap: 10 }]}>
+                {!!appt.technique && (
+                  <View>
+                    <Text style={[styles.recordLabel, { color: theme.ink3 }]}>TECHNIQUE</Text>
+                    <Text style={[styles.recordValue, { color: theme.ink }]}>{appt.technique}</Text>
+                  </View>
+                )}
+                {!!appt.timing && (
+                  <View>
+                    <Text style={[styles.recordLabel, { color: theme.ink3 }]}>PROCESSING</Text>
+                    <Text style={[styles.recordValue, { color: theme.ink }]}>{appt.timing}</Text>
+                  </View>
+                )}
+                {!!appt.nextNotes && (
+                  <View>
+                    <Text style={[styles.recordLabel, { color: theme.accent }]}>NEXT TIME</Text>
+                    <Text style={[styles.recordValue, { color: theme.ink }]}>{appt.nextNotes}</Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <Text style={{ fontSize: 13, fontStyle: 'italic', color: theme.ink3 }}>
+                Technique, processing, and the plan for next time.
+              </Text>
+            )}
+          </View>
+        )}
+
         {/* Notes */}
         <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
           <Text style={[styles.sectionEye, { color: theme.ink3, marginBottom: 8 }]}>NOTES</Text>
           <View style={[styles.notesCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-            {isCompleted || isCancelled || isNoShow ? (
-              <Text style={[
-                styles.notesText,
-                { color: appt.notes ? theme.ink : theme.ink3, fontStyle: appt.notes ? 'normal' : 'italic' },
-              ]}>
-                {appt.notes || 'No notes for this appointment.'}
-              </Text>
-            ) : (
-              <TextInput
-                style={[styles.notesInput, { color: theme.ink }]}
-                value={appt.notes || ''}
-                onChangeText={updateNotes}
-                placeholder="Anything to remember about this visit…"
-                placeholderTextColor={theme.ink3}
-                multiline
-              />
-            )}
+            <TextInput
+              style={[styles.notesInput, { color: theme.ink }]}
+              value={appt.notes || ''}
+              onChangeText={updateNotes}
+              placeholder="Anything to remember about this visit…"
+              placeholderTextColor={theme.ink3}
+              multiline
+            />
           </View>
         </View>
 
@@ -403,33 +554,19 @@ export default function AppointmentDetailScreen() {
         <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <Text style={[styles.sectionEye, { color: theme.ink3, marginBottom: 0 }]}>PHOTOS</Text>
-            <Pressable onPress={addPhotos} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.accent + '15', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
+            <Pressable onPress={addApptPhotos} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.accent + '15', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
               <Icons.camera size={16} color={theme.accent} />
               <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accent }}>Add photo</Text>
             </Pressable>
           </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-            {client?.photos?.filter(p => p.appointmentId === apptId).map(p => (
-              <Pressable key={p.id} onPress={() => setViewingPhoto(p)} style={{ width: 80, height: 80, borderRadius: 10, overflow: 'hidden' }}>
-                <Image source={{ uri: p.url }} style={{ flex: 1 }} resizeMode="cover" />
-              </Pressable>
-            ))}
-            {(!client?.photos || client.photos.filter(p => p.appointmentId === apptId).length === 0) && (
-              <Text style={{ fontSize: 13, fontStyle: 'italic', color: theme.ink3 }}>No photos for this appointment.</Text>
-            )}
-          </View>
+          <PhotoStrip
+            photos={client?.photos?.filter(p => p.appointmentId === apptId) ?? []}
+            emptyText="No photos for this appointment."
+          />
         </View>
       </ScrollView>
 
-      {/* Photo viewer modal */}
-      {viewingPhoto && (
-        <Modal visible animationType="fade" onRequestClose={() => setViewingPhoto(null)}>
-          <Pressable style={styles.photoViewer} onPress={() => setViewingPhoto(null)}>
-            <Image source={{ uri: viewingPhoto.url }} style={styles.photoViewerImg} resizeMode="contain" />
-            <Text style={styles.photoViewerDate}>{fmt.rel(viewingPhoto.date)}</Text>
-          </Pressable>
-        </Modal>
-      )}
+      {dialog}
 
       {/* Action buttons */}
       <View style={[styles.actionWrap, { backgroundColor: theme.bg }]}>
@@ -456,51 +593,27 @@ export default function AppointmentDetailScreen() {
             </Pressable>
           </View>
         )}
-        {isCompleted && (
+        {(isCompleted || isCancelled || isNoShow) && (
           <Pressable
             onPress={handleUndo}
             style={[styles.undoBtn, { backgroundColor: theme.card, borderColor: theme.line }]}
           >
-            <Text style={[styles.undoBtnText, { color: theme.ink }]}>Undo completion · restore stock</Text>
+            <Text style={[styles.undoBtnText, { color: theme.ink }]}>
+              {isCompleted ? 'Undo completion · restore stock' : `Undo ${isCancelled ? 'cancel' : 'no-show'}`}
+            </Text>
           </Pressable>
         )}
       </View>
 
       {/* Product picker modal */}
-      <Modal visible={pickerOpen} animationType="slide" transparent>
-        <View style={styles.sheetOverlay}>
-          <Pressable style={{ flex: 1 }} onPress={() => setPickerOpen(false)} />
-          <View style={[styles.sheet, { backgroundColor: theme.bg }]}>
-            <View style={styles.sheetHandle} />
-            <Text style={[styles.sheetTitle, { color: theme.ink }]}>Add product</Text>
-            <FlatList
-              data={products.filter((p) => !appt.products.some((ap) => ap.productId === p.id))}
-              keyExtractor={(item) => item.id}
-              style={{ maxHeight: 400 }}
-              renderItem={({ item }) => (
-                <Pressable
-                  onPress={() => addProduct(item.id)}
-                  style={({ pressed }) => [
-                    styles.pickerRow,
-                    { borderColor: theme.line, opacity: pressed ? 0.7 : 1 },
-                  ]}
-                >
-                  <View style={[styles.pickerSwatch, { backgroundColor: theme.bg2 }]}>
-                    <Text style={[styles.pickerSwatchText, { color: theme.ink3 }]}>
-                      {item.brand.slice(0, 3).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.pickerName, { color: theme.ink }]}>{item.name}</Text>
-                    <Text style={[styles.pickerBrand, { color: theme.ink2 }]}>{item.brand}</Text>
-                  </View>
-                  <Text style={[styles.pickerUnit, { color: theme.ink3 }]}>{item.perUse}{item.unit}</Text>
-                </Pressable>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
+      <ProductPicker
+        visible={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(id) => {
+          if (typeof id === 'string') addProduct(id);
+        }}
+        excludeIds={appt.products.map(p => p.productId)}
+      />
 
       {/* Completion confirm modal */}
       <Modal visible={confirmOpen} animationType="slide" transparent>
@@ -555,73 +668,10 @@ export default function AppointmentDetailScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
   );
 }
 
-function ProductUseRow({
-  product, amount, editable, onChangeAmount, onRemove, theme,
-}: {
-  product: Product;
-  amount: number;
-  editable: boolean;
-  onChangeAmount: (a: number) => void;
-  onRemove: () => void;
-  theme: any;
-}) {
-  return (
-    <View style={[styles.productUseRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
-      <View style={[styles.productUseSwatch, { backgroundColor: theme.bg2 }]}>
-        <Text style={[styles.productUseSwatchText, { color: theme.ink3 }]}>
-          {product.brand.slice(0, 3).toUpperCase()}
-        </Text>
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[styles.productUseName, { color: theme.ink }]} numberOfLines={1}>{product.name}</Text>
-        <Text style={[styles.productUseBrand, { color: theme.ink2 }]}>{product.brand}</Text>
-      </View>
-      {editable ? (
-        <View style={styles.amtControl}>
-          <Pressable
-            onPress={() => onChangeAmount(Math.max(0, amount - 5))}
-            hitSlop={8}
-            style={({ pressed }) => [styles.amtBtn, { borderColor: theme.line, backgroundColor: theme.bg2, opacity: pressed ? 0.6 : 1 }]}
-          >
-            <Text style={[styles.amtBtnText, { color: theme.ink2 }]}>−</Text>
-          </Pressable>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minWidth: 48 }}>
-            <TextInput
-              style={[styles.amtText, { color: theme.ink, padding: 0, minWidth: 0 }]}
-              value={amount.toString()}
-              onChangeText={(t) => {
-                const n = parseFloat(t);
-                onChangeAmount(isNaN(n) ? 0 : n);
-              }}
-              keyboardType="numeric"
-            />
-            <Text style={[styles.amtText, { color: theme.ink, padding: 0, minWidth: 0 }]}>{product.unit}</Text>
-          </View>
-          <Pressable
-            onPress={() => onChangeAmount(amount + 5)}
-            hitSlop={8}
-            style={({ pressed }) => [styles.amtBtn, { borderColor: theme.line, backgroundColor: theme.bg2, opacity: pressed ? 0.6 : 1 }]}
-          >
-            <Text style={[styles.amtBtnText, { color: theme.ink2 }]}>+</Text>
-          </Pressable>
-          <Pressable
-            onPress={onRemove}
-            hitSlop={8}
-            style={({ pressed }) => [{ padding: 4, marginLeft: 2, opacity: pressed ? 0.5 : 1 }]}
-          >
-            <Icons.close size={14} color={theme.ink3} />
-          </Pressable>
-        </View>
-      ) : (
-        <Text style={[styles.amtText, { color: theme.ink }]}>{amount}{product.unit}</Text>
-      )}
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
@@ -647,7 +697,7 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 9, letterSpacing: 1.2, fontWeight: '700' },
 
   dateEyebrow: { fontSize: 11, letterSpacing: 1.2, fontWeight: '500', marginBottom: 6 },
-  serviceTitle: { fontSize: 30, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.5, lineHeight: 34 },
+  serviceTitle: { fontSize: 30, fontFamily: SERIF, letterSpacing: -0.5, lineHeight: 34 },
 
   clientCard: {
     flexDirection: 'row',
@@ -674,7 +724,7 @@ const styles = StyleSheet.create({
   allergyText: { fontSize: 13, lineHeight: 18 },
   formulaCard: { borderRadius: 12, borderWidth: 0.5, padding: 14 },
   formulaText: { fontFamily: 'DMMono_400Regular', fontSize: 12, lineHeight: 18 },
-  sectionTitle: { fontSize: 20, fontWeight: '500', fontStyle: 'italic', letterSpacing: -0.3 },
+  sectionTitle: { fontSize: 20, fontFamily: SERIF, letterSpacing: -0.3 },
   addProductBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingBottom: 2 },
   addProductText: { fontSize: 13, fontWeight: '500' },
 
@@ -726,6 +776,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 0.5,
   },
+  recordLabel: { fontSize: 9.5, fontWeight: '700', letterSpacing: 1.1, marginBottom: 3 },
+  recordValue: { fontSize: 14, lineHeight: 20 },
   notesText: { padding: 14, fontSize: 15, lineHeight: 22, minHeight: 60 },
   notesInput: {
     padding: 14,
@@ -774,42 +826,12 @@ const styles = StyleSheet.create({
   undoBtnText: { fontSize: 13, fontWeight: '500' },
 
   // Product use row
-  productUseRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 0.5,
-  },
-  productUseSwatch: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  productUseSwatchText: { fontSize: 7, fontWeight: '700', letterSpacing: 0.5 },
-  productUseName: { fontSize: 13, fontWeight: '600' },
-  productUseBrand: { fontSize: 11, marginTop: 1 },
-  amtControl: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  amtBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  amtBtnText: { fontSize: 20, fontWeight: '500', lineHeight: 24 },
-  amtText: { fontSize: 13, fontWeight: '600', minWidth: 48, textAlign: 'center' },
 
   // Sheets
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   sheet: { borderRadius: 24, padding: 20, paddingBottom: 40, maxHeight: '80%' },
   sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.15)', alignSelf: 'center', marginBottom: 16 },
-  sheetTitle: { fontSize: 20, fontWeight: '600', fontStyle: 'italic', marginBottom: 8 },
+  sheetTitle: { fontSize: 20, fontFamily: SERIF, marginBottom: 8 },
   sheetDesc: { fontSize: 13, lineHeight: 19, marginBottom: 18 },
 
   // Picker
@@ -862,7 +884,4 @@ const styles = StyleSheet.create({
     paddingVertical: 12, borderRadius: 12, borderWidth: 0.5,
   },
   paidControlText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.5 },
-  photoViewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  photoViewerImg: { width: '100%', flex: 1, borderRadius: 12 },
-  photoViewerDate: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 12 },
 });

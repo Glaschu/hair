@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
@@ -7,10 +7,10 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useApp } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
 import { RootStackParamList } from '../navigation/types';
-import { Icons, RoundBtn } from '../components';
+import { Icons, RoundBtn, useLocalDialog } from '../components';
 import { numberFieldError } from '../data/utils';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'ProductForm'>;
@@ -19,8 +19,8 @@ const CATEGORIES = ['Color', 'Developer', 'Lightener', 'Treatment', 'Styling', '
 const UNITS = ['ml', 'g', 'oz', 'units'];
 
 export default function ProductFormScreen() {
-  const { theme, products, setProducts, services, setServices, appointments, setAppointments } = useApp();
-  const dialog = useDialog();
+  const { theme, products, setProducts, services, setServices, appointments, setAppointments, vatRate } = useApp();
+  const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -35,10 +35,30 @@ export default function ProductFormScreen() {
   const [reorder, setReorder] = useState(String(existing?.reorder || ''));
   const [perUse, setPerUse] = useState(String(existing?.perUse || ''));
   const [cost, setCost] = useState(String(existing?.cost || ''));
+  const [vatApplied, setVatApplied] = useState(existing?.hasVat || false);
   const [barcode, setBarcode] = useState(existing?.barcode || '');
   const [scannerOpen, setScannerOpen] = useState(false);
 
   const [permission, requestPermission] = useCameraPermissions();
+
+  // `cost` is always what she pays in total. When VAT is on, the net is
+  // derived from it rather than kept alongside it — so editing the total
+  // re-splits the breakdown instead of silently dropping the VAT flag.
+  // Brands she has already typed, so the second tube of Goldwell doesn't
+  // become "goldwell" and split the shelf in two.
+  const knownBrands = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const p of products) {
+      const label = p.brand.trim();
+      if (!label) continue;
+      const key = label.toLowerCase();
+      if (!seen.has(key)) seen.set(key, label);
+    }
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  }, [products]);
+
+  const grossCost = parseFloat(cost) || 0;
+  const netCost = vatApplied ? grossCost / (1 + vatRate / 100) : grossCost;
 
   const fieldErrors = {
     size: numberFieldError(size, { positive: true }),
@@ -54,7 +74,7 @@ export default function ProductFormScreen() {
     if (!permission?.granted) {
       const { granted } = await requestPermission();
       if (!granted) {
-        await dialog.alert({
+        await alert({
           title: 'Camera permission required',
           message: 'Please allow camera access to scan barcodes.',
         });
@@ -69,7 +89,7 @@ export default function ProductFormScreen() {
     const conflict = products.find((p) => p.barcode === data && p.id !== existing?.id);
     if (conflict) {
       setScannerOpen(false);
-      dialog.alert({
+      alert({
         title: 'Barcode in use',
         message: `This barcode is already assigned to "${conflict.name}".`,
       });
@@ -87,6 +107,7 @@ export default function ProductFormScreen() {
     const perUseNum = parseFloat(perUse) || 0;
     const costNum = parseFloat(cost) || 0;
     const status = stockNum === 0 ? 'out' as const : stockNum <= reorderNum ? 'low' as const : 'ok' as const;
+    const bCostNum = vatApplied ? Math.round(netCost * 100) / 100 : undefined;
 
     if (existing) {
       setProducts((prev) => prev.map((p) => p.id === existing.id ? {
@@ -94,6 +115,7 @@ export default function ProductFormScreen() {
         name: name.trim(), brand: brand.trim(), category,
         size: sizeNum, unit, stock: stockNum, reorder: reorderNum,
         perUse: perUseNum, cost: costNum, status, barcode: barcode || undefined,
+        hasVat: vatApplied, baseCost: bCostNum,
       } : p));
     } else {
       setProducts((prev) => [...prev, {
@@ -101,6 +123,7 @@ export default function ProductFormScreen() {
         name: name.trim(), brand: brand.trim(), category,
         size: sizeNum, unit, stock: stockNum, reorder: reorderNum,
         perUse: perUseNum, cost: costNum, status, barcode: barcode || undefined,
+        hasVat: vatApplied, baseCost: bCostNum,
       }]);
     }
     nav.goBack();
@@ -108,7 +131,7 @@ export default function ProductFormScreen() {
 
   const deleteProduct = async () => {
     if (!existing) return;
-    const ok = await dialog.confirm({
+    const ok = await confirm({
       title: 'Delete product',
       message: `Remove ${existing.name}? It will also be removed from any services and appointments that use it.`,
       confirmLabel: 'Delete',
@@ -132,7 +155,7 @@ export default function ProductFormScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
       {/* Header */}
       <View style={styles.header}>
-        <RoundBtn onPress={() => nav.goBack()} size={38}>
+        <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
           <Icons.chevronLeft size={18} color={theme.ink} />
         </RoundBtn>
         <Text style={[styles.headerTitle, { color: theme.ink }]}>
@@ -156,6 +179,30 @@ export default function ProductFormScreen() {
           <Div theme={theme} />
           <FieldRow label="Brand" value={brand} onChangeText={setBrand} placeholder="e.g. Goldwell" theme={theme} />
         </View>
+
+        {knownBrands.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[styles.chipRow, { paddingTop: 10 }]}
+          >
+            {knownBrands.map((b) => {
+              const picked = brand.trim().toLowerCase() === b.toLowerCase();
+              return (
+                <Pressable
+                  key={b}
+                  onPress={() => setBrand(picked ? '' : b)}
+                  style={[styles.chip, { backgroundColor: picked ? theme.accent : theme.bg2 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Brand ${b}`}
+                >
+                  <Text style={[styles.chipText, { color: picked ? '#fff' : theme.ink2 }]}>{b}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
 
         {/* Category */}
         <SectionLabel label="CATEGORY" theme={theme} />
@@ -210,7 +257,61 @@ export default function ProductFormScreen() {
         {/* Cost */}
         <SectionLabel label="COST" theme={theme} />
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
-          <FieldRow label="Unit cost (£)" value={cost} onChangeText={setCost} placeholder="e.g. 12.50" keyboardType="decimal-pad" theme={theme} error={fieldErrors.cost} />
+          <FieldRow
+            label="Unit cost (£)"
+            value={cost}
+            onChangeText={setCost}
+            placeholder="e.g. 12.50"
+            keyboardType="decimal-pad"
+            theme={theme}
+            error={fieldErrors.cost}
+          />
+          <View style={[styles.divider, { backgroundColor: theme.line }]} />
+          {vatApplied ? (
+            <View style={{ padding: 16 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Text style={{ fontSize: 13, color: theme.ink2 }}>Product cost</Text>
+                <Text style={{ fontSize: 13, color: theme.ink }}>£{netCost.toFixed(2)}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
+                <Text style={{ fontSize: 13, color: theme.ink2 }}>+ {vatRate}% VAT</Text>
+                <Text style={{ fontSize: 13, color: theme.ink }}>£{(grossCost - netCost).toFixed(2)}</Text>
+              </View>
+              <View style={{ height: 1, backgroundColor: theme.line, marginBottom: 10 }} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: theme.ink }}>Total</Text>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: theme.ink }}>£{grossCost.toFixed(2)}</Text>
+              </View>
+              <Pressable
+                onPress={() => {
+                  // Put the cost back to what it was before VAT went on.
+                  setCost(netCost > 0 ? netCost.toFixed(2) : '');
+                  setVatApplied(false);
+                }}
+                style={({ pressed }) => [{
+                  alignSelf: 'flex-start', paddingVertical: 6,
+                  opacity: pressed ? 0.6 : 1,
+                }]}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '500', color: theme.ink2 }}>
+                  Remove {vatRate}% VAT
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => {
+                if (grossCost <= 0) return;
+                setCost((grossCost * (1 + vatRate / 100)).toFixed(2));
+                setVatApplied(true);
+              }}
+              style={({ pressed }) => [{ padding: 12, alignItems: 'center', backgroundColor: pressed ? theme.bg2 : 'transparent' }]}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '500', color: grossCost > 0 ? theme.accent : theme.ink3 }}>
+                + Add {vatRate}% VAT
+              </Text>
+            </Pressable>
+          )}
         </View>
 
         {/* Barcode */}
@@ -287,6 +388,7 @@ export default function ProductFormScreen() {
           </CameraView>
         </View>
       </Modal>
+      {dialog}
     </SafeAreaView>
   );
 }
@@ -329,7 +431,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, gap: 12,
   },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: '600', fontStyle: 'italic' },
+  headerTitle: { flex: 1, fontSize: 18, fontFamily: SERIF },
   saveBtn: { paddingHorizontal: 18, paddingVertical: 9, borderRadius: 999 },
   saveBtnText: { fontSize: 14, fontWeight: '600' },
 

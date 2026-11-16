@@ -1,0 +1,14 @@
+appId: com.glaschu.iris
+---
+# A client known only by name — no number, no email — as she might add someone
+# from Instagram. The booking should fill the number in.
+- tapOn:
+    point: "400,110"
+- extendedWaitUntil:
+    visible: "e.g. Sophie Williams"
+    timeout: 10000
+- inputText: "Ada Drill"
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: ".*Ada Drill.*"
+    timeout: 10000

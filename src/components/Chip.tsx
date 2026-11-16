@@ -14,6 +14,8 @@ export function Chip({ children, active, onPress }: Props) {
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!active }}
       style={[
         styles.chip,
         {

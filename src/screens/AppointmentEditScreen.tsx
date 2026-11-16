@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, TextInput, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -7,6 +7,7 @@ import { useApp } from '../data/AppContext';
 import { RootStackParamList } from '../navigation/types';
 import { Icons, RoundBtn } from '../components';
 import { numberFieldError } from '../data/utils';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AppointmentEdit'>;
@@ -29,19 +30,25 @@ export default function AppointmentEditScreen() {
 
   const handleSave = () => {
     if (!isValid) return;
-    setAppointments((prev) => prev.map((a) =>
-      a.id === appt.id
-        ? { ...a, service: selectedService, price: parseFloat(priceInput) || a.price, notes: notesInput }
-        : a
-    ));
+    const svc = services.find((s) => s.name === selectedService);
+    setAppointments((prev) => prev.map((a) => {
+      if (a.id !== appt.id) return a;
+      const next = { ...a, service: selectedService, price: parseFloat(priceInput) || a.price, notes: notesInput };
+      // A different service means a different duration — recompute the end time.
+      if (svc && selectedService !== appt.service) {
+        next.end = new Date(new Date(a.start).getTime() + svc.duration * 60000).toISOString();
+      }
+      return next;
+    }));
     nav.goBack();
   };
 
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <RoundBtn onPress={() => nav.goBack()} size={38}>
+        <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
           <Icons.chevronLeft size={18} color={theme.ink} />
         </RoundBtn>
         <Text style={[styles.headerTitle, { color: theme.ink }]}>Edit Appointment</Text>
@@ -65,11 +72,12 @@ export default function AppointmentEditScreen() {
           </Text>
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: 60 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+        <View style={{ flex: 1 }}>
+          <ScrollView
+            contentContainerStyle={{ padding: 20, paddingBottom: 60 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
           {/* Service picker */}
           <Text style={[styles.label, { color: theme.ink3 }]}>SERVICE</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 28 }}>
@@ -123,9 +131,11 @@ export default function AppointmentEditScreen() {
             numberOfLines={4}
             textAlignVertical="top"
           />
-        </ScrollView>
+          </ScrollView>
+        </View>
       )}
     </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -139,7 +149,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 16,
   },
-  headerTitle: { fontSize: 20, fontWeight: '500', fontStyle: 'italic' },
+  headerTitle: { fontSize: 20, fontFamily: SERIF },
   saveBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 10 },
   saveBtnText: { fontSize: 15, fontWeight: '600' },
   priceError: { fontSize: 11, marginTop: 6 },

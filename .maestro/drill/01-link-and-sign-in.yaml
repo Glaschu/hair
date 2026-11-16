@@ -1,0 +1,72 @@
+appId: com.glaschu.iris
+name: Drill 1 — link this phone to the live booking service, and sign in
+env:
+  OUTPUT_DIR: screenshots/drill
+---
+- launchApp:
+    clearState: true
+- setOrientation: PORTRAIT
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "Send clients a link to book themselves"
+    direction: DOWN
+- tapOn:
+    text: "Online booking"
+    index: 1
+# The keychain survives a reinstall, so a link from an earlier run may still be
+# there. Unlink it and start clean.
+- runFlow:
+    when:
+      visible: "Booking service.*"
+    commands:
+      - tapOn: "Booking service.*"
+      - scrollUntilVisible:
+          element:
+            text: "Unlink this device.*"
+          direction: DOWN
+      - tapOn: "Unlink this device.*"
+      - tapOn: "Unlink"
+      - tapOn: "Back"
+- extendedWaitUntil:
+    visible: "Set up booking service.*"
+    timeout: 10000
+- tapOn: "Set up booking service.*"
+- extendedWaitUntil:
+    visible: "Link this device"
+    timeout: 10000
+
+# A simulator has no camera — the code is pasted, as on a phone showing its own setup page.
+- tapOn:
+    id: "setup-code"
+- inputText: ${SETUP_CODE}
+- tapOn: "OR PASTE THE CODE"
+- takeScreenshot: ${OUTPUT_DIR}/01-code-pasted
+- tapOn: "Use this code"
+
+# Firebase deployment: straight on to signing in.
+- extendedWaitUntil:
+    visible: "you@yoursalon.co.uk"
+    timeout: 30000
+- takeScreenshot: ${OUTPUT_DIR}/02-sign-in
+- tapOn: "you@yoursalon.co.uk"
+- inputText: ${EMAIL}
+- tapOn: "At least six characters"
+- inputText: ${PASSWORD}
+- tapOn: "PASSWORD"
+- tapOn:
+    text: "Sign in"
+    index: 1
+# First sign-in: the app asks before making a new account.
+- runFlow:
+    when:
+      visible: "Create account"
+    commands:
+      - tapOn: "Create account"
+- extendedWaitUntil:
+    visible: "Nearly there"
+    timeout: 30000
+- takeScreenshot: ${OUTPUT_DIR}/03-waiting-for-access

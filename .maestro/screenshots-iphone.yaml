@@ -1,0 +1,59 @@
+appId: com.glaschu.iris
+name: App Store screenshots — iPhone
+env:
+  OUTPUT_DIR: screenshots/iphone-6.9
+---
+# Selectors note: RN Pressables group child text into ONE accessibility
+# element joined with ", " (e.g. the tab bar reads "Today, tab, 1 of 4"),
+# and Maestro text matching is a full-string regex — hence the .* patterns.
+
+# Start from a clean install, then load the demo dataset via Settings so
+# every screen is populated with realistic content.
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "Reset / wipe data.*"
+    direction: DOWN
+- tapOn: "Reset / wipe data.*"
+- tapOn: "Reset to demo data"
+- tapOn: "OK"
+
+# Relaunch so the flow starts from the Today tab with demo data in place.
+- launchApp
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+- takeScreenshot: ${OUTPUT_DIR}/01-today
+
+- tapOn: "Calendar, tab.*"
+- waitForAnimationToEnd
+- takeScreenshot: ${OUTPUT_DIR}/02-calendar
+
+- tapOn: "Clients, tab.*"
+- extendedWaitUntil:
+    visible: ".*Margot Lebreton.*"
+    timeout: 10000
+- takeScreenshot: ${OUTPUT_DIR}/03-clients
+
+- tapOn: ".*Margot Lebreton.*"
+- waitForAnimationToEnd
+- takeScreenshot: ${OUTPUT_DIR}/04-client-detail
+
+# Relaunch to reset navigation back to the tab bar.
+- launchApp
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+- tapOn: "Inventory, tab.*"
+- waitForAnimationToEnd
+- takeScreenshot: ${OUTPUT_DIR}/05-inventory
+
+- tapOn: "Today, tab.*"
+- tapOn: "DAY AT A GLANCE.*"
+- waitForAnimationToEnd
+- takeScreenshot: ${OUTPUT_DIR}/06-reports

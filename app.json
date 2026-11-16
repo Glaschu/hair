@@ -3,7 +3,7 @@
     "name": "iris",
     "slug": "iris",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
@@ -14,9 +14,22 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.glaschu.iris",
-      "buildNumber": "6",
+      "buildNumber": "16",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UISupportedInterfaceOrientations": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationPortraitUpsideDown"
+        ],
+        "UISupportedInterfaceOrientations~ipad": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationPortraitUpsideDown",
+          "UIInterfaceOrientationLandscapeLeft",
+          "UIInterfaceOrientationLandscapeRight"
+        ],
+        "LSApplicationQueriesSchemes": [
+          "instagram"
+        ]
       }
     },
     "android": {
@@ -51,7 +64,15 @@
           "photosPermission": "Iris uses your photo library to attach client before and after photos."
         }
       ],
-      "expo-font"
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Iris uses your calendar to sync appointments."
+        }
+      ],
+      "expo-font",
+      "react-native-cloud-storage",
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {

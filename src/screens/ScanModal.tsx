@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, Pressable, StyleSheet,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -22,6 +22,7 @@ export default function ScanModal() {
   const { theme, products, setProducts } = useApp();
   const { confirm, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [matched, setMatched] = useState<Product | null>(null);
   const [restockQty, setRestockQty] = useState(1);
@@ -111,31 +112,31 @@ export default function ScanModal() {
         facing="back"
         barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr'] }}
         onBarcodeScanned={scanning ? handleBarcodeScanned : undefined}
-      >
-        {/* Top bar */}
-        <SafeAreaView edges={['top']}>
-          <View style={styles.topBar}>
-            <Pressable onPress={() => nav.goBack()} style={styles.closeBtn}>
-              <Icons.close size={18} color="#fff" />
-            </Pressable>
-            <Text style={styles.topTitle}>SCAN TO RESTOCK</Text>
-            <View style={{ width: 38 }} />
-          </View>
-        </SafeAreaView>
+      />
 
-        {/* Viewfinder */}
-        <View style={styles.viewfinderWrap} pointerEvents="none">
-          <View style={styles.viewfinder}>
-            <View style={[styles.corner, styles.cornerTL]} />
-            <View style={[styles.corner, styles.cornerTR]} />
-            <View style={[styles.corner, styles.cornerBL]} />
-            <View style={[styles.corner, styles.cornerBR]} />
-          </View>
-          {scanning && (
-            <Text style={styles.scanHint}>Point at a product barcode</Text>
-          )}
+      {/* Viewfinder (absolute) */}
+      <View style={styles.viewfinderWrap} pointerEvents="none">
+        <View style={styles.viewfinder}>
+          <View style={[styles.corner, styles.cornerTL]} />
+          <View style={[styles.corner, styles.cornerTR]} />
+          <View style={[styles.corner, styles.cornerBL]} />
+          <View style={[styles.corner, styles.cornerBR]} />
         </View>
-      </CameraView>
+        {scanning && (
+          <Text style={styles.scanHint}>Point at a product barcode</Text>
+        )}
+      </View>
+
+      {/* Top bar (absolute) */}
+      <View style={[styles.safeTop, { paddingTop: Math.max(insets.top, 20) }]}>
+        <View style={styles.topBar}>
+          <Pressable onPress={() => nav.goBack()} style={styles.closeBtn} hitSlop={20}>
+            <Icons.close size={18} color="#fff" />
+          </Pressable>
+          <Text style={styles.topTitle}>SCAN TO RESTOCK</Text>
+          <View style={{ width: 38 }} />
+        </View>
+      </View>
 
       {/* History strip */}
       {history.length > 0 && !matched && (
@@ -230,6 +231,7 @@ const styles = StyleSheet.create({
   permCancel: { marginTop: 4 },
   permCancelText: { color: 'rgba(255,255,255,0.4)', fontSize: 14 },
 
+  safeTop: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
   topBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12,

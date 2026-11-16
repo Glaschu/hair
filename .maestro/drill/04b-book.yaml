@@ -1,0 +1,35 @@
+appId: com.apple.mobilesafari
+name: Drill 4b — the client picks a time, agrees, and goes to pay
+env:
+  OUTPUT_DIR: screenshots/drill
+---
+- tapOn: "10:00"
+- tapOn: "YOUR NAME"
+- inputText: "Ada Drill"
+- tapOn: "MOBILE"
+- inputText: "07700 900123"
+- tapOn: "EMAIL (OPTIONAL)"
+- inputText: "ada.drill@example.com"
+# Safari's keyboard covers the lower half of the page: close it before tapping
+# anything down there, or the tap lands on a key.
+- tapOn: "Done"
+# Centred, not just visible: Safari's floating toolbar covers the bottom of
+# the page, and a tap there lands on the toolbar.
+- scrollUntilVisible:
+    element:
+      text: ".*read the cancellation policy and agree.*"
+    direction: DOWN
+    centerElement: true
+- tapOn: ".*read the cancellation policy and agree.*"
+- scrollUntilVisible:
+    element:
+      text: "Book .*"
+    direction: DOWN
+    centerElement: true
+- takeScreenshot: ${OUTPUT_DIR}/08-ready-to-book
+- tapOn: "Book .*"
+# Stripe's own page: its card field, not anything on ours.
+- extendedWaitUntil:
+    visible: ".*1234 1234 1234 1234.*|Card information|Card number"
+    timeout: 45000
+- takeScreenshot: ${OUTPUT_DIR}/09-stripe-checkout

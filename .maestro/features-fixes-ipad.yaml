@@ -1,0 +1,62 @@
+appId: com.glaschu.iris
+name: Fix check — full-screen record card, decimal stock (iPad)
+env:
+  OUTPUT_DIR: screenshots/fixes-ipad
+---
+# ---- Seed demo data ----
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "Reset / wipe data.*"
+    direction: DOWN
+- tapOn: "Reset / wipe data.*"
+- tapOn: "Reset to demo data"
+- tapOn: "OK"
+- launchApp
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+
+# ---- Client record card: full screen, photos beside formula & notes ----
+- tapOn: "Clients"
+- tapOn:
+    text: ".*Margot Lebreton.*"
+    index: 0
+- extendedWaitUntil:
+    visible: "HAIR PROFILE"
+    timeout: 10000
+- assertVisible: "PHOTOS"
+- assertVisible: ".*Add before & after photos.*"
+- takeScreenshot: ${OUTPUT_DIR}/01-record-card-full-screen
+
+# ---- Decimal stock: type 3.5 into a stock-take count ----
+- launchApp
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- tapOn: "Inventory"
+- tapOn: "Stock-take"
+- extendedWaitUntil:
+    visible: "Stock-take"
+    timeout: 10000
+- tapOn: "Koleston 6/0 count"
+- eraseText
+- inputText: "3.5"
+- assertVisible: "3.5"
+- takeScreenshot: ${OUTPUT_DIR}/03-stock-take-decimal
+- assertVisible: ".*1 change.*"
+- tapOn: ".*Update 1 item.*"
+
+# Reopen stock-take: the saved count is still 3.5, not rounded to 3 or 4.
+- tapOn: "Stock-take"
+- extendedWaitUntil:
+    visible: "Stock-take"
+    timeout: 10000
+- assertVisible: "3.5"
+- assertVisible: "No changes"
+- takeScreenshot: ${OUTPUT_DIR}/04-stock-saved-decimal

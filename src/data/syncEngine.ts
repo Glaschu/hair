@@ -1,0 +1,147 @@
+import { CloudStorage } from 'react-native-cloud-storage';
+import { File, Paths, Directory } from 'expo-file-system';
+import { ExportPayload, ClientPhoto } from './types';
+import { sanitizePayload } from './sanitize';
+import { mergeById, mergeClients, mergeAppointments } from './merge';
+
+const SYNC_FILE = '/iris-sync.json';
+
+/**
+ * Pushes the current local database state to iCloud.
+ */
+export async function pushSync(payload: ExportPayload): Promise<void> {
+  const available = await CloudStorage.isCloudAvailable();
+  if (!available) throw new Error('iCloud is not available on this device');
+
+  let finalPayload = payload;
+  const exists = await CloudStorage.exists(SYNC_FILE);
+  if (exists) {
+    try {
+      const raw = await CloudStorage.readFile(SYNC_FILE);
+      // The remote file may have been written by another app version or corrupted
+      // in transit — repair it before merging so bad records never reach the UI.
+      const remote = sanitizePayload(JSON.parse(raw) as ExportPayload);
+      if (remote.version === 1) {
+        finalPayload = {
+          version: 1,
+          exported: new Date().toISOString(),
+          tombstones: { ...remote.tombstones, ...payload.tombstones },
+          clients: mergeClients(payload.clients, remote.clients, { ...remote.tombstones, ...payload.tombstones }),
+          products: mergeById(payload.products, remote.products, { ...remote.tombstones, ...payload.tombstones }),
+          appointments: mergeAppointments(payload.appointments, remote.appointments, { ...remote.tombstones, ...payload.tombstones }),
+          services: mergeById(payload.services, remote.services, { ...remote.tombstones, ...payload.tombstones }),
+          schedule: { ...remote.schedule, ...payload.schedule },
+          daysOff: mergeById(payload.daysOff ?? [], remote.daysOff ?? [], { ...remote.tombstones, ...payload.tombstones }),
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to parse remote file before push', e);
+    }
+  }
+
+  const json = JSON.stringify(finalPayload);
+  await CloudStorage.writeFile(SYNC_FILE, json);
+  
+  // Explicitly tell the OS iCloud daemon to push this file to the cloud immediately
+  try {
+    await CloudStorage.triggerSync(SYNC_FILE);
+  } catch {}
+}
+
+/**
+ * Pulls the remote state from iCloud and merges it with the local state based on updatedAt.
+ * Returns the merged payload, or null if there is no remote data.
+ */
+export async function pullSync(localPayload: ExportPayload): Promise<ExportPayload | null> {
+  const available = await CloudStorage.isCloudAvailable();
+  if (!available) throw new Error('iCloud is not available on this device');
+
+  try {
+    await CloudStorage.triggerSync(SYNC_FILE);
+  } catch {
+    // Ignore if unsupported or offline
+  }
+
+  const exists = await CloudStorage.exists(SYNC_FILE);
+  if (!exists) return null; // Nothing to pull
+
+  const raw = await CloudStorage.readFile(SYNC_FILE);
+  const remote = sanitizePayload(JSON.parse(raw) as ExportPayload);
+
+  if (remote.version !== 1) throw new Error('Unsupported sync version');
+
+  const merged: ExportPayload = {
+    version: 1,
+    exported: new Date().toISOString(),
+    tombstones: { ...localPayload.tombstones, ...remote.tombstones },
+    clients: mergeClients(localPayload.clients, remote.clients, { ...localPayload.tombstones, ...remote.tombstones }),
+    products: mergeById(localPayload.products, remote.products, { ...localPayload.tombstones, ...remote.tombstones }),
+    appointments: mergeAppointments(localPayload.appointments, remote.appointments, { ...localPayload.tombstones, ...remote.tombstones }),
+    services: mergeById(localPayload.services, remote.services, { ...localPayload.tombstones, ...remote.tombstones }),
+    schedule: { ...localPayload.schedule, ...remote.schedule },
+    // A day blocked on the iPad has to be off on the phone too — otherwise a
+    // link sent from the phone offers her holiday.
+    daysOff: mergeById(localPayload.daysOff ?? [], remote.daysOff ?? [], { ...localPayload.tombstones, ...remote.tombstones }),
+  };
+
+  return merged;
+}
+
+/**
+ * Syncs photos bidirectionally between local device and iCloud.
+ */
+export async function syncPhotos(photos: ClientPhoto[]): Promise<void> {
+  try {
+    const available = await CloudStorage.isCloudAvailable();
+    if (!available) return;
+  } catch {
+    return;
+  }
+
+  const localDir = new Directory(Paths.document, 'photos');
+  if (!localDir.exists) localDir.create();
+
+  // Create remote dir if not exists
+  try {
+    const remoteExists = await CloudStorage.exists('/photos');
+    if (!remoteExists) {
+      await CloudStorage.mkdir('/photos');
+    }
+  } catch {
+    // might fail if exists or no permission, ignore
+  }
+
+  const remoteFiles = await CloudStorage.readdir('/photos').catch(() => [] as string[]);
+
+  for (const photo of photos) {
+    if (!photo.url) continue;
+    const filename = photo.url.split('/').pop();
+    if (!filename) continue;
+
+    const localFile = new File(localDir, filename);
+    const remotePath = `/photos/${filename}`;
+    
+    try {
+      await CloudStorage.triggerSync(remotePath);
+    } catch {}
+
+    const existsRemote = remoteFiles.includes(filename);
+
+    if (localFile.exists && !existsRemote) {
+      // Upload local to remote
+      try {
+        await CloudStorage.uploadFile(remotePath, localFile.uri.replace(/^file:\/\//, ''), { mimeType: 'image/jpeg' });
+      } catch (e) {
+        console.warn('Failed to upload photo', e);
+      }
+    } else if (!localFile.exists && existsRemote) {
+      // Download remote to local
+      try {
+        await CloudStorage.downloadFile(remotePath, localFile.uri.replace(/^file:\/\//, ''));
+      } catch (e) {
+        console.warn('Failed to download photo', e);
+      }
+    }
+  }
+}
+

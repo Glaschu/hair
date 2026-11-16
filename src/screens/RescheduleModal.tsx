@@ -5,15 +5,17 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
 import { RootStackParamList } from '../navigation/types';
-import { Icons, RoundBtn, CustomTimeRow } from '../components';
+import { Icons, RoundBtn, CustomTimeRow, useLocalDialog } from '../components';
 import { fmt, isSameDay, addDays, checkSchedule, fmtHHMM, DAY_NAMES, generateTimeSlots } from '../data/utils';
 import { hasConflict } from '../data/booking';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'RescheduleModal'>;
 
 export default function RescheduleModal() {
-  const { theme, appointments, setAppointments, services, schedule, bookingWindowDays } = useApp();
+  const { theme, appointments, setAppointments, services, schedule, daysOff, bookingWindowDays } = useApp();
+  const { confirm, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -23,6 +25,19 @@ export default function RescheduleModal() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState<{ h: number; m: number } | null>(null);
   const [showCustomTime, setShowCustomTime] = useState(false);
+  const scrollRef = React.useRef<ScrollView>(null);
+
+  React.useEffect(() => {
+    if (scrollRef.current) {
+      const idx = Array.from({ length: bookingWindowDays }, (_, i) => addDays(new Date(), i))
+        .findIndex(d => isSameDay(d, selectedDate));
+      if (idx > 0) {
+        setTimeout(() => {
+          scrollRef.current?.scrollTo({ x: Math.max(0, idx * 56 - 60), animated: true });
+        }, 50);
+      }
+    }
+  }, []);
 
   const svc = services.find((s) => s.name === appt.service);
   const durationMins = svc?.duration ?? 60;
@@ -54,17 +69,27 @@ export default function RescheduleModal() {
     if (!selectedTime) return null;
     const d = new Date(selectedDate);
     d.setHours(selectedTime.h, selectedTime.m, 0, 0);
-    return checkSchedule(schedule, d, durationMins);
-  }, [schedule, selectedDate, selectedTime, durationMins]);
+    return checkSchedule(schedule, d, durationMins, daysOff);
+  }, [schedule, daysOff, selectedDate, selectedTime, durationMins]);
 
   const canSave = selectedTime !== null;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!selectedTime) return;
     const newStart = new Date(selectedDate);
     newStart.setHours(selectedTime.h, selectedTime.m, 0, 0);
     const newEnd = new Date(newStart);
     newEnd.setMinutes(newEnd.getMinutes() + durationMins);
+    // The slot grid greys out taken times, but a custom time can still overlap.
+    if (hasConflict(newStart, newEnd, takenSlots)) {
+      const ok = await confirm({
+        title: 'Time conflict',
+        message: 'This overlaps an existing appointment.',
+        confirmLabel: 'Move anyway',
+        tone: 'destructive',
+      });
+      if (!ok) return;
+    }
     setAppointments((prev) => prev.map((a) =>
       a.id === appt.id
         ? { ...a, start: newStart.toISOString(), end: newEnd.toISOString() }
@@ -77,7 +102,7 @@ export default function RescheduleModal() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <RoundBtn onPress={() => nav.goBack()} size={38}>
+        <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
           <Icons.chevronLeft size={18} color={theme.ink} />
         </RoundBtn>
         <Text style={[styles.headerTitle, { color: theme.ink }]}>Reschedule</Text>
@@ -104,7 +129,7 @@ export default function RescheduleModal() {
         <Text style={[styles.sectionLabel, { color: theme.ink3 }]}>PICK A DATE</Text>
 
         {/* Date strip */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 24 }}>
+        <ScrollView ref={scrollRef} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 24 }}>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {Array.from({ length: bookingWindowDays }, (_, i) => addDays(new Date(), i)).map((day, i, arr) => {
               const isSelected = isSameDay(day, selectedDate);
@@ -114,7 +139,7 @@ export default function RescheduleModal() {
                   {showMonth && (
                     <View style={styles.monthDivider}>
                       <Text style={[styles.monthDividerText, { color: theme.ink3 }]}>
-                        {day.toLocaleDateString('en-GB', { month: 'long' })}
+                        {day.toLocaleDateString(undefined, { month: 'long' })}
                       </Text>
                     </View>
                   )}
@@ -123,7 +148,7 @@ export default function RescheduleModal() {
                     style={[styles.datePill, { backgroundColor: isSelected ? theme.accent : theme.bg2 }]}
                   >
                     <Text style={[styles.datePillDay, { color: isSelected ? '#fff' : theme.ink3 }]}>
-                      {day.toLocaleDateString('en-GB', { weekday: 'short' })}
+                      {day.toLocaleDateString(undefined, { weekday: 'short' })}
                     </Text>
                     <Text style={[styles.datePillNum, { color: isSelected ? '#fff' : theme.ink }]}>
                       {day.getDate()}
@@ -142,7 +167,7 @@ export default function RescheduleModal() {
           {timeSlots.map(({ h, m }) => {
             const taken = isSlotTaken(h, m);
             const sel = selectedTime?.h === h && selectedTime?.m === m;
-            const label = `${h % 12 || 12}:${m.toString().padStart(2, '0')}${h >= 12 ? 'pm' : 'am'}`;
+            const label = fmt.clock(h, m);
             return (
               <Pressable
                 key={`${h}${m}`}
@@ -179,7 +204,9 @@ export default function RescheduleModal() {
                 {scheduleCheck.dayClosed ? 'Booking on a day off' : 'Outside working hours'}
               </Text>
               <Text style={[styles.schedWarnSub, { color: theme.ink2 }]}>
-                {scheduleCheck.dayClosed
+                {scheduleCheck.dayOff
+                  ? `You've blocked this day off${scheduleCheck.dayOff.note ? ` (${scheduleCheck.dayOff.note})` : ''}.`
+                  : scheduleCheck.dayClosed
                   ? `${DAY_NAMES[selectedDate.getDay()]} is marked as closed.`
                   : scheduleCheck.day
                     ? `${DAY_NAMES[selectedDate.getDay()]} runs ${fmtHHMM(scheduleCheck.day.start)}–${fmtHHMM(scheduleCheck.day.end)}`
@@ -197,6 +224,7 @@ export default function RescheduleModal() {
           </View>
         )}
       </ScrollView>
+      {dialog}
     </SafeAreaView>
   );
 }
@@ -211,7 +239,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 16,
   },
-  headerTitle: { fontSize: 20, fontWeight: '500', fontStyle: 'italic' },
+  headerTitle: { fontSize: 20, fontFamily: SERIF },
   saveBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 10 },
   saveBtnText: { fontSize: 15, fontWeight: '600' },
   summaryStrip: {

@@ -7,11 +7,11 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../data/AppContext';
-import { useDialog } from '../data/DialogContext';
 import { savePhoto, deletePhoto } from '../db/photos';
 import { RootStackParamList } from '../navigation/types';
-import { Avatar, Icons, RoundBtn } from '../components';
+import { Avatar, Icons, RoundBtn, useLocalDialog } from '../components';
 import { createClient } from '../data/utils';
+import { SERIF } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'ClientForm'>;
@@ -27,7 +27,7 @@ const HAIR_NATURALS = ['Dark brown', 'Medium brown', 'Light brown', 'Blonde', 'R
 
 export default function ClientFormScreen() {
   const { theme, clients, setClients, appointments, setAppointments } = useApp();
-  const dialog = useDialog();
+  const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
 
@@ -42,28 +42,45 @@ export default function ClientFormScreen() {
   const [savingPhoto, setSavingPhoto] = useState(false);
 
   const pickPhoto = async (useCamera: boolean) => {
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-    if (!result.canceled && result.assets[0]) {
-      setSavingPhoto(true);
-      try {
-        const uri = await savePhoto(result.assets[0].uri);
-        if (photo) await deletePhoto(photo);
-        setPhoto(uri);
-      } catch {
-        await dialog.alert({
-          title: "Couldn't save photo",
-          message: 'The photo could not be saved. Please try again.',
-        });
-      } finally {
-        setSavingPhoto(false);
+    try {
+      if (useCamera) {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (perm.status !== 'granted') {
+          await alert({ title: 'Permission Denied', message: 'Camera access is required.' });
+          return;
+        }
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (perm.status !== 'granted') {
+          await alert({ title: 'Permission Denied', message: 'Photo library access is required.' });
+          return;
+        }
       }
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8 })
+        : await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8, mediaTypes: ['images'] });
+      if (!result.canceled && result.assets[0]) {
+        setSavingPhoto(true);
+        try {
+          const uri = await savePhoto(result.assets[0].uri);
+          if (photo) await deletePhoto(photo);
+          setPhoto(uri);
+        } catch {
+          await alert({
+            title: "Couldn't save photo",
+            message: 'The photo could not be saved. Please try again.',
+          });
+        } finally {
+          setSavingPhoto(false);
+        }
+      }
+    } catch (e) {
+      await alert({ title: 'Error', message: 'Could not open camera or library.' });
     }
   };
 
   const promptPhoto = async () => {
-    const idx = await dialog.actionSheet({
+    const idx = await actionSheet({
       title: 'Photo',
       actions: [
         { label: 'Take Photo' },
@@ -96,6 +113,7 @@ export default function ClientFormScreen() {
         name: name.trim(), phone, email, instagram: instagram.trim(), tone, photo, vip,
         hair: { type: hairType, length: hairLength, natural: hairNatural },
         formula, allergies: allergies.trim() || 'None on file', notes,
+        updatedAt: Date.now(),
       } : c));
     } else {
       const newClient = createClient({
@@ -116,7 +134,7 @@ export default function ClientFormScreen() {
     const apptNote = clientAppts.length > 0
       ? ` This also removes ${clientAppts.length} appointment${clientAppts.length === 1 ? '' : 's'} (${completed} completed, ${upcoming} upcoming).`
       : '';
-    const ok = await dialog.confirm({
+    const ok = await confirm({
       title: 'Delete client',
       message: `Remove ${existing.name} permanently?${apptNote}`,
       confirmLabel: 'Delete',
@@ -129,10 +147,11 @@ export default function ClientFormScreen() {
   };
 
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
       {/* Header */}
       <View style={styles.header}>
-        <RoundBtn onPress={() => nav.goBack()} size={38}>
+        <RoundBtn label="Back" onPress={() => nav.goBack()} size={38}>
           <Icons.chevronLeft size={18} color={theme.ink} />
         </RoundBtn>
         <Text style={[styles.headerTitle, { color: theme.ink }]}>
@@ -146,7 +165,7 @@ export default function ClientFormScreen() {
         </Pressable>
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
+      <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
         {/* Avatar preview */}
@@ -261,8 +280,10 @@ export default function ClientFormScreen() {
           </Pressable>
         )}
       </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
+    {dialog}
+    </KeyboardAvoidingView>
   );
 }
 
@@ -337,7 +358,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     gap: 12,
   },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: '600', fontStyle: 'italic' },
+  headerTitle: { flex: 1, fontSize: 18, fontFamily: SERIF },
   saveBtn: { paddingHorizontal: 18, paddingVertical: 9, borderRadius: 999 },
   saveBtnText: { fontSize: 14, fontWeight: '600' },
 

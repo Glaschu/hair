@@ -1,0 +1,22 @@
+appId: com.glaschu.iris
+name: Check — the app explains instead of dead-ending
+---
+- launchApp:
+    clearState: true
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "Send clients a link to book themselves"
+    direction: DOWN
+- tapOn:
+    text: "Online booking"
+    index: 1
+- extendedWaitUntil:
+    visible: "Set up booking service.*"
+    timeout: 8000
+# Nothing is linked, so Settings must say so rather than implying it is ready.
+# RN groups a Pressable's children into one accessibility string joined with
+# ", ", so the row reads as title + subtitle together. Matching the subtitle
+# alone finds nothing.
+- assertVisible: ".*Connect this device to your own booking page.*"
+- takeScreenshot: ${OUTPUT_DIR}/cap-01-settings

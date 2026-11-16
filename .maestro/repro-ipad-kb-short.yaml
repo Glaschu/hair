@@ -1,0 +1,45 @@
+appId: com.glaschu.iris
+name: Repro 3 — keyboard up, form shorter than the sheet
+env:
+  OUTPUT_DIR: screenshots/repro
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "Reset / wipe data.*"
+    direction: DOWN
+- tapOn: "Reset / wipe data.*"
+- tapOn: "Reset to demo data"
+- tapOn: "OK"
+- launchApp
+- extendedWaitUntil:
+    visible: "New booking"
+    timeout: 30000
+- tapOn:
+    text: ".*Margot Lebreton.*"
+    index: 0
+- tapOn: "Complete"
+- tapOn: "Confirm & complete"
+- extendedWaitUntil:
+    visible: "Add visit notes"
+    timeout: 10000
+- tapOn: "Add visit notes"
+- assertVisible: "VISIT RECORD.*"
+
+# Keyboard up, only the 3 default products — the everyday case.
+- tapOn: "Anything to remember about this visit…"
+- inputText: "Warm at the ends"
+- takeScreenshot: ${OUTPUT_DIR}/short-01-keyboard-up
+
+# Can she reach the photo buttons at the bottom of the record?
+- scrollUntilVisible:
+    element:
+      text: "PHOTOS"
+    direction: DOWN
+    timeout: 10000
+- takeScreenshot: ${OUTPUT_DIR}/short-02-reached-bottom
