@@ -68,9 +68,9 @@ jobs:
       - name: build
         run: |
           if [ "${{ inputs.testflight }}" = "true" ]; then
-            npx eas build --platform ios --profile production --non-interactive --auto-submit
+            eas build --platform ios --profile production --non-interactive --auto-submit
           else
-            npx eas build --platform ios --profile production --non-interactive
+            eas build --platform ios --profile production --non-interactive
           fi
 
       - name: what was built
