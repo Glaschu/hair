@@ -8,6 +8,8 @@ on:
   push:
     branches: ['**']
   pull_request:
+  # And by hand, from the Actions tab, on any branch.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -25,7 +27,19 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx tsc --noEmit -p tsconfig.json
-      - run: npx jest --ci
+      - run: npx jest --ci --json --outputFile=jest-results.json
+      # The count on the run's own page, so nobody has to read the log for it.
+      - name: what ran
+        if: always()
+        run: |
+          node -e "
+            const r = require('./jest-results.json');
+            const lines = ['### App tests', '',
+              '- ' + r.numPassedTests + ' passed, ' + r.numFailedTests + ' failed, in ' + r.numTotalTestSuites + ' files'];
+            for (const f of r.testResults) for (const t of f.assertionResults)
+              if (t.status === 'failed') lines.push('- failed: ' + t.fullName);
+            require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          "
 
   service:
     name: booking service · integration
