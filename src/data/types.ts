@@ -1,3 +1,5 @@
+import type { DayOff } from './daysOff';
+
 export interface HairInfo {
   type: string;
   length: string;
@@ -105,5 +107,7 @@ export interface ExportPayload {
   appointments: Appointment[];
   services: Service[];
   schedule: Schedule;
+  /** Days she has blocked off. Absent from backups made before they existed. */
+  daysOff?: DayOff[];
   tombstones?: Record<string, number>;
 }

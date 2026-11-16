@@ -48,3 +48,6 @@ screenshots/
 /firebase/.firebase
 firestore-debug.log
 firebase-debug.log
+/firebase/public
+# Copied from firebase/src on every deploy — the tested copy is the only one to commit.
+/firebase/functions/src

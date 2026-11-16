@@ -283,3 +283,131 @@ describe('a missing claim locks nobody out', () => {
     await assertFails(getDoc(doc(bare, 'salons/salon-a/bookings/b1')));
   });
 });
+
+describe('getting her in without a service-account key', () => {
+  /**
+   * The self-hosting bootstrap: she signs in with an email link, and her uid
+   * goes in an allowlist document. No Cloud Function, no downloaded key, no
+   * secret leaving the project.
+   */
+  const allow = (uids) => env.withSecurityRulesDisabled((ctx) =>
+    setDoc(doc(ctx.firestore(), 'config/access'), { uids }));
+
+  const signedInAs = (uid) => env.authenticatedContext(uid, {
+    firebase: { sign_in_provider: 'emailLink' },
+  }).firestore();
+
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled((ctx) =>
+      setDoc(doc(ctx.firestore(), 'bookings/b1'),
+        { status: 'confirmed', sealed: 'x', version: 0 }));
+  });
+
+  test('an allowlisted uid gets in with no custom claim at all', async () => {
+    await allow(['her-phone-uid']);
+    await assertSucceeds(getDoc(doc(signedInAs('her-phone-uid'), 'bookings/b1')));
+  });
+
+  test('a signed-in stranger does not', async () => {
+    await allow(['her-phone-uid']);
+    await assertFails(getDoc(doc(signedInAs('someone-else'), 'bookings/b1')));
+  });
+
+  test('with no allowlist at all, nobody is in', async () => {
+    // The state a fresh project is in. Failing shut is the right direction to
+    // be wrong in.
+    await assertFails(getDoc(doc(signedInAs('her-phone-uid'), 'bookings/b1')));
+  });
+
+  test('an empty allowlist is not a wildcard', async () => {
+    await allow([]);
+    await assertFails(getDoc(doc(signedInAs('her-phone-uid'), 'bookings/b1')));
+  });
+
+  test('the allowlist cannot be read or written by anyone signed in', async () => {
+    // A client-writable allowlist is not an allowlist. `stylist()` reads it via
+    // get(), which the rules engine evaluates — the caller never needs access.
+    await allow(['her-phone-uid']);
+    const her = signedInAs('her-phone-uid');
+    await assertFails(getDoc(doc(her, 'config/access')));
+    await assertFails(setDoc(doc(her, 'config/access'), { uids: ['her-phone-uid', 'a-friend'] }));
+  });
+
+  test('being on the allowlist does not make her an admin', async () => {
+    // It grants the same narrow shape a claim would. She still cannot rewrite
+    // money or status.
+    await allow(['her-phone-uid']);
+    const her = signedInAs('her-phone-uid');
+    await assertFails(updateDoc(doc(her, 'bookings/b1'), { status: 'cancelled', version: 1 }));
+    await assertSucceeds(updateDoc(doc(her, 'bookings/b1'), { clientNote: 'box dye', version: 1 }));
+  });
+
+  test('an anonymous sign-in is not rescued by the allowlist', async () => {
+    await allow(['ghost']);
+    const ghost = env.authenticatedContext('ghost', {
+      firebase: { sign_in_provider: 'anonymous' },
+    }).firestore();
+    await assertFails(getDoc(doc(ghost, 'bookings/b1')));
+  });
+
+  test('the claim still works, for the deployment that can set one', async () => {
+    // Hosted has a Function to set it; self-hosted does not. Both doors, one
+    // set of permissions behind them.
+    await assertSucceeds(getDoc(doc(hers(), 'bookings/b1')));
+  });
+});
+
+describe('marking a booking seen', () => {
+  /**
+   * The inbox drains through this one write, and it is the write most likely to
+   * be silently impossible: `version + 1` does not evaluate to 1 on a document
+   * with no version, it ERRORS, and an erroring rule denies. A booking created
+   * without a version is therefore one she can never clear — it redelivers to
+   * her diary forever, and nothing anywhere reports a fault.
+   */
+  const confirmed = (extra = {}) => ({ token: 't1', status: 'confirmed', seenAt: null, ...extra });
+
+  test('a booking with no version can never be cleared, at any bump', async () => {
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), 'bookings/b1'), confirmed());
+    });
+    await assertFails(updateDoc(doc(hers(), 'bookings/b1'), { seenAt: 1 }));
+    await assertFails(updateDoc(doc(hers(), 'bookings/b1'), { seenAt: 1, version: 1 }));
+  });
+
+  test('a versioned booking clears with the bump', async () => {
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), 'bookings/b2'), confirmed({ version: 0 }));
+    });
+    await assertSucceeds(updateDoc(doc(hers(), 'bookings/b2'), { seenAt: 1, version: 1 }));
+  });
+
+  test('clearing without bumping is refused, so a stale replay cannot land', async () => {
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), 'bookings/b3'), confirmed({ version: 4 }));
+    });
+    await assertFails(updateDoc(doc(hers(), 'bookings/b3'), { seenAt: 1 }));
+  });
+
+  test('un-seeing WITH a bump is allowed, and is safe', async () => {
+    // Not a hole: putting a booking back in the inbox only makes it redeliver,
+    // and intake recognises the appointment it already wrote. Worth pinning as
+    // deliberate, because it looks like one at a glance.
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), 'bookings/b5'), confirmed({ version: 4, seenAt: 99 }));
+    });
+    await assertSucceeds(updateDoc(doc(hers(), 'bookings/b5'), { seenAt: null, version: 5 }));
+  });
+
+  test('marking seen can never be used to smuggle a status change', async () => {
+    // The field list is the guard: money and status stay out of her reach, so
+    // a refunded booking cannot come back to life via the inbox.
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), 'bookings/b4'), confirmed({ version: 0, status: 'refunded' }));
+    });
+    await assertFails(updateDoc(doc(hers(), 'bookings/b4'), {
+      seenAt: 1, version: 1, status: 'confirmed',
+    }));
+  });
+});
+

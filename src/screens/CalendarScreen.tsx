@@ -10,6 +10,8 @@ const COL_W = '14.2857%' as const;
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../data/AppContext';
+import { DayOffBanner } from '../components/DayOffBanner';
+import { dayOffOn } from '../data/daysOff';
 import { RootStackParamList } from '../navigation/types';
 import { Avatar, Icons, RoundBtn } from '../components';
 import { fmt, isSameDay, addDays, startOfWeek, is24Hour } from '../data/utils';
@@ -34,7 +36,7 @@ const shiftMonth = (date: Date, offset: number) => {
 };
 
 export default function CalendarScreen() {
-  const { theme, appointments, clients, density } = useApp();
+  const { theme, appointments, clients, density, daysOff } = useApp();
   const nav = useNavigation<Nav>();
   const [view, setView] = useState<CalView>('week');
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -104,6 +106,7 @@ export default function CalendarScreen() {
               const isSelected = isSameDay(day, selectedDate);
               const isToday = isSameDay(day, new Date());
               const dayAppts = appointments.filter((a) => isSameDay(new Date(a.start), day));
+              const isOff = !!dayOffOn(daysOff, day);
               return (
                 <Pressable
                   key={day.toISOString()}
@@ -118,11 +121,16 @@ export default function CalendarScreen() {
                     isSelected && { backgroundColor: theme.accent },
                     isToday && !isSelected && { borderWidth: 1.5, borderColor: theme.accent },
                   ]}>
-                    <Text style={[styles.dayNumText, { color: isSelected ? '#fff' : isToday ? theme.accent : theme.ink }]}>
+                    <Text style={[styles.dayNumText, {
+                      color: isSelected ? '#fff' : isToday ? theme.accent : isOff ? theme.ink3 : theme.ink,
+                      textDecorationLine: isOff && !isSelected ? 'line-through' : 'none',
+                    }]}>
                       {day.getDate()}
                     </Text>
                   </View>
-                  {dayAppts.length > 0 && (
+                  {isOff ? (
+                    <Text style={{ fontSize: 9, fontWeight: '700', letterSpacing: 0.5, color: theme.ink3 }}>OFF</Text>
+                  ) : dayAppts.length > 0 && (
                     <View style={[styles.dot, { backgroundColor: isSelected ? '#fff' : theme.accent }]} />
                   )}
                 </Pressable>
@@ -178,6 +186,7 @@ export default function CalendarScreen() {
       {/* Day view content */}
       {view === 'day' && (
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
+          <DayOffBanner date={selectedDate} style={{ marginHorizontal: 20, marginBottom: 10 }} />
           <DayHourGrid appts={todayAppts} date={selectedDate} density={density} />
         </ScrollView>
       )}
@@ -354,7 +363,7 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
   onSelectDate: (d: Date) => void;
   appts: any[];
 }) {
-  const { theme, clients } = useApp();
+  const { theme, clients, daysOff } = useApp();
   const nav = useNavigation<Nav>();
 
   const year = selectedDate.getFullYear();
@@ -379,6 +388,7 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
           const isSelected = isSameDay(day, selectedDate);
           const isToday = isSameDay(day, new Date());
           const hasAppts = appts.some((a) => isSameDay(new Date(a.start), day));
+          const isOff = !!dayOffOn(daysOff, day);
           return (
             <Pressable
               key={day.toISOString()}
@@ -391,8 +401,9 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
                 isToday && !isSelected && { borderWidth: 1.5, borderColor: theme.accent },
               ]}>
                 <Text style={[styles.monthCellText, {
-                  color: isSelected ? '#fff' : isToday ? theme.accent : theme.ink,
+                  color: isSelected ? '#fff' : isToday ? theme.accent : isOff ? theme.ink3 : theme.ink,
                   fontWeight: isToday || isSelected ? '700' : '400',
+                  textDecorationLine: isOff && !isSelected ? 'line-through' : 'none',
                 }]}>
                   {day.getDate()}
                 </Text>
@@ -410,6 +421,7 @@ function MonthView({ selectedDate, onSelectDate, appts }: {
         <Text style={[styles.monthDayTitle, { color: theme.ink3 }]}>
           {selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}
         </Text>
+        <DayOffBanner date={selectedDate} style={{ marginBottom: 12 }} />
         {dayAppts.length === 0 ? (
           <Text style={[styles.noAppts, { color: theme.ink3 }]}>No appointments</Text>
         ) : (

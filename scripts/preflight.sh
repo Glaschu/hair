@@ -115,10 +115,69 @@ else
   ok "claims are read safely"
 fi
 
+head_ "The live service"
+
+# A secret can be perfectly well set in Secret Manager and still be invisible to
+# the function: v2 functions only see what they DECLARE. Both halves matter —
+# the key creates the payment, the webhook secret is how the service learns it
+# was paid.
+if grep -q "'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'" firebase/functions/index.js; then
+  ok "the function declares both Stripe secrets, so setting them actually binds them"
+else
+  no "the Stripe secrets are not both declared on the function" \
+     "firebase/functions/index.js — a set secret it does not declare is a secret it cannot read"
+fi
+
+# The whole money path, driven end to end through the real routes: page →
+# deposit → signed webhook → her inbox, plus refunds and a lapsed hold. Every
+# piece had its own tests before; nothing crossed the seams, and the live
+# service advertised deposits with no webhook route at all.
+if [ -f firebase/money.test.mjs ] && grep -q "money.test.mjs" firebase/package.json; then
+  ok "the money path is tested end to end through the deployed routes"
+else
+  no "no end-to-end test of the money path" "firebase/money.test.mjs, wired into test:emulated"
+fi
+
+# What the service SAYS it can do has to match what it can actually do, because
+# the booking page believes this and sends every booking to Stripe on the
+# strength of it. "The deposit route answered something other than 501" is NOT
+# that proof — it passed while there was no webhook route, which meant every
+# payment would have been taken and never confirmed.
+LIVE=$(curl -s --max-time 8 https://jessie-salon.web.app/api/version 2>/dev/null || true)
+if [ -z "$LIVE" ]; then
+  hmm "the live service did not answer" "offline, or jessie-salon.web.app is down"
+elif printf '%s' "$LIVE" | grep -q '"deposits"'; then
+  # Deposits are advertised, so a payment must be able to come back. An
+  # unsigned delivery must be REFUSED (400) — which proves the route exists
+  # and the door is shut. A 404 means payments cannot be confirmed at all.
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 -X POST \
+         -H 'content-type: application/json' -d '{}' \
+         https://jessie-salon.web.app/api/stripe/webhook 2>/dev/null || echo 000)
+  if [ "$CODE" = "400" ]; then
+    ok "deposits advertised, and the webhook route is there and refuses unsigned deliveries"
+  else
+    no "the service advertises deposits but cannot be told a payment happened" \
+       "POST /api/stripe/webhook answered $CODE, not 400 — take deposits off until this is fixed"
+  fi
+else
+  hmm "the live service does not offer deposits" \
+      "needs both the Stripe key and the webhook signing secret — fine for the free deployment"
+fi
+
 head_ "Still needs a human"
 
-hmm "Stripe object shapes are unverified" \
-    "the payment logic is proven against stubs. Run the drill with 'stripe trigger' against a sandbox."
+if [ -f firebase/stripeShape.test.mjs ]; then
+  ok "Stripe object shapes verified against a live test account"
+else
+  no "Stripe shapes unverified" "the payment logic is only proven against stubs"
+fi
+if [ -f firebase/eventDrill.test.mjs ]; then
+  ok "Stripe event flow drilled — signature, replay, ordering, rotation"
+else
+  no "event flow undrilled" "a public endpoint that moves money needs the drill"
+fi
+hmm "no live webhook endpoint yet" \
+    "the drill signs its own payloads. Point a real endpoint at a deployed project when there is one."
 hmm "offline queue durability is unmeasured" \
     "force-quit the app with queued writes and confirm they land. Nobody documents this."
 hmm "the SQLite migration has never run on real data" \

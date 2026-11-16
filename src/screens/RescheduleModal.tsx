@@ -14,7 +14,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'RescheduleModal'>;
 
 export default function RescheduleModal() {
-  const { theme, appointments, setAppointments, services, schedule, bookingWindowDays } = useApp();
+  const { theme, appointments, setAppointments, services, schedule, daysOff, bookingWindowDays } = useApp();
   const { confirm, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
@@ -69,8 +69,8 @@ export default function RescheduleModal() {
     if (!selectedTime) return null;
     const d = new Date(selectedDate);
     d.setHours(selectedTime.h, selectedTime.m, 0, 0);
-    return checkSchedule(schedule, d, durationMins);
-  }, [schedule, selectedDate, selectedTime, durationMins]);
+    return checkSchedule(schedule, d, durationMins, daysOff);
+  }, [schedule, daysOff, selectedDate, selectedTime, durationMins]);
 
   const canSave = selectedTime !== null;
 
@@ -204,7 +204,9 @@ export default function RescheduleModal() {
                 {scheduleCheck.dayClosed ? 'Booking on a day off' : 'Outside working hours'}
               </Text>
               <Text style={[styles.schedWarnSub, { color: theme.ink2 }]}>
-                {scheduleCheck.dayClosed
+                {scheduleCheck.dayOff
+                  ? `You've blocked this day off${scheduleCheck.dayOff.note ? ` (${scheduleCheck.dayOff.note})` : ''}.`
+                  : scheduleCheck.dayClosed
                   ? `${DAY_NAMES[selectedDate.getDay()]} is marked as closed.`
                   : scheduleCheck.day
                     ? `${DAY_NAMES[selectedDate.getDay()]} runs ${fmtHHMM(scheduleCheck.day.start)}–${fmtHHMM(scheduleCheck.day.end)}`

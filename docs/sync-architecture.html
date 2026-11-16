@@ -124,7 +124,7 @@
   <h1 class="serif">Never Lose A Booking</h1>
   <p class="standfirst">Moving iris onto Firebase so deposits and appointments survive anything —
   without handing Google a readable copy of her client list. Three ways to host it, one app.</p>
-  <div class="rev">Revision 16 · 15 September 2026 · 357 tests · 12 preflight checks · 3 for a human</div>
+  <div class="rev">Revision 32 · 23 September 2026 · 528 tests · the lost paid booking, found and fixed</div>
 
   <nav class="toc">
     <a href="#bugs">Defects fixed</a>
@@ -321,15 +321,64 @@
   </div>
 
   <div class="call key">
+    <div class="lab">It is running</div>
+    <p><strong>https://jessie-salon.web.app</strong> — the booking page, the pairing page and the
+    API, all on one origin, with rules and indexes deployed and the database refusing strangers.</p>
+    <p>One thing learned the hard way: a deploy can report <em>"file upload complete"</em> and still
+    not have released. The first attempt failed at the very end on an unrelated cleanup policy, which
+    aborted the hosting release — the files were uploaded, the site served "Site Not Found", and the
+    log read like success. Upload complete is not release complete.</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">The Firestore API fixes a hazard rather than porting it</div>
+    <p>On the Worker, claiming a slot and writing the booking were two statements — a process dying
+    between them burned the hour with no booking behind it, which is one of the eight defects found
+    earlier and fixed with a batch.</p>
+    <p>In Firestore a link and its slots are <strong>one document</strong>, so the claim, the count
+    and the booking are a single transaction. The hazard stops being something to remember and
+    becomes something the database will not let you do. Two people going for the same hour is now a
+    test that passes because of the storage model, not because of care.</p>
+  </div>
+
+  <div class="call flag">
+    <div class="lab">A soundness problem, found and fixed</div>
+    <p>The transaction wrappers — the resolver, the webhook handler, the outbox drainer — were
+    written against the <strong>client</strong> SDK and tested against it. Cloud Functions run the
+    <strong>Admin</strong> SDK. So the code 33 tests were proving was not the code that would ship,
+    and the two differ in ways that matter: <code>snap.exists</code> is a property in the Admin SDK
+    and a <em>method</em> in the client one.</p>
+    <p>A entirely green suite would have thrown on the first real request. All three are now written
+    and tested against the Admin SDK, pointed at the emulator through
+    <code>FIRESTORE_EMULATOR_HOST</code>. The pure logic — 94 tests across the decision, the
+    classifier, the outbox state machine and the reconciler — never touched an SDK and did not
+    change.</p>
+  </div>
+
+  <div class="call key">
     <div class="lab">Built and tested this pass — 41 tests</div>
     <p>The classifier and the webhook handler exist, with Stripe stubbed at the re-fetch boundary.
     Every ordering hazard the red team named now has a test: a refund overtaking a confirmation, five
     concurrent deliveries of one event, a completed-but-unpaid session, money arriving late, money
     failing late, a dispute that a redelivered completion cannot undo, and a payment whose booking
     has vanished.</p>
-    <p>What is <em>not</em> proven is the wire format — these tests show the logic is right, not that
-    Stripe's objects look the way I think they do. That needs a sandbox and
-    <code>stripe trigger</code>, and it is the one thing still waiting on an account.</p>
+    <p><strong>The wire format is no longer an assumption.</strong>
+    <code>src/stripeShape.mjs</code> maps what Stripe actually returns onto the shape the classifier
+    reads, and its fixtures are real responses captured from a live test account rather than shapes
+    invented to match the code. Three claims this document had only asserted are now checked: a
+    session's <code>expires_at</code> defaults to exactly 24 hours, the floor really is 30 minutes,
+    and a PaymentIntent carries <em>no</em> <code>client_reference_id</code> — so the booking id must
+    go in <code>payment_intent_data.metadata</code> or half the reconciler's sweep cannot be mapped
+    back to a booking.</p>
+    <p><strong>The event flow is drilled too.</strong> No Stripe CLI was available, so payloads are
+    signed with Stripe's own scheme — which suited the drill better, because it lets a refund be
+    delivered <em>before</em> its confirmation and a secret be rotated mid-flight exactly rather than
+    approximately. <code>src/stripeWebhook.mjs</code> is the door; <code>eventDrill.test.mjs</code>
+    runs signed payload → door → handler → database.</p>
+    <p>The row worth calling out: <strong>a botched secret rotation shows up as refusals, not
+    silence.</strong> That is the outage that reads as "nobody is booking", and it is why the design
+    alarms on <code>signatureFailures &gt; 0</code> rather than waiting for someone to notice an
+    empty diary.</p>
   </div>
 
   <div class="call flag">
@@ -533,6 +582,84 @@
       frozen the instant the response goes. The transaction and the 200 are the handler's only
       effects; everything else is an outbox row.</li>
     </ul>
+  </div>
+
+  <div class="call key">
+    <div class="lab">The paid booking that would never have arrived</div>
+    <p>Two fields, two meanings: <code>classification</code> is what the <em>money</em> did,
+    <code>status</code> is what the <em>booking</em> is. The webhook handler moved the first and
+    never the second, so a confirmed payment left the booking at
+    <code>pending_payment</code> — and the inbox her device reads asks for
+    <code>status == 'confirmed'</code>.</p>
+    <p><strong>Money taken, appointment never delivered, nobody told.</strong> The exact outcome
+    this design exists to prevent, sitting in the deployed service. Status now follows the
+    classification, but <em>only ever out of</em> <code>pending_payment</code>, so a late webhook
+    cannot resurrect a booking she already cancelled.</p>
+    <p>Beneath it, a second one: the deposit path never stored the sealed envelope, so even once
+    fixed she would have received an appointment with no name. It has to be captured before the
+    money moves — the webhook arrives long after the page holding those details has closed.</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">A secret that was set, and still invisible</div>
+    <p>The Stripe key was in Secret Manager, correctly set, and the deposit route still answered
+    <strong>501</strong>. A v2 function only reads secrets it <em>declares</em>: without
+    <code>secrets: ['STRIPE_SECRET_KEY']</code> in the options,
+    <code>process.env.STRIPE_SECRET_KEY</code> is undefined and the route behaves exactly as
+    though no key had ever been set. Nothing anywhere says why.</p>
+    <p>The proof it is bound is not the capabilities line — it is the route answering
+    <code>404 expired</code> for an unknown link instead of <code>501</code>, which means the
+    client was built and the lookup ran. Two preflight checks now hold it: that the function
+    declares the secret, and that a service advertising <code>deposits</code> is not
+    simultaneously answering 501 on the deposit route.</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">The last few feet, closed</div>
+    <p>A booking made on the web now lands in her diary on a pull-down. The commit goes
+    <strong>straight to SQLite, not through React state</strong>: the service is told a booking is
+    safe the moment <code>apply</code> resolves, and a state setter resolves when React has been
+    <em>asked</em> to re-render — a different and much earlier moment, and the exact window the
+    ordering exists to close.</p>
+    <p>One function knows there are two deployments. It caught a fresh bug: on Firebase it fell
+    through to the HTTP inbox, and <strong>there is no <code>/api/bookings</code> there</strong> —
+    only the public booking routes are Functions. Silent 404s on every refresh, reported as
+    "bookings never arrive".</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">A booking that could never be cleared</div>
+    <p>Her device clears the inbox by writing <code>seenAt</code>. The rules enforce
+    compare-and-swap — every edit of hers must carry <code>version + 1</code> — and that
+    expression <strong>does not evaluate to 1 on a document with no version, it errors, and an
+    erroring rule denies</strong>. Neither writer was stamping a version, so every booking was one
+    she could never clear: redelivered forever, with nothing reporting a fault. Proven in the
+    emulator, fixed at both writers, pinned by four rules tests.</p>
+    <p>The inbox itself is at-least-once delivery applied idempotently: <strong>the diary is
+    written before the booking is acknowledged</strong>, so the failure mode is a duplicate
+    delivery rather than a lost Saturday. The local id is derived from the service's id, so a
+    re-delivery collides with itself instead of becoming two appointments — dedupe that survives a
+    restart and a restore from backup.</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">Deployed, and switched off</div>
+    <p>The deposit route is live and answers <strong>501</strong> — <code>stripeClient()</code>
+    returns null without a key, so the route ships <em>inert</em> rather than present and broken.
+    Turning deposits on becomes one secret rather than a deploy.</p>
+    <p>Two encoding details that are silently expensive: Stripe wants nested objects as
+    <code>a[b][c]=v</code>, and the <strong>idempotency key is a header, not a field</strong> — as a
+    field it is ignored, every retry becomes a new session, and that is a second charge.</p>
+  </div>
+
+  <div class="call key">
+    <div class="lab">Built this pass — 16 tests, no live key needed</div>
+    <p><code>src/deposit.mjs</code> creates the Checkout Session and holds the slot. Four decisions
+    carry it: the session is created <strong>before</strong> the hold is written, so a refusal from
+    Stripe costs no chair time; <code>expires_at</code> is never left to default, because Stripe's
+    default would hold a Saturday morning until Sunday; <strong>held is not taken</strong>, since
+    only a signed webhook takes a slot; and holds lapse <strong>by being read</strong>, so an outage
+    in the sweeper can never block a booking.</p>
   </div>
 
   <h3>The one that actually loses money</h3>
@@ -1106,6 +1233,31 @@
   the reconciler.</p>
 
   <div class="call key">
+    <div class="lab">Signing in — built this pass, 27 tests</div>
+    <p>The rules wanted a <code>stylist</code> claim, and setting one needs the Admin SDK — which
+    means a Cloud Function (so Blaze, so a card) or a downloaded service-account key, a file nobody
+    should ask a hairdresser to look after. Either would have made <em>sign-in alone</em> require a
+    billing account, killing the free version before it started.</p>
+    <p>So there are two doors into the same narrow permissions. <strong>A custom claim</strong> for
+    the hosted deployment, which has a Function anyway. <strong>An allowlist document</strong> for
+    self-hosting: she signs in, the app shows a user ID, it goes in <code>config/access</code>. That
+    document is unreadable and unwritable from the app — <code>stylist()</code> reads it through
+    <code>get()</code>, which the rules engine evaluates, so the caller never needs access to it.
+    A client-writable allowlist is not an allowlist.</p>
+    <p>App side: <strong>email and password, not the email link originally planned.</strong> A link
+    has to reopen the app, which needs a URL scheme in <code>app.json</code> and therefore a native
+    rebuild — and this app has no scheme. Password reaches the same signed-in uid with no native
+    change at all. The seam is shaped so <code>signInWithCustomToken</code> can replace it later:
+    the booking service already proves who she is with a device key.</p>
+    <p>The state worth designing for is the middle one — <strong>signed in but not yet allowed
+    in</strong>, which is where every self-hosted first run lands. The app refreshes the token first
+    (permission lives in the token, and claims only change on refresh), then decides by
+    <em>actually reading something</em> rather than guessing. And it never calls that state an
+    error: it is the normal first run, and wording it as a failure would send her looking for a
+    fault that is not there.</p>
+  </div>
+
+  <div class="call key">
     <div class="lab">Check it rather than believe it</div>
     <p><code>scripts/preflight.sh</code> — everything that must be true before a first real deposit,
     written as a script rather than a checklist. A checklist is a list of things somebody believes;
@@ -1114,8 +1266,13 @@
     maths can drift apart, a bypass hostname left on, a Firestore claim read directly (an absent one
     <em>throws</em>, and a thrown condition denies), a missing composite index the emulator will
     never complain about.</p>
-    <p>It exits non-zero and says <em>"Not ready to take a deposit"</em>. Today: <strong>12 passed,
+    <p>It exits non-zero and says <em>"Not ready to take a deposit"</em>. Today: <strong>14 passed,
     0 failed, 3 for a human.</strong></p>
+    <p>The rules are no longer only a local file: they are <strong>deployed to a real project</strong>
+    and the live database was asked, as a stranger, whether it would answer. Five collections
+    refused with 403; <code>public/profile</code> returned 404, which is correct — it is the one
+    document deliberately readable, holding a salon name and a public key, and 404 means the read
+    was allowed and the document is absent.</p>
   </div>
 
   <div class="call key">
@@ -1141,8 +1298,28 @@
 
   <h3>Worth doing, not blocking</h3>
   <ol>
-    <li><strong>Migrate screens onto the capability seam</strong> — mechanical, one screen at a time,
-    and each reviewable on its own.</li>
+    <li><s>Sign-in has no screen.</s> <strong>Built this pass.</strong> The setup code now carries
+    the Firebase project — self-hosting means every stylist has her own and there is nothing to bake
+    in — and its <em>absence</em> is how the app knows a Cloudflare deployment has nothing to sign in
+    to. The Settings row only appears when there is somewhere to go.</li>
+    <li><s>The Firebase deployment's API, and packaging it.</s> <strong>Both done</strong> —
+    <code>firebase/functions/</code> serves the public routes, and hosting rewrites
+    <code>/api/**</code> to it <em>before</em> the page rewrites, so the pages no longer 404 their
+    own API. The shared modules are copied in by a predeploy hook rather than duplicated in the
+    repo, so what deploys is what the tests ran against.</li>
+    <li><s>Not yet run end to end.</s> <strong>Driven this pass</strong>, through the real
+    hosting-plus-functions emulator over HTTP: open a link, book it, watch the link go to 404, see
+    the refund it would attract, cancel, and find the hour back on sale. Pages and API share an
+    origin, so neither deployment needs CORS opened.</li>
+    <li><strong>The SDK versions are pinned to match the tests.</strong> <code>firebase-functions@6</code>
+    caps <code>firebase-admin</code> at 13 while the suite runs 14 — two majors between test and
+    deploy is the same class of problem as testing one SDK and shipping another, so both are held at
+    14 via <code>firebase-functions@7</code>.</li>
+    <li><strong>Two complete deployments.</strong> The split that matters is not hosting, it is
+    whether a card is required: Cloudflare is free with no card and reports
+    <code>booking-links</code> but not <code>deposits</code>; Firebase needs Blaze and reports both.
+    The capability seam already carries that difference — the Firebase side needs its API built as
+    Functions, since hosting alone serves pages whose <code>/api</code> calls 404.</li>
     <li><strong>Confirm Stripe's Accounts v2 version string</strong> in Workbench; every doc example
     is pinned to <code>.preview</code> despite the prose saying otherwise.</li>
     <li><strong>Two drills that need a device</strong>, not a search: whether Firestore's offline

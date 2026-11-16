@@ -1,3 +1,7 @@
+// FIRST, before anything that can load tweetnacl: the secure random source.
+// Hermes has no crypto.getRandomValues, and without it generating the salon's
+// keys throws — which silently broke setting up online booking on every phone.
+import 'react-native-get-random-values';
 import { registerRootComponent } from 'expo';
 
 import App from './App';

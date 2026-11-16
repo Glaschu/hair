@@ -1,8 +1,16 @@
+import { testDb, wipe, closeDb } from './src/testDb.mjs';
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { applyIntent } from './src/applyIntent.mjs';
+
+// Thin shims so the test bodies read the same as before. The Admin SDK is
+// method-on-reference where the client SDK is free functions; nothing else
+// about these tests changes.
+const doc = (d, path) => d.doc(path);
+const collection = (d, path) => d.collection(path);
+const setDoc = (ref, data) => ref.set(data);
+const getDoc = (ref) => ref.get();
+const getDocs = (q) => q.get();
 
 /**
  * The decision is tested exhaustively and without a database in resolve.test.mjs.
@@ -10,26 +18,15 @@ import { applyIntent } from './src/applyIntent.mjs';
  * once, and against real Firestore semantics rather than a mental model of them.
  */
 
-let env, db;
+let db, FieldValue, app;
 const NOW = Date.UTC(2026, 9, 3, 9, 0, 0);
 const h = (n) => n * 3_600_000;
 const DATE = '2026-10-04';
 
-before(async () => {
-  env = await initializeTestEnvironment({
-    projectId: 'iris-resolver-test',
-    firestore: { rules: 'rules_version = "2"; service cloud.firestore { match /{d=**} { allow read, write: if true; } }',
-                 host: '127.0.0.1', port: 8080 },
-  });
-});
-after(async () => { await env?.cleanup(); });
+before(() => { ({ db, FieldValue, app } = testDb('iris-resolver-test')); });
+after(async () => { await closeDb(app); });
 
-beforeEach(async () => {
-  await env.clearFirestore();
-  // The resolver runs with admin privileges, so rules are deliberately not in
-  // play here — that is precisely why it needs its own tests.
-  db = env.unauthenticatedContext().firestore();
-});
+beforeEach(async () => { await wipe(db); });
 
 const writeIntent = (id, over = {}) => setDoc(doc(db, `intents/${id}`), {
   op: 'book',
@@ -134,7 +131,7 @@ describe('applying an intent for real', () => {
     const out = await applyIntent(db, { intentId: 'i1', now: NOW });
 
     assert.equal(out.action, 'review');
-    assert.equal((await getDoc(doc(db, `days/${DATE}`))).exists(), false,
+    assert.equal((await getDoc(doc(db, `days/${DATE}`))).exists, false,
       'nothing was written for a decision that needs a human');
   });
 });

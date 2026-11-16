@@ -103,8 +103,9 @@ describe('setup page ↔ app', () => {
     // rather than from a form field. Scraped rather than duplicated so the two
     // implementations cannot silently drift apart — which is the whole reason
     // this test exists.
-    const line = html.match(/await QRCode\.toCanvas\(el\('qr'\), (JSON\.stringify\(\{[\s\S]*?\}\)),/);
-    expect(line).not.toBeNull();
+    const all = [...html.matchAll(/currentCode = (JSON\.stringify\(\{[\s\S]*?\}\));/g)];
+    const line = all.find((m) => m[1].includes('data.deviceKey'));
+    expect(line).toBeDefined();
     // eslint-disable-next-line no-new-func
     return new Function('data', `return ${line![1]};`)({ url: origin, deviceKey: key });
   }
@@ -124,5 +125,53 @@ describe('setup page ↔ app', () => {
     const parsed = JSON.parse(payload);
     expect(parsed.sk).toBeUndefined();
     expect(parsed.pk).toBeUndefined();
+  });
+});
+
+describe('the Firebase deployment', () => {
+  const fb = { apiKey: 'AIza-test', authDomain: 'jessie-salon.firebaseapp.com', projectId: 'jessie-salon' };
+
+  function firebaseCodeFromSetupPage(origin: string): string {
+    const html = fs.readFileSync(path.join(__dirname, '../../../booking/site/setup.html'), 'utf8');
+    // Scraped, like the Cloudflare code above, so the page and the app cannot
+    // drift apart. This is the variant built from Hosting's init.json.
+    const all = [...html.matchAll(/currentCode = (JSON\.stringify\(\{[\s\S]*?\}\));/g)];
+    const firebaseOne = all.find((m) => m[1].includes('fb:'));
+    expect(firebaseOne).toBeDefined();
+    // eslint-disable-next-line no-new-func
+    return new Function('location', 'fb', `return ${firebaseOne![1]};`)({ origin }, fb);
+  }
+
+  it("reads the setup page's code, which has no device key, and keeps the project", () => {
+    // Before: the empty device key was rejected, and a code that did get
+    // through had its Firebase config thrown away at the next step.
+    const scanned = decodeScannedCode(firebaseCodeFromSetupPage('https://jessie-salon.web.app'));
+    expect(scanned).toEqual({
+      kind: 'setup', serviceUrl: 'https://jessie-salon.web.app', deviceKey: '',
+      mode: 'self-hosted', firebase: fb,
+    });
+  });
+
+  it('an empty device key is only valid WITH a Firebase project', () => {
+    const noKey = JSON.stringify({ v: 2, kind: 'setup', url: 'https://book.example.com', dk: '' });
+    expect(decodeScannedCode(noKey)).toBeNull();
+  });
+
+  it('carries the project into the credentials a setup code becomes', () => {
+    expect(newCredentials('https://jessie-salon.web.app', '', fb).firebase).toEqual(fb);
+    expect(newCredentials('https://book.example.com', 'dk').firebase).toBeUndefined();
+  });
+
+  it('a second device paired from the first gets the project too', () => {
+    // Without it the second device has the keys but nothing to sign in to.
+    const creds = { ...newCredentials('https://jessie-salon.web.app', '', fb) };
+    const paired = decodePairing(encodePairing(creds));
+    expect(paired?.firebase).toEqual(fb);
+    expect(paired?.keyPair).toEqual(creds.keyPair);
+  });
+
+  it('still reads pairing codes made before the project was carried', () => {
+    const old = JSON.stringify({ v: 1, url: 'https://book.example.com', dk: 'dk', pk: 'pk', sk: 'sk' });
+    expect(decodePairing(old)).toMatchObject({ deviceKey: 'dk', keyPair: { publicKey: 'pk', secretKey: 'sk' } });
   });
 });

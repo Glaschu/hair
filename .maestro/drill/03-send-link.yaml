@@ -1,0 +1,40 @@
+appId: com.glaschu.iris
+name: Drill 3 — send a booking link from a client card
+env:
+  OUTPUT_DIR: screenshots/drill
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "DAY AT A GLANCE.*"
+    timeout: 30000
+- tapOn: "Clients, tab.*"
+- runFlow:
+    when:
+      notVisible: ".*Ada Drill.*"
+    file: 03a-add-client.yaml
+- tapOn:
+    text: ".*Ada Drill.*"
+    index: 0
+- extendedWaitUntil:
+    visible: "Send link"
+    timeout: 10000
+- tapOn: "Send link"
+- extendedWaitUntil:
+    visible: "WHAT ARE THEY BOOKING?"
+    timeout: 10000
+- tapOn: "Consultation.*"
+# A specific time, not a pattern: a time pattern also matches the status bar clock.
+- scrollUntilVisible:
+    element:
+      text: "10:00"
+    direction: DOWN
+- tapOn:
+    text: "10:00"
+    index: 0
+- takeScreenshot: ${OUTPUT_DIR}/05-time-picked
+- tapOn: "Send 1 time to .*"
+# The share sheet: the link is recorded before it opens, so it can be closed.
+- extendedWaitUntil:
+    visible: ".*first come first served.*|Copy|Close"
+    timeout: 30000
+- takeScreenshot: ${OUTPUT_DIR}/06-share-sheet

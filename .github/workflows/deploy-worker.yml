@@ -1,0 +1,56 @@
+# The Cloudflare Worker — the booking API and the public edge.
+#
+# Kept separate from the Firebase deploy on purpose. It is the only component a
+# stranger ever touches, it is covered by its own suite, and it should be
+# shippable without touching anything Google runs.
+name: deploy worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Which environment
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+
+concurrency:
+  group: worker-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm }
+      - run: npm ci
+
+      - name: the suite that guards the money paths
+        run: node --test booking/test/integration.test.mjs
+
+      # The page needs its copy of the crypto library, and it must be the same
+      # one the app seals with — a version skew here is an envelope that will
+      # not open.
+      - name: vendor the crypto the page seals with
+        run: cp node_modules/tweetnacl/nacl-fast.min.js booking/site/vendor/
+
+      # Every statement in schema.sql is CREATE ... IF NOT EXISTS, so applying
+      # it on every deploy is safe — and it has to come FIRST: code that reads a
+      # table the database does not have yet takes the booking page down.
+      - name: bring the database up to date
+        run: npx wrangler d1 execute iris-booking --remote --file=schema.sql
+        working-directory: booking/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: deploy
+        run: npx wrangler deploy
+        working-directory: booking/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

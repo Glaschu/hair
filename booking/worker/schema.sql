@@ -92,3 +92,12 @@ CREATE TABLE IF NOT EXISTS bookings (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS bookings_request ON bookings(token, request_id);
 CREATE INDEX IF NOT EXISTS bookings_unseen ON bookings(seen_at);
+
+-- Days she has blocked off: a holiday, a course, a day she is ill. Kept here so
+-- every booking path can refuse them — including an hour freed by a client
+-- cancelling, which would otherwise go straight back on offer. Replaced whole
+-- by her device each time she changes them, so it is always her current list.
+CREATE TABLE IF NOT EXISTS days_off (
+  starts_at  TEXT NOT NULL,   -- ISO instant, inclusive
+  ends_at    TEXT NOT NULL    -- ISO instant, exclusive
+);

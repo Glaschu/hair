@@ -48,6 +48,9 @@
     <h1 class="serif">Link your app</h1>
   </div>
 
+  <p class="muted">First time? <a href="/guide.html" style="color:var(--accent);font-weight:600">How online booking
+  works</a> walks through every step, from this code to your first booking.</p>
+
   <p id="loading">Checking who you are&hellip;</p>
 
   <div id="shut" class="hidden">
@@ -60,7 +63,10 @@
     <strong>Settings &rarr; Online booking &rarr; Scan a code</strong>, and point it at this.</p>
     <div class="card qr">
       <canvas id="qr" width="260" height="260"></canvas>
+      <button class="ghost" id="copyCode" type="button">Copy code</button>
     </div>
+    <p class="muted" style="margin-top:10px;font-size:14px">Setting up the phone you're reading this on?
+    It can't scan its own screen — copy the code, then paste it in the app instead.</p>
     <div class="warn" style="margin-top:16px">
       <span>Anyone who photographs this code can take bookings as you. Keep it on your own
       screen and close this tab when you're done.</span>
@@ -104,6 +110,8 @@
   const hide = (...ids) => ids.forEach((id) => el(id).classList.add('hidden'));
 
   let state = null;
+  /* The same text the QR holds, for a phone that cannot scan its own screen. */
+  let currentCode = '';
 
   function fail(message) {
     hide('loading');
@@ -139,9 +147,10 @@
     // v2 adds the mode. This page is a service she runs herself, by definition
     // — a hosted operator issues its own codes after sign-in. Older apps ignore
     // the extra field, and this app still reads v1, so nothing breaks either way.
-    await QRCode.toCanvas(el('qr'), JSON.stringify({
+    currentCode = JSON.stringify({
       v: 2, kind: 'setup', mode: 'self', url: data.url, dk: data.deviceKey,
-    }), { width: 260, margin: 1, color: { dark: '#2A201A', light: '#FFFFFF' } });
+    });
+    await QRCode.toCanvas(el('qr'), currentCode, { width: 260, margin: 1, color: { dark: '#2A201A', light: '#FFFFFF' } });
 
     if (!data.salon) { show('fresh'); return; }
 
@@ -151,7 +160,59 @@
     show('linked');
   }
 
+  /**
+   * The Firebase deployment's code.
+   *
+   * Nothing secret in it: a Firebase web config is public by design, and there
+   * is no device key — her phone signs in with its own account and she approves
+   * it by adding its ID to the allowlist. So this page needs no gate, and
+   * photographing it gets nobody anywhere.
+   */
+  async function paintFirebase(fb) {
+    hide('loading', 'err', 'linked', 'confirm', 'shut');
+    el('fresh').querySelector('.warn span').textContent =
+      "This code only lets a phone ask to join. It can't read anything until you approve it " +
+      'by adding the ID the app shows you to the allowlist.';
+
+    let caps = [];
+    try { caps = (await (await fetch('/api/version')).json()).capabilities || []; } catch (e) { /* shown as off */ }
+    el('stripe').innerHTML = caps.includes('deposits')
+      ? `<div class="policy">
+           <div class="eyebrow" style="margin-bottom:6px">Deposits</div>
+           <div class="policy-text">Your Stripe account is connected, and payments are confirmed
+           back to this service. Deposits go straight to your account.</div>
+         </div>`
+      : `<div class="warn">
+           <span><strong>Deposits are off.</strong> Bookings work fine without them. They switch on
+           once both your Stripe key and its webhook signing secret are set on this service.</span>
+         </div>`;
+    show('stripe');
+
+    currentCode = JSON.stringify({
+      v: 2, kind: 'setup', mode: 'self', url: location.origin, dk: '',
+      fb: { apiKey: fb.apiKey, authDomain: fb.authDomain, projectId: fb.projectId },
+    });
+    await QRCode.toCanvas(el('qr'), currentCode, { width: 260, margin: 1, color: { dark: '#2A201A', light: '#FFFFFF' } });
+    show('fresh');
+  }
+
+  /** Firebase Hosting publishes its project's web config here; nothing else does. */
+  async function firebaseConfig() {
+    try {
+      const res = await fetch('/__/firebase/init.json');
+      if (!res.ok) return null;
+      const fb = await res.json();
+      return fb && fb.projectId && fb.apiKey && fb.authDomain ? fb : null;
+    } catch (e) {
+      // Not JSON — a Cloudflare deployment answering with its own page.
+      return null;
+    }
+  }
+
   async function load() {
+    const fb = await firebaseConfig();
+    if (fb) { await paintFirebase(fb); return; }
+
     let res;
     try {
       res = await fetch('/api/setup/qr', { headers: { accept: 'application/json' } });
@@ -176,6 +237,15 @@
     await paint(await res.json());
   }
 
+  el('copyCode').addEventListener('click', async () => {
+    const btn = el('copyCode');
+    try {
+      await navigator.clipboard.writeText(currentCode);
+      btn.textContent = 'Copied — now paste it in the app';
+    } catch (e) {
+      btn.textContent = "Couldn't copy — scan the code instead";
+    }
+  });
   el('reveal').addEventListener('click', () => { hide('linked'); show('fresh'); });
   el('startOver').addEventListener('click', () => { hide('linked'); show('confirm'); });
   el('keepIt').addEventListener('click', () => { hide('confirm'); show('linked'); });

@@ -6,6 +6,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
 import { useApp, ExportPayload } from '../../data/AppContext';
+import { upcomingDaysOff, describeDayOff } from '../../data/daysOff';
 import { useDialog } from '../../data/DialogContext';
 import { useResponsive } from '../../hooks/useResponsive';
 import { DEFAULT_SCHEDULE } from '../../data/mockData';
@@ -29,7 +30,7 @@ const LEAD_OPTIONS = [
 const TIME_OPTIONS: string[] = [];
 for (let h = 6; h <= 22; h++) { TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:00`); if (h < 22) TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:30`); }
 
-type SectionId = 'studio' | 'appearance' | 'reminders' | 'preferences' | 'hours' | 'services' | 'sync' | 'data';
+type SectionId = 'studio' | 'appearance' | 'reminders' | 'preferences' | 'hours' | 'services' | 'booking' | 'sync' | 'data';
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: 'studio', label: 'Studio' },
   { id: 'appearance', label: 'Appearance' },
@@ -37,6 +38,7 @@ const SECTIONS: { id: SectionId; label: string }[] = [
   { id: 'preferences', label: 'Preferences' },
   { id: 'hours', label: 'Working hours' },
   { id: 'services', label: 'Services' },
+  { id: 'booking', label: 'Online booking' },
   { id: 'sync', label: 'Sync' },
   { id: 'data', label: 'Data' },
 ];
@@ -137,7 +139,7 @@ export function SettingsIPad() {
     if (busy) return;
     setBusy('export');
     try {
-      const payload: ExportPayload = { version: 1, exported: new Date().toISOString(), clients: app.clients, products: app.products, appointments: app.appointments, services: app.services, schedule: app.schedule };
+      const payload: ExportPayload = { version: 1, exported: new Date().toISOString(), clients: app.clients, products: app.products, appointments: app.appointments, services: app.services, schedule: app.schedule, daysOff: app.daysOff };
       const file = new File(Paths.document, 'iris-export.json');
       file.write(JSON.stringify(payload, null, 2));
       await Sharing.shareAsync(file.uri, { mimeType: 'application/json', dialogTitle: 'Export Iris data' });
@@ -359,6 +361,18 @@ export function SettingsIPad() {
                 );
               })}
             </Card>
+            {/* The exceptions to the week above: never offered in a link, closed on the calendar. */}
+            <Card>
+              <DataRow
+                icon={<Icons.calendar size={16} color={theme.accent} />} bg={theme.accent + '18'}
+                label="Days off"
+                sub={(() => {
+                  const next = upcomingDaysOff(app.daysOff)[0];
+                  return next ? `Next: ${describeDayOff(next)}${next.note ? ` · ${next.note}` : ''}` : 'Block off a holiday or a day away';
+                })()}
+                onPress={() => nav.navigate('DaysOff')}
+              />
+            </Card>
           </Block>
         );
       case 'services':
@@ -375,6 +389,60 @@ export function SettingsIPad() {
                 </Pressable>
               ))}
             </View>
+          </Block>
+        );
+      case 'booking':
+        // The iPad had no way into any of this: booking setup, signing in to
+        // her database and her cancellation policy were phone-only.
+        return (
+          <Block title="ONLINE BOOKING">
+            <Card>
+              <Row label="Online booking" sub="Send clients a link to pick a time">
+                <Toggle on={app.bookingEnabled} onPress={() => app.setBookingEnabled(!app.bookingEnabled)} />
+              </Row>
+              {app.bookingEnabled && (
+                <>
+                  <Divider />
+                  <DataRow
+                    icon={<Icons.clipboardCheck size={16} color={theme.sage} />} bg={theme.sage + '18'}
+                    label="How it works" sub="Setting it up and using it, step by step"
+                    onPress={() => nav.navigate('BookingGuide')}
+                  />
+                  <Divider />
+                  <DataRow
+                    icon={<Icons.calendar size={16} color={theme.accent} />} bg={theme.accent + '18'}
+                    label={app.backend.has('booking-links') ? 'Booking service' : 'Set up booking service'}
+                    sub={!app.backend.has('booking-links') ? 'Connect this iPad to your own booking page'
+                      : app.backend.has('deposits') ? 'Linked · deposits go to your Stripe account'
+                      : 'Linked · connect Stripe to take deposits'}
+                    onPress={() => nav.navigate('BookingSetup')}
+                  />
+                  {app.backend.has('booking-links') && (
+                    <>
+                      <Divider />
+                      <DataRow
+                        icon={<Icons.calendar size={16} color={theme.accent} />} bg={theme.accent + '18'}
+                        label="Cancellation policy"
+                        sub={app.backend.has('deposits')
+                          ? 'What clients agree to, and what comes back'
+                          : 'What clients agree to before booking'}
+                        onPress={() => nav.navigate('CancellationPolicy')}
+                      />
+                    </>
+                  )}
+                  {app.backend.has('live-sync') && (
+                    <>
+                      <Divider />
+                      <DataRow
+                        icon={<Icons.lock size={16} color={theme.sage} />} bg={theme.sage + '18'}
+                        label="Your database" sub="Sign this iPad in to your own storage"
+                        onPress={() => nav.navigate('CloudAccess')}
+                      />
+                    </>
+                  )}
+                </>
+              )}
+            </Card>
           </Block>
         );
       case 'sync':

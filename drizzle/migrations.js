@@ -10,6 +10,7 @@ import m0005 from './0005_bored_wendigo.sql';
 import m0006 from './0006_romantic_wolfpack.sql';
 import m0007 from './0007_windy_captain_midlands.sql';
 import m0008 from './0008_worried_iceman.sql';
+import m0009 from './0009_small_rawhide_kid.sql';
 
   export default {
     journal,
@@ -22,7 +23,8 @@ m0004,
 m0005,
 m0006,
 m0007,
-m0008
+m0008,
+m0009
     }
   }
   

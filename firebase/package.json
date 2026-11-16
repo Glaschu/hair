@@ -5,12 +5,13 @@
   "description": "Firestore security rules and their tests. Kept out of the app's package.json on purpose \u2014 firebase-tools is heavy and the React Native app must never depend on it.",
   "scripts": {
     "test": "npm run test:unit && npm run test:emulated",
-    "test:unit": "node --test resolve.test.mjs outbox.test.mjs payment.test.mjs reconcile.test.mjs",
-    "test:emulated": "firebase emulators:exec --only firestore --project iris-rules-test 'node --test rules.test.mjs applyIntent.test.mjs drainOutbox.test.mjs handleEvent.test.mjs'"
+    "test:unit": "node --test resolve.test.mjs outbox.test.mjs payment.test.mjs reconcile.test.mjs stripeShape.test.mjs stripeWebhook.test.mjs stripeClient.test.mjs",
+    "test:emulated": "firebase emulators:exec --only firestore --project iris-rules-test 'node --test rules.test.mjs applyIntent.test.mjs drainOutbox.test.mjs handleEvent.test.mjs bookingApi.test.mjs eventDrill.test.mjs deposit.test.mjs money.test.mjs'"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.0",
     "firebase": "^12.0.0",
+    "firebase-admin": "^14.4.0",
     "firebase-tools": "^15.0.0"
   }
 }

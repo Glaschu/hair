@@ -1,4 +1,5 @@
 import { ExportPayload, Client, Product, Appointment, Service, ClientPhoto, Schedule, AppointmentStatus } from './types';
+import type { DayOff } from './daysOff';
 
 // Data that crosses the app boundary — file imports, iCloud sync, restored backups —
 // can be hand-edited, truncated, or written by a future/past app version. Everything
@@ -95,6 +96,21 @@ function sanitizeService(s: any): Service | null {
   };
 }
 
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A day off with real dates, in order — anything else is dropped, never guessed at. */
+function sanitizeDayOff(d: any): DayOff | null {
+  const id = str(d?.id);
+  const start = str(d?.start);
+  const end = str(d?.end);
+  if (!id || !DATE_KEY.test(start) || !DATE_KEY.test(end) || end < start) return null;
+  return {
+    id, start, end,
+    ...(typeof d?.note === 'string' && d.note ? { note: d.note.slice(0, 80) } : {}),
+    ...(typeof d?.updatedAt === 'number' ? { updatedAt: d.updatedAt } : {}),
+  };
+}
+
 function sanitizeSchedule(s: any): Schedule {
   const out: Schedule = {};
   if (!s || typeof s !== 'object') return out;
@@ -118,6 +134,7 @@ export function sanitizePayload(data: ExportPayload): ExportPayload {
     appointments: arr(data?.appointments).map(sanitizeAppointment).filter((a): a is Appointment => a !== null),
     services: arr(data?.services).map(sanitizeService).filter((s): s is Service => s !== null),
     schedule: sanitizeSchedule(data?.schedule),
+    daysOff: arr(data?.daysOff).map(sanitizeDayOff).filter((d): d is DayOff => d !== null),
     tombstones: data?.tombstones && typeof data.tombstones === 'object' ? data.tombstones : undefined,
   };
 }

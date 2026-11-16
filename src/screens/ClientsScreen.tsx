@@ -58,7 +58,7 @@ export default function ClientsScreen() {
           <Text style={[styles.eyebrow, { color: theme.ink3 }]}>DIRECTORY</Text>
           <Text style={[styles.title, { color: theme.ink }]}>Clients</Text>
         </View>
-        <RoundBtn onPress={() => nav.navigate('ClientForm', {})} filled size={40}>
+        <RoundBtn label="Add client" onPress={() => nav.navigate('ClientForm', {})} filled size={40}>
           <Icons.plus size={18} color={theme.bg} />
         </RoundBtn>
       </View>

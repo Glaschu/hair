@@ -118,3 +118,15 @@ export const bookingLinks = sqliteTable('booking_links', {
   createdAt:   integer('created_at').notNull(),
   expiresAt:   integer('expires_at').notNull(),
 });
+
+/**
+ * Days she has blocked off: a holiday, a course, a day she is ill. Local
+ * calendar dates, both ends inclusive — see data/daysOff.ts.
+ */
+export const daysOff = sqliteTable('days_off', {
+  id:        text('id').primaryKey(),
+  start:     text('start').notNull(),
+  end:       text('end').notNull(),
+  note:      text('note'),
+  updatedAt: integer('updated_at').$defaultFn(() => Date.now()).$onUpdateFn(() => Date.now()),
+});

@@ -2,7 +2,7 @@ import {
   backendFor, LocalBackend, ServiceBackend, capabilitiesFor, whyUnavailable, notConnected, degraded,
   type Capability, type BackendMode,
 } from '../backend';
-import { newCredentials, decodeScannedCode } from '../bookingLink';
+import { newCredentials, decodeScannedCode, isUsableFirebaseConfig } from '../bookingLink';
 
 /**
  * Three ways to run the same app. The tests that matter here are not about what
@@ -214,5 +214,50 @@ describe('her own Stripe account, connected to her own service', () => {
 
   it('has a fallback reason for anything not spelled out', () => {
     expect(notConnected('push').why.length).toBeGreaterThan(20);
+  });
+});
+
+describe('the setup code carries the project, because self-hosters each have their own', () => {
+  const code = (over: Record<string, unknown> = {}) => JSON.stringify({
+    v: 2, kind: 'setup', url: 'https://book.herstudio.co.uk', dk: 'k', ...over,
+  });
+  const fb = { apiKey: 'AIza-x', authDomain: 'p.firebaseapp.com', projectId: 'p' };
+
+  it('carries a Firebase project through the scan', () => {
+    // There is nothing to bake into the app: every stylist has her own project.
+    expect(decodeScannedCode(code({ fb }))).toMatchObject({ firebase: fb });
+  });
+
+  it('a Cloudflare deployment simply has none, and that is fine', () => {
+    const scanned = decodeScannedCode(code());
+    expect(scanned).toMatchObject({ kind: 'setup' });
+    expect((scanned as { firebase?: unknown }).firebase).toBeUndefined();
+  });
+
+  it('drops a half-filled config rather than half-using it', () => {
+    // Partial is worse than absent: the app would try to sign in to a project
+    // it cannot reach and fail somewhere unhelpful.
+    for (const partial of [
+      { apiKey: 'AIza-x' },
+      { apiKey: 'AIza-x', authDomain: 'p.firebaseapp.com' },
+      { apiKey: '', authDomain: 'p.firebaseapp.com', projectId: 'p' },
+    ]) {
+      expect((decodeScannedCode(code({ fb: partial })) as { firebase?: unknown }).firebase)
+        .toBeUndefined();
+    }
+  });
+
+  it('a config is all three fields or nothing', () => {
+    expect(isUsableFirebaseConfig(fb)).toBe(true);
+    expect(isUsableFirebaseConfig(undefined)).toBe(false);
+    expect(isUsableFirebaseConfig({ ...fb, projectId: '' })).toBe(false);
+  });
+
+  it('a project id is not a credential, and nothing here pretends otherwise', () => {
+    // A web config is public by design. What protects the data is the rules and
+    // the allowlist — so carrying it in a QR costs nothing.
+    const scanned = decodeScannedCode(code({ fb })) as { deviceKey?: string; firebase?: object };
+    expect(scanned.deviceKey).toBe('k');
+    expect(scanned.firebase).toEqual(fb);
   });
 });

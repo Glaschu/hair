@@ -13,9 +13,11 @@ import { RootStackParamList } from '../navigation/types';
 import { Card, Icons, RoundBtn, useLocalDialog } from '../components';
 import {
   BookingCredentials, decodeScannedCode, encodePairing, isUsableServiceUrl,
-  newCredentials, describeService,
+  newCredentials, describeService, type FirebaseConfig,
 } from '../data/bookingLink';
 import { loadCredentials, saveCredentials, clearCredentials } from '../data/bookingStore';
+import { firebaseAuthSdk } from '../data/auth/firebaseSdk';
+import { signOut } from '../data/auth';
 import { registerSalon, checkService, fetchSalon } from '../data/bookingApi';
 import { SERIF } from '../theme';
 
@@ -23,7 +25,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Mode = 'loading' | 'linked' | 'setup' | 'scanning' | 'showing';
 
 export default function BookingSetupScreen() {
-  const { theme, studioName } = useApp();
+  const { theme, studioName, resendDaysOff, refreshBackend } = useApp();
   const { confirm, alert, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const [permission, requestPermission] = useCameraPermissions();
@@ -32,6 +34,12 @@ export default function BookingSetupScreen() {
   const [creds, setCreds] = useState<BookingCredentials | null>(null);
   const [url, setUrl] = useState('');
   const [deviceKey, setDeviceKey] = useState('');
+  /**
+   * A pasted code. A phone cannot scan its own screen, so if she opens the
+   * setup page on the phone she is setting up, copying the code across is the
+   * only way in — and a simulator has no camera at all.
+   */
+  const [pasted, setPasted] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -46,9 +54,27 @@ export default function BookingSetupScreen() {
     try {
       // Ask what the service is before handing it anything.
       await checkService(next.serviceUrl);
+      if (next.firebase) {
+        // On the Firebase deployment there is no device key to prove anything
+        // with: she signs in, and is let in by the allowlist. Registering the
+        // salon waits until then — the service would refuse it now — and
+        // happens on the sign-in screen once this device is admitted.
+        await saveCredentials(next);
+        // Settings and the Send link button read the link from here; without
+        // this they kept saying "not set up" (or "linked") until the app restarted.
+        await refreshBackend();
+        setCreds(next);
+        setMode('linked');
+        nav.navigate('CloudAccess');
+        return;
+      }
       // Registering proves the key works before we call this device linked.
       if (announce) await registerSalon(next, studioName);
       await saveCredentials(next);
+        // Settings and the Send link button read the link from here; without
+        // this they kept saying "not set up" (or "linked") until the app restarted.
+        await refreshBackend();
+      await resendDaysOff().catch(() => {});
       setCreds(next);
       setMode('linked');
     } catch (e) {
@@ -66,8 +92,11 @@ export default function BookingSetupScreen() {
    * salon, doing that would strand every booking sealed to the old key —
    * so she gets asked first.
    */
-  const linkAsFirstDevice = async (serviceUrl: string, deviceKey: string) => {
-    const fresh = newCredentials(serviceUrl, deviceKey);
+  const linkAsFirstDevice = async (serviceUrl: string, deviceKey: string, firebase?: FirebaseConfig) => {
+    const fresh = newCredentials(serviceUrl, deviceKey, firebase);
+    // Firebase: whether this service already has a salon can only be asked once
+    // she is signed in, so that question moves to the sign-in screen.
+    if (fresh.firebase) { await link(fresh, true); return; }
     try {
       await checkService(fresh.serviceUrl);
       const existing = await fetchSalon(fresh);
@@ -99,6 +128,15 @@ export default function BookingSetupScreen() {
   };
 
   const linkByTyping = () => {
+    linkByTypingOrThrow().catch(async (e) => {
+      await alert({
+        title: "Couldn't link this device",
+        message: e instanceof Error ? e.message : 'Something went wrong. Try again.',
+      });
+    });
+  };
+
+  const linkByTypingOrThrow = async () => {
     if (!isUsableServiceUrl(url)) {
       alert({ title: 'Check the address', message: 'It needs to start with https:// — your key is never sent over an unencrypted link.' });
       return;
@@ -110,9 +148,26 @@ export default function BookingSetupScreen() {
     link(newCredentials(url, deviceKey), true);
   };
 
-  const onScan = async (value: string) => {
-    if (mode !== 'scanning' || busy) return;
-    const scanned = decodeScannedCode(value);
+  /**
+   * A setup or pairing code, however it arrived — scanned, or pasted. One path,
+   * so the two can never behave differently.
+   */
+  const applyCode = async (value: string) => {
+    try {
+      await applyCodeOrThrow(value);
+    } catch (e) {
+      // Never silent. A button that does nothing is how this screen hid, for
+      // months, that it could not make keys on a phone at all.
+      setMode('setup');
+      await alert({
+        title: "Couldn't link this device",
+        message: e instanceof Error ? e.message : 'Something went wrong. Try again.',
+      });
+    }
+  };
+
+  const applyCodeOrThrow = async (value: string) => {
+    const scanned = decodeScannedCode(value.trim());
     if (!scanned) {
       setMode('setup');
       await alert({
@@ -125,8 +180,13 @@ export default function BookingSetupScreen() {
       // The other device already registered the salon — this one just joins.
       await link(scanned.credentials, false);
     } else {
-      await linkAsFirstDevice(scanned.serviceUrl, scanned.deviceKey);
+      await linkAsFirstDevice(scanned.serviceUrl, scanned.deviceKey, scanned.firebase);
     }
+  };
+
+  const onScan = async (value: string) => {
+    if (mode !== 'scanning' || busy) return;
+    await applyCode(value);
   };
 
   const unlink = async () => {
@@ -137,7 +197,11 @@ export default function BookingSetupScreen() {
       tone: 'destructive',
     });
     if (!ok) return;
+    // Signed out of her database too: an unlinked device that can still read
+    // it is not unlinked.
+    if (creds?.firebase) await signOut(firebaseAuthSdk(creds.firebase)).catch(() => {});
     await clearCredentials();
+    await refreshBackend();
     setCreds(null);
     setUrl('');
     setDeviceKey('');
@@ -290,6 +354,32 @@ export default function BookingSetupScreen() {
             <Text style={{ fontSize: 13, lineHeight: 19, color: theme.ink3, marginTop: -12 }}>
               From your service's setup page, or from a device you've already linked.
             </Text>
+
+            <View style={{ gap: 7 }}>
+              <Text style={[styles.label, { color: theme.ink3 }]}>OR PASTE THE CODE</Text>
+              <TextInput
+                testID="setup-code"
+                style={[styles.input, { backgroundColor: theme.card, borderColor: theme.line, color: theme.ink }]}
+                value={pasted}
+                onChangeText={setPasted}
+                placeholder="Copy it from the setup page"
+                placeholderTextColor={theme.ink3}
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry
+              />
+              {!!pasted.trim() && (
+                <Pressable
+                  onPress={async () => { await applyCode(pasted); setPasted(''); }}
+                  disabled={busy}
+                  style={[styles.scanBtn, { backgroundColor: busy ? theme.bg2 : theme.heroBg }]}
+                >
+                  {busy
+                    ? <ActivityIndicator color={theme.ink2} />
+                    : <Text style={styles.scanBtnText}>Use this code</Text>}
+                </Pressable>
+              )}
+            </View>
 
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <View style={{ flex: 1, height: 1, backgroundColor: theme.line }} />

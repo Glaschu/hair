@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { View, Text, ActivityIndicator, AppState as RNAppState } from 'react-native';
 import { Client, Product, Appointment, Service, Schedule, ExportPayload } from './types';
+import { DayOff, serviceRanges } from './daysOff';
 import { lightTheme, darkTheme, Theme, accentOptions } from '../theme';
 import { db } from '../db';
 import { eq, inArray } from 'drizzle-orm';
@@ -18,6 +19,19 @@ import { syncAppointmentReminders, setupNotificationChannel } from './notificati
 import { Backend, LocalBackend, backendFor } from './backend';
 import { loadCredentials } from './bookingStore';
 import { probeService } from './bookingApi';
+import { runIntake, type IntakeReport } from './intake';
+import { applyIntakePlan } from './intakeStore';
+import { inboxFor } from './inboxFor';
+import { clientIdForRef } from './clientRef';
+import { clientIdForRef as clientIdFromSentLinks } from '../db/bookingLinks';
+import {
+  cancelOnService, fetchMoneyAlerts, dismissMoneyAlert as dismissOnService, putDaysOffOnService,
+  type MoneyAlert,
+} from './bookingApi';
+import {
+  enqueue as enqueueWebCancel, flush as flushWebCancels, pending as pendingWebCancels, withdraw as withdrawQueuedCancel,
+  webBookingIdOf, type QueueStore, type Withdrawal,
+} from './webCancels';
 import { configureFormats, deviceUses24HourClock } from './utils';
 import { getOrCreateIrisCalendar, syncAppointmentsToCalendar, deleteCalendarEvents } from './calendarSync';
 import { pullSync, pushSync, syncPhotos } from './syncEngine';
@@ -49,6 +63,12 @@ interface AppState {
 
   schedule: Schedule;
   setSchedule: React.Dispatch<React.SetStateAction<Schedule>>;
+
+  /** Days she has blocked off — the exceptions to her weekly hours. */
+  daysOff: DayOff[];
+  setDaysOff: React.Dispatch<React.SetStateAction<DayOff[]>>;
+  /** Sends her days off to the booking service again — after the salon is registered there. */
+  resendDaysOff: () => Promise<void>;
 
   density: 'compact' | 'regular' | 'comfy';
   setDensity: (d: 'compact' | 'regular' | 'comfy') => void;
@@ -89,6 +109,32 @@ interface AppState {
   refreshBackend: () => Promise<void>;
   setBookingEnabled: (v: boolean) => void;
 
+  /**
+   * Pulls bookings made on the web into the diary. Safe to call repeatedly —
+   * a booking already here is recognised, not duplicated.
+   */
+  importBookings: () => Promise<IntakeReport | null>;
+
+  /**
+   * Tells the service she has cancelled a web booking, so the hour is freed
+   * and any deposit refunded. Written down first, so it gets there even if
+   * she has no signal now. `reached` is whether it got there this time.
+   */
+  cancelWebBooking: (appointmentId: string, refund: 'full' | 'policy') => Promise<{ reached: boolean }>;
+  /**
+   * She pressed undo. `withdrawn` — it had not reached the service, so it never
+   * will; `sent` — this device delivered it, so the service has cancelled it
+   * (and any refund is on its way) and undoing changes only her diary;
+   * `unknown` — this device never sent one, so whether the service still holds
+   * the booking is not known here.
+   */
+  withdrawWebCancel: (appointmentId: string) => Withdrawal | 'not-web';
+
+  /** Disputes, failed refunds and stray payments — money that needs her. */
+  moneyAlerts: MoneyAlert[];
+  refreshMoneyAlerts: () => Promise<void>;
+  dismissMoneyAlert: (id: string) => Promise<void>;
+
   iCloudSyncEnabled: boolean;
   setICloudSyncEnabled: (v: boolean) => void;
 
@@ -117,6 +163,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [appointments, setAppointmentsState] = useState<Appointment[]>([]);
   const [services, setServicesState] = useState<Service[]>([]);
   const [schedule, setScheduleState] = useState<Schedule>({});
+  const [daysOff, setDaysOffState] = useState<DayOff[]>([]);
   const [density, setDensityState] = useState<'compact' | 'regular' | 'comfy'>('regular');
   const [bookingWindowDays, setBookingWindowDaysState] = useState(90);
   const [remindersEnabled, setRemindersEnabledState] = useState(false);
@@ -156,6 +203,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const dbSchedule = db.select().from(schema.schedule).all();
       if (dbSchedule.length > 0) setScheduleState(rowsToSchedule(dbSchedule));
 
+      setDaysOffState(readDaysOff());
+
       const dbSettings = db.select().from(schema.settings).all();
       const get = (key: string) => dbSettings.find(s => s.key === key)?.value;
       if (get('studioName'))        setStudioNameState(get('studioName')!);
@@ -189,8 +238,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setSetting = (key: string, value: string) => {
     if (!loadedRef.current) return;
-    db.insert(schema.settings).values({ key, value })
-      .onConflictDoUpdate({ target: schema.settings.key, set: { value } }).run();
+    writeSetting(key, value);
   };
 
   const setAccent = (c: string) => { setAccentState(c); setSetting('accent', c); };
@@ -205,6 +253,155 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setHour24 = (v: boolean) => { configureFormats({ hour24: v }); setHour24State(v); setSetting('hour24', String(v)); };
   const setCalendarSyncEnabled = (v: boolean) => { setCalendarSyncEnabledState(v); setSetting('calendarSyncEnabled', String(v)); };
   const setBookingEnabled = (v: boolean) => { setBookingEnabledState(v); setSetting('bookingEnabled', String(v)); };
+
+  /**
+   * Brings web bookings into the diary.
+   *
+   * The ordering here is the one that cannot lose a booking: the rows are
+   * committed to SQLite first, and only then is the service told. If this is
+   * killed in between, the service re-offers the booking and intake recognises
+   * the appointment it already wrote — a duplicate delivery, never a lost
+   * Saturday.
+   *
+   * Returns null when there is nothing to read from, which is the ordinary
+   * state of a device that has never been set up for online booking.
+   */
+  /** The waiting-to-send cancellations, kept in the settings table on this device. */
+  const webCancelStore: QueueStore = {
+    read: () => settingValue('pendingWebCancels'),
+    write: (value) => { writeSetting('pendingWebCancels', value); },
+  };
+  /** The ones the service acknowledged — so Undo only says "already refunded" when it was. */
+  const deliveredCancelStore: QueueStore = {
+    read: () => settingValue('sentWebCancels'),
+    write: (value) => { writeSetting('sentWebCancels', value); },
+  };
+
+  const sendWaitingCancels = async () => {
+    const creds = await loadCredentials().catch(() => null);
+    if (!creds) return { sent: 0, waiting: 0 };
+    return flushWebCancels(webCancelStore, (item) => cancelOnService(creds, item), deliveredCancelStore);
+  };
+
+  const cancelWebBooking = async (appointmentId: string, refund: 'full' | 'policy') => {
+    const bookingId = webBookingIdOf(appointmentId);
+    if (!bookingId) return { reached: true };
+    // Written down BEFORE it is sent: if the app is closed or the signal drops
+    // mid-request, the next pull sends it again.
+    enqueueWebCancel(webCancelStore, { bookingId, refund, cancelledAt: Date.now() });
+    await sendWaitingCancels().catch(() => {});
+    // Whether THIS one got there — not whether the queue is empty. An older
+    // cancellation still waiting must not make this one look unsent.
+    return { reached: !pendingWebCancels(webCancelStore).some((p) => p.bookingId === bookingId) };
+  };
+
+  const withdrawWebCancel = (appointmentId: string): Withdrawal | 'not-web' => {
+    const bookingId = webBookingIdOf(appointmentId);
+    if (!bookingId) return 'not-web';
+    return withdrawQueuedCancel(webCancelStore, bookingId, deliveredCancelStore);
+  };
+
+  const [moneyAlerts, setMoneyAlerts] = useState<MoneyAlert[]>([]);
+  const refreshMoneyAlerts = async () => {
+    const creds = await loadCredentials().catch(() => null);
+    // Only a service that takes deposits has money to warn about.
+    if (!creds || !backend.has('deposits')) { setMoneyAlerts([]); return; }
+    setMoneyAlerts(await fetchMoneyAlerts(creds));
+  };
+  const dismissMoneyAlert = async (id: string) => {
+    const creds = await loadCredentials().catch(() => null);
+    if (!creds) return;
+    await dismissOnService(creds, id);
+    setMoneyAlerts(prev => prev.filter(a => a.id !== id));
+  };
+
+  /**
+   * One pull at a time. Two overlapping pulls plan against the same snapshot,
+   * and both used to append the same appointment to the screen. A second call
+   * while one is running gets the running one's result.
+   */
+  const importing = useRef<Promise<IntakeReport | null> | null>(null);
+  const importBookings = (): Promise<IntakeReport | null> => {
+    if (!importing.current) {
+      importing.current = pullBookings().finally(() => { importing.current = null; });
+    }
+    return importing.current;
+  };
+
+  const pullBookings = async (): Promise<IntakeReport | null> => {
+    const creds = await loadCredentials().catch(() => null);
+    if (!creds) return null;
+
+    // Her cancellations and days off go out before anything comes in: a change
+    // made with no signal reaches the service as soon as there is one.
+    await sendWaitingCancels().catch(() => {});
+    await pushDaysOffIfNeeded().catch(() => {});
+
+    const inbox = inboxFor(creds);
+    const incoming = await inbox.fetchBookings();
+    if (incoming.length === 0) {
+      return {
+        added: 0, redelivered: 0, newClients: 0, cancelled: 0, cardsUpdated: 0,
+        needsAttention: [], unacknowledged: [], stuck: [],
+      };
+    }
+
+    // Read straight from the database rather than from React state: state may
+    // be a render behind, and being a render behind here means writing a second
+    // copy of an appointment that is already in the diary.
+    const knownClients = db.select().from(schema.clients).all().map(r => rowToClient(r, []));
+    const knownAppts = db.select().from(schema.appointments).all().map(r => rowToAppointment(r, []));
+
+    const report = await runIntake(incoming, {
+      clients: knownClients,
+      appointments: knownAppts,
+      apply: async (plan) => {
+        // Counted as a local write BEFORE anything else, so an iCloud pull
+        // already in flight is dropped instead of deleting these rows.
+        localWrites.current++;
+        applyIntakePlan(plan);
+        // Only once it is on disk does the screen learn about it. State
+        // following the database, never the other way round.
+        // Never appended twice: an iCloud pull can bring the same booking's
+        // appointment (same id) from her other device in the meantime, and the
+        // database already ignored the duplicate — the screen must too.
+        if (plan.newClients.length || plan.clientUpdates.length) {
+          const updates = new Map(plan.clientUpdates.map(u => [u.id, u.patch]));
+          setClientsState(prev => {
+            const have = new Set(prev.map(c => c.id));
+            return [
+              ...prev.map(c => (updates.has(c.id) ? { ...c, ...updates.get(c.id) } : c)),
+              ...plan.newClients.filter(c => !have.has(c.id)),
+            ];
+          });
+        }
+        if (plan.appointments.length || plan.cancellations.length) {
+          const cancelled = new Map(plan.cancellations.map(c => [c.id, c]));
+          setAppointmentsState(prev => {
+            const have = new Set(prev.map(a => a.id));
+            return [
+              ...prev.map(a => {
+                const c = cancelled.get(a.id);
+                return c ? { ...a, status: 'cancelled' as const, notes: c.notes, updatedAt: c.updatedAt } : a;
+              }),
+              ...plan.appointments.filter(a => !have.has(a.id)),
+            ];
+          });
+        }
+      },
+      markSeen: (id) => inbox.markBookingSeen(id),
+      // What she deleted stays deleted, even if the service keeps offering it.
+      deleted: Object.keys(snapshotRef.current.tombstones ?? {}),
+      // The client a link was sent to is sealed inside it; any of her devices
+      // can open it. Links from before that fall back to this device's record.
+      clientForRef: (ref) => clientIdForRef(ref, creds.keyPair.secretKey, clientIdFromSentLinks),
+    });
+    if (report.stuck.length) {
+      console.warn('bookings that cannot be acknowledged (written before versioning):', report.stuck);
+    }
+
+    return report;
+  };
 
   const refreshBackend = async () => {
     const creds = await loadCredentials().catch(() => null);
@@ -290,12 +487,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Latest data snapshot, kept current for the on-background auto-backup.
   const snapshotRef = useRef<ExportPayload>({
-    version: 1, exported: '', clients: [], products: [], appointments: [], services: [], schedule: {}, tombstones: {},
+    version: 1, exported: '', clients: [], products: [], appointments: [], services: [], schedule: {}, daysOff: [], tombstones: {},
   });
   snapshotRef.current = {
     version: 1,
     exported: new Date().toISOString(),
-    clients, products, appointments, services, schedule, tombstones,
+    clients, products, appointments, services, schedule, daysOff, tombstones,
+  };
+
+  /**
+   * Bumped, synchronously, by every local write.
+   *
+   * An iCloud pull merges against the snapshot taken when it STARTED. Applying
+   * that merge after something was written here in the meantime — a booking
+   * brought in from the web, or her own edit — replaces the newer local state
+   * with the older one, and the diffing setters then delete the difference and
+   * tombstone it, so it is gone on every device and never comes back. So a pull
+   * only applies if nothing was written while it was in flight; otherwise it is
+   * dropped, and the next pull starts from the current state.
+   */
+  const localWrites = useRef(0);
+
+  /** Applies a pull's merge, unless it has gone stale. True if applied. */
+  const applyPull = (merged: ExportPayload | null, startedAt: number): boolean => {
+    if (!merged || localWrites.current !== startedAt) return false;
+    setClients(merged.clients);
+    setProducts(merged.products);
+    setAppointments(merged.appointments);
+    setServices(merged.services);
+    setSchedule(merged.schedule);
+    if (merged.daysOff) setDaysOff(merged.daysOff);
+    snapshotRef.current = {
+      version: 1,
+      exported: new Date().toISOString(),
+      clients: merged.clients,
+      products: merged.products,
+      appointments: merged.appointments,
+      services: merged.services,
+      schedule: merged.schedule,
+      daysOff: merged.daysOff ?? snapshotRef.current.daysOff,
+      tombstones: merged.tombstones,
+    };
+    return true;
   };
 
   useEffect(() => {
@@ -308,13 +541,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           syncPhotos(allPhotos).catch(() => {});
         }
       } else if (state === 'active' && loadedRef.current && iCloudSyncEnabled) {
+        const startedAt = localWrites.current;
         pullSync(snapshotRef.current).then(merged => {
-          if (merged) {
-            setClients(merged.clients);
-            setProducts(merged.products);
-            setAppointments(merged.appointments);
-            setServices(merged.services);
-            setSchedule(merged.schedule);
+          if (merged && applyPull(merged, startedAt)) {
             const allPhotos = merged.clients.flatMap(c => c.photos ?? []);
             syncPhotos(allPhotos).catch(() => {});
           }
@@ -338,7 +567,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       syncPhotos(allPhotos).catch(() => {});
     }, 5000);
     return () => clearTimeout(timer);
-  }, [iCloudSyncEnabled, clients, products, appointments, services, schedule]);
+  }, [iCloudSyncEnabled, clients, products, appointments, services, schedule, daysOff]);
 
   // Polling mechanism to pull changes automatically while the app is open
   // This is especially helpful when two devices are open side-by-side (like simulators)
@@ -346,25 +575,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!iCloudSyncEnabled || !loadedRef.current) return;
     const interval = setInterval(() => {
+      const startedAt = localWrites.current;
       pullSync(snapshotRef.current).catch(() => null).then(merged => {
-        if (merged) {
-          setClients(merged.clients);
-          setProducts(merged.products);
-          setAppointments(merged.appointments);
-          setServices(merged.services);
-          setSchedule(merged.schedule);
-
-          snapshotRef.current = {
-            version: 1,
-            exported: new Date().toISOString(),
-            clients: merged.clients,
-            products: merged.products,
-            appointments: merged.appointments,
-            services: merged.services,
-            schedule: merged.schedule,
-            tombstones: merged.tombstones,
-          };
-        }
+        applyPull(merged, startedAt);
       });
     }, 15000); // Poll every 15 seconds
     return () => clearInterval(interval);
@@ -372,29 +585,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const forceSync = async (): Promise<boolean> => {
     if (!iCloudSyncEnabled) return false;
-    let didPull = false;
+    const startedAt = localWrites.current;
     const merged = await pullSync(snapshotRef.current);
-    if (merged) {
-      didPull = true;
-      setClients(merged.clients);
-      setProducts(merged.products);
-      setAppointments(merged.appointments);
-      setServices(merged.services);
-      setSchedule(merged.schedule);
-      
-      // Update snapshot ref instantly before pushing
-      snapshotRef.current = {
-        version: 1,
-        exported: new Date().toISOString(),
-        clients: merged.clients,
-        products: merged.products,
-        appointments: merged.appointments,
-        services: merged.services,
-        schedule: merged.schedule,
-        tombstones: merged.tombstones,
-      };
-    }
-    
+    // A stale pull is dropped rather than applied; the push below still merges
+    // with the remote copy, so nothing on either side is lost by skipping it.
+    const didPull = applyPull(merged, startedAt);
+
     // Explicitly push the newly merged (or current) state immediately
     await pushSync(snapshotRef.current);
     return didPull;
@@ -412,6 +608,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setClients: React.Dispatch<React.SetStateAction<Client[]>> = (action) => {
+    localWrites.current++;
     setClientsState(prev => {
       let next = typeof action === 'function' ? action(prev) : action;
       if (typeof action === 'function') {
@@ -446,6 +643,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setProducts: React.Dispatch<React.SetStateAction<Product[]>> = (action) => {
+    localWrites.current++;
     setProductsState(prev => {
       let next = typeof action === 'function' ? action(prev) : action;
       if (typeof action === 'function') {
@@ -473,6 +671,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>> = (action) => {
+    localWrites.current++;
     setAppointmentsState(prev => {
       let next = typeof action === 'function' ? action(prev) : action;
       if (typeof action === 'function') {
@@ -512,6 +711,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setServices: React.Dispatch<React.SetStateAction<Service[]>> = (action) => {
+    localWrites.current++;
     setServicesState(prev => {
       let next = typeof action === 'function' ? action(prev) : action;
       if (typeof action === 'function') {
@@ -547,7 +747,78 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  /** Her days off as stored. Read from the database, never React state, by anything that must not be a render behind. */
+  const readDaysOff = (): DayOff[] => db.select().from(schema.daysOff).all().map(r => ({
+    id: r.id, start: r.start, end: r.end,
+    ...(r.note ? { note: r.note } : {}),
+    ...(r.updatedAt != null ? { updatedAt: r.updatedAt } : {}),
+  }));
+
+  const settingValue = (key: string) =>
+    db.select().from(schema.settings).where(eq(schema.settings.key, key)).all()[0]?.value ?? null;
+  const writeSetting = (key: string, value: string) =>
+    db.insert(schema.settings).values({ key, value })
+      .onConflictDoUpdate({ target: schema.settings.key, set: { value } }).run();
+
+  /**
+   * Tells the booking service her days off, if it has not heard the latest.
+   *
+   * A version, not a flag: she may block another day while a push is in
+   * flight, and a flag cleared by the older push would leave the newer day
+   * unsent. Retried on every pull, so a day blocked with no signal still
+   * reaches the service as soon as there is one.
+   *
+   * The whole list each time. Whichever device pushes last after iCloud has
+   * merged both lists leaves the service right.
+   */
+  const pushDaysOffIfNeeded = async () => {
+    const creds = await loadCredentials().catch(() => null);
+    if (!creds) return;
+    // "Sent" means sent to THIS service at THIS version. Remembering only the
+    // version meant a newly linked service was never told about a holiday she
+    // had already blocked.
+    const marker = `${creds.serviceUrl}#${settingValue('daysOffVersion') ?? '0'}`;
+    if (settingValue('daysOffSent') === marker) return;
+    const sent = await putDaysOffOnService(creds, serviceRanges(readDaysOff()));
+    if (sent === 'done') writeSetting('daysOffSent', marker);
+  };
+
+  /** After the salon is (re)registered — a reset service has forgotten her days off. */
+  const resendDaysOff = async () => {
+    writeSetting('daysOffSent', '');
+    await pushDaysOffIfNeeded();
+  };
+
+  const setDaysOff: React.Dispatch<React.SetStateAction<DayOff[]>> = (action) => {
+    localWrites.current++;
+    setDaysOffState(prev => {
+      let next = typeof action === 'function' ? action(prev) : action;
+      if (typeof action === 'function') {
+        const prevById = new Map(prev.map(p => [p.id, p]));
+        next = next.map(item => (prevById.get(item.id) !== item ? { ...item, updatedAt: Date.now() } : item));
+      }
+      const { removed, changed } = diffById(prev, next);
+      registerTombstones(removed);
+      if (loadedRef.current && (removed.length > 0 || changed.length > 0)) {
+        db.transaction((tx) => {
+          if (removed.length > 0) {
+            tx.delete(schema.daysOff).where(inArray(schema.daysOff.id, removed.map(d => d.id))).run();
+          }
+          changed.forEach(d => {
+            const row = { id: d.id, start: d.start, end: d.end, note: d.note ?? null, updatedAt: d.updatedAt ?? Date.now() };
+            tx.insert(schema.daysOff).values(row).onConflictDoUpdate({ target: schema.daysOff.id, set: row }).run();
+          });
+        });
+        writeSetting('daysOffVersion', String(Number(settingValue('daysOffVersion') ?? '0') + 1));
+        // After this update has been applied, not inside it.
+        setTimeout(() => { pushDaysOffIfNeeded().catch(() => {}); }, 0);
+      }
+      return next;
+    });
+  };
+
   const setSchedule: React.Dispatch<React.SetStateAction<Schedule>> = (action) => {
+    localWrites.current++;
     setScheduleState(prev => {
       const next = typeof action === 'function' ? action(prev) : action;
       if (loadedRef.current) {
@@ -568,6 +839,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAppointments(WEEK_APPOINTMENTS);
     setServices(SERVICES);
     setSchedule(DEFAULT_SCHEDULE);
+    setDaysOff([]);
   };
 
   const loadFromExport = async (raw: ExportPayload) => {
@@ -577,6 +849,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAppointments(data.appointments);
     setServices(data.services);
     setSchedule(data.schedule);
+    setDaysOff(data.daysOff ?? []);
     if (data.tombstones) {
       setTombstonesState(data.tombstones);
       setSetting('tombstones', JSON.stringify(data.tombstones));
@@ -620,6 +893,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       appointments, setAppointments,
       services, setServices,
       schedule, setSchedule,
+      daysOff, setDaysOff, resendDaysOff,
       density, setDensity,
       bookingWindowDays, setBookingWindowDays,
       remindersEnabled, setRemindersEnabled,
@@ -629,7 +903,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       hour24, setHour24,
       calendarSyncEnabled, setCalendarSyncEnabled,
       bookingEnabled, setBookingEnabled,
-      backend, refreshBackend,
+      backend, refreshBackend, importBookings,
+      cancelWebBooking, withdrawWebCancel, moneyAlerts, refreshMoneyAlerts, dismissMoneyAlert,
       iCloudSyncEnabled, setICloudSyncEnabled,
       appleCalendarId, setAppleCalendarId,
       tombstones, setTombstones: setTombstonesState,

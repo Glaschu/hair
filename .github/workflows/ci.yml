@@ -1,0 +1,87 @@
+# Everything that can be checked without credentials, on every push.
+#
+# Deliberately separate from deploy: this must run on forks and pull requests,
+# where no secret is available and none should be.
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: app · jest + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit -p tsconfig.json
+      - run: npx jest --ci
+
+  service:
+    name: booking service · integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      # Runs the Worker's real SQL against node:sqlite, so a change to a query
+      # fails here rather than on the first real booking.
+      - run: node --test booking/test/integration.test.mjs
+
+  firebase:
+    name: firestore · rules, resolver, outbox, webhook
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # The Firestore emulator runs on the JVM.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+        working-directory: firebase
+      - run: npm test
+        working-directory: firebase
+      # A rules file with untested branches is a rules file nobody has read.
+      - name: rules coverage
+        run: npx firebase emulators:exec --only firestore --project iris-rules-test "node -e \"
+          fetch('http://127.0.0.1:8080/emulator/v1/projects/iris-rules-test:ruleCoverage')
+            .then(r => r.json())
+            .then(c => console.log('rule expressions evaluated:', (c.rules||[]).length))\""
+        working-directory: firebase
+        continue-on-error: true
+
+  preflight:
+    name: preflight · ready to take a deposit?
+    runs-on: ubuntu-latest
+    needs: [app, service, firebase]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm ci
+        working-directory: firebase
+      - run: scripts/preflight.sh

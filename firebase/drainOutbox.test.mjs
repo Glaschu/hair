@@ -1,8 +1,16 @@
+import { testDb, wipe, closeDb } from './src/testDb.mjs';
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, setDoc, getDoc, getDocs, collection } from 'firebase/firestore';
-import { drainOutbox } from './src/drainOutbox.mjs';
+import { drainOutbox, tidyOutbox, STALE_MESSAGE_MS } from './src/drainOutbox.mjs';
+
+// Thin shims so the test bodies read the same as before. The Admin SDK is
+// method-on-reference where the client SDK is free functions; nothing else
+// about these tests changes.
+const doc = (d, path) => d.doc(path);
+const collection = (d, path) => d.collection(path);
+const setDoc = (ref, data) => ref.set(data);
+const getDoc = (ref) => ref.get();
+const getDocs = (q) => q.get();
 
 /**
  * The state machine is tested exhaustively and without a database in
@@ -12,24 +20,13 @@ import { drainOutbox } from './src/drainOutbox.mjs';
  * quietly sent again.
  */
 
-let env, db;
+let db, FieldValue, app;
 const NOW = Date.UTC(2026, 9, 3, 9, 0, 0);
 const h = (n) => n * 3_600_000;
 
-before(async () => {
-  env = await initializeTestEnvironment({
-    projectId: 'iris-outbox-test',
-    firestore: {
-      rules: 'rules_version = "2"; service cloud.firestore { match /{d=**} { allow read, write: if true; } }',
-      host: '127.0.0.1', port: 8080,
-    },
-  });
-});
-after(async () => { await env?.cleanup(); });
-beforeEach(async () => {
-  await env.clearFirestore();
-  db = env.unauthenticatedContext().firestore();
-});
+before(() => { ({ db, FieldValue, app } = testDb('iris-outbox-test')); });
+after(async () => { await closeDb(app); });
+beforeEach(async () => { await wipe(db); });
 
 const put = (id, over = {}) => setDoc(doc(db, `outbox/${id}`), {
   kind: 'confirm_client',
@@ -183,5 +180,40 @@ describe('nothing is left invisible', () => {
     assert.deepEqual(states, { good: 'sent', bad: 'dead', stale: 'needs_reconcile' });
     // No row is still 'pending' with nobody coming back for it, and none has
     // silently disappeared — which is the only way this design loses something.
+  });
+});
+
+describe('tidying', () => {
+  const old = (days) => NOW - STALE_MESSAGE_MS - h(24 * days);
+
+  test('clears old unsent messages, never money, never sent or recent rows', async () => {
+    await put('msg_old', { createdAt: old(1) });
+    await put('msg_new', { createdAt: NOW - h(2) });
+    await put('msg_sent', { createdAt: old(1), state: 'sent' });
+    await put('refund_old', { kind: 'refund_deposit', subjectId: 'bk_r', createdAt: old(1) });
+
+    const out = await tidyOutbox(db, { now: NOW });
+
+    assert.equal(out.removed, 1);
+    const left = (await getDocs(collection(db, 'outbox'))).docs.map((d) => d.id).sort();
+    assert.deepEqual(left, ['msg_new', 'msg_sent', 'refund_old']);
+  });
+
+  test('a page full of rows it must keep does not stall it', async () => {
+    // The money rows are the oldest, so they fill the first page. The old
+    // single unordered read of 200 rows stopped there for good.
+    for (let i = 0; i < 4; i++) {
+      await put(`refund_${i}`, { kind: 'refund_deposit', subjectId: `bk_${i}`, createdAt: old(10 - i) });
+    }
+    for (let i = 0; i < 4; i++) await put(`sent_${i}`, { state: 'sent', createdAt: old(20 - i) });
+    await put('msg_a', { createdAt: old(2) });
+    await put('msg_b', { createdAt: old(1) });
+
+    const out = await tidyOutbox(db, { now: NOW, pageSize: 2 });
+
+    assert.equal(out.removed, 2);
+    const ids = (await getDocs(collection(db, 'outbox'))).docs.map((d) => d.id);
+    assert.ok(!ids.includes('msg_a') && !ids.includes('msg_b'));
+    assert.equal(ids.length, 8);
   });
 });

@@ -138,11 +138,15 @@ async function cancelBooking(
 
   await env.DB.batch([
     env.DB.prepare(
+      // A client's cancellation goes back into her inbox (seen_at cleared), so
+      // her diary hears about it on the next pull. A cancellation she never
+      // learns of is a no-show she waits for, in an hour she could have resold.
       `UPDATE bookings
           SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?,
-              notice_ms = ?, refund_pct = ?
+              notice_ms = ?, refund_pct = ?,
+              seen_at = CASE WHEN ? = 'client' THEN NULL ELSE seen_at END
         WHERE id = ? AND status = 'confirmed'`,
-    ).bind(now, by, noticeMs, refundPct, booking.id),
+    ).bind(now, by, noticeMs, refundPct, by, booking.id),
     // The hour goes back on sale. Without this it was gone for good: `taken`
     // was one-way, so a booking made by mistake made the slot unsellable.
     env.DB.prepare(`UPDATE slots SET taken = 0 WHERE id = ?`).bind(booking.slotId),
@@ -150,10 +154,39 @@ async function cancelBooking(
       `UPDATE links SET booked_count = booked_count - 1
         WHERE token = ? AND booked_count > 0`,
     ).bind(booking.token),
+    // When SHE cancels and nothing else is booked on the link, the link is
+    // withdrawn: she is taking the time back, not offering it to the same
+    // client again — and a revoked link stops blocking its hours, so she can
+    // offer them to someone else. A client cancelling keeps their link, so
+    // they can pick another time.
+    env.DB.prepare(
+      `UPDATE links SET revoked = 1
+        WHERE token = ? AND booked_count = 0 AND ? = 'salon'`,
+    ).bind(booking.token, by),
   ]);
 
   return { noticeMs, refundPct, alreadyCancelled: false };
 }
+
+/**
+ * Could this be one of the booking page's sealed boxes? Standard base64 of at
+ * least the box's own overhead — ephemeral key, nonce and authenticator. Kept
+ * in step with firebase/src/envelope.mjs.
+ */
+function isPlausibleEnvelope(sealed: unknown): boolean {
+  if (typeof sealed !== 'string' || sealed.length > 4096 || sealed.length % 4 !== 0) return false;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(sealed)) return false;
+  const padding = sealed.endsWith('==') ? 2 : sealed.endsWith('=') ? 1 : 0;
+  return (sealed.length / 4) * 3 - padding > 32 + 24 + 16;
+}
+
+/**
+ * A slot that does not touch any of her days off. Used wherever a slot could be
+ * shown or claimed, so a blocked day is refused everywhere at once — and
+ * unblocking it puts those hours straight back, because nothing was deleted.
+ */
+const notOnADayOff = (slots: string) =>
+  `NOT EXISTS (SELECT 1 FROM days_off d WHERE ${slots}.starts_at < d.ends_at AND ${slots}.ends_at > d.starts_at)`;
 
 /** Compares without leaking which character differed. */
 function safeEqual(a: string, b: string): boolean {
@@ -342,14 +375,34 @@ export default {
           }
         }
 
+        // Absent means "leave it", as on the Firebase version: a re-link or a
+        // fresh start on a new phone sends no policy, and must not wipe terms
+        // she has edited — the terms a chargeback turns on.
         await env.DB.prepare(
           `INSERT INTO salon (id, name, public_key, policy, updated_at) VALUES ('me', ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET name = excluded.name,
                                          public_key = excluded.public_key,
-                                         policy = excluded.policy,
+                                         policy = CASE WHEN ? THEN excluded.policy ELSE salon.policy END,
                                          updated_at = excluded.updated_at`,
-        ).bind(name, publicKey, policy ?? null, Date.now()).run();
+        ).bind(name, publicKey, policy ?? null, Date.now(), policy === undefined ? 0 : 1).run();
         return json({ ok: true });
+      }
+
+      if (path === '/api/days-off' && method === 'PUT') {
+        if (!(await authed(request, env))) return json({ error: 'unauthorised' }, 401);
+        const { ranges } = (await request.json()) as { ranges?: { from?: string; to?: string }[] };
+        if (!Array.isArray(ranges) || ranges.length > 200) return json({ error: 'ranges required' }, 400);
+        const spans = ranges.map((r) => ({ from: String(r?.from ?? ''), to: String(r?.to ?? '') }));
+        if (spans.some((r) => !(Date.parse(r.from) < Date.parse(r.to)))) {
+          return json({ error: 'each range needs from before to' }, 400);
+        }
+        // Stored as UTC ISO, so the slot comparisons in SQL are like for like.
+        await env.DB.batch([
+          env.DB.prepare(`DELETE FROM days_off`),
+          ...spans.map((r) => env.DB.prepare(`INSERT INTO days_off (starts_at, ends_at) VALUES (?, ?)`)
+            .bind(new Date(r.from).toISOString(), new Date(r.to).toISOString())),
+        ]);
+        return json({ ok: true, count: spans.length });
       }
 
       if (path === '/api/links' && method === 'POST') {
@@ -375,10 +428,14 @@ export default {
         // Two links must never offer the same hour. The app checks her calendar
         // when she makes a link, but it cannot see the other links she has out,
         // so without this two clients can both book the same Saturday.
+        // A link that has taken all its bookings offers nothing any more:
+        // counting its untaken hours kept them off sale for every other
+        // client until it expired, three weeks after one of them was booked.
         const { results: live } = await env.DB.prepare(
           `SELECT s.starts_at AS startsAt, s.ends_at AS endsAt
              FROM slots s JOIN links l ON l.token = s.token
-            WHERE l.revoked = 0 AND l.expires_at > ?`,
+            WHERE l.revoked = 0 AND l.expires_at > ?
+              AND (s.taken = 1 OR l.booked_count < l.max_bookings)`,
         ).bind(Date.now()).all<{ startsAt: string; endsAt: string }>();
 
         const clash = body.slots.find((slot) => {
@@ -386,6 +443,18 @@ export default {
           return live.some((o: { startsAt: string; endsAt: string }) =>
             s0 < Date.parse(o.endsAt) && Date.parse(o.startsAt) < e0);
         });
+        // Never offer an hour on one of her days off — the app already skips
+        // them, but the service is where it has to be true.
+        const { results: off } = await env.DB.prepare(
+          `SELECT starts_at AS startsAt, ends_at AS endsAt FROM days_off`,
+        ).all<{ startsAt: string; endsAt: string }>();
+        const onDayOff = body.slots.find((slot) =>
+          off.some((d: { startsAt: string; endsAt: string }) =>
+            Date.parse(slot.startsAt) < Date.parse(d.endsAt) && Date.parse(d.startsAt) < Date.parse(slot.endsAt)));
+        if (onDayOff) {
+          return json({ error: 'day off', detail: 'That time is on one of your days off.', startsAt: onDayOff.startsAt }, 409);
+        }
+
         if (clash) {
           return json({
             error: 'slot already offered',
@@ -427,7 +496,8 @@ export default {
           ...body.slots.map((slot) =>
             env.DB.prepare(
               `INSERT INTO slots (id, token, starts_at, ends_at) VALUES (?, ?, ?, ?)`,
-            ).bind(newToken(8), token, slot.startsAt, slot.endsAt),
+            )// Normalised to UTC ISO, so times compare correctly as text.
+            .bind(newToken(8), token, new Date(slot.startsAt).toISOString(), new Date(slot.endsAt).toISOString()),
           ),
         ];
         await env.DB.batch(statements);
@@ -462,8 +532,13 @@ export default {
       const seen = path.match(/^\/api\/bookings\/([a-f0-9]+)\/seen$/);
       if (seen && method === 'POST') {
         if (!(await authed(request, env))) return json({ error: 'unauthorised' }, 401);
-        await env.DB.prepare(`UPDATE bookings SET seen_at = ? WHERE id = ?`)
-          .bind(Date.now(), seen[1]).run();
+        // Only if it is still in the state the device saw. A client cancelling
+        // between the device's fetch and this call puts it back in the inbox;
+        // acknowledging blindly swallowed that cancellation.
+        const { status } = (await request.json().catch(() => ({}))) as { status?: string };
+        await env.DB.prepare(
+          `UPDATE bookings SET seen_at = ? WHERE id = ? AND (? IS NULL OR status = ?)`,
+        ).bind(Date.now(), seen[1], status ?? null, status ?? null).run();
         return json({ ok: true });
       }
 
@@ -546,8 +621,9 @@ export default {
 
         const { results: slots } = await env.DB.prepare(
           `SELECT id, starts_at AS startsAt, ends_at AS endsAt
-             FROM slots WHERE token = ? AND taken = 0 ORDER BY starts_at`,
-        ).bind(view[1]).all();
+             FROM slots s WHERE token = ? AND taken = 0 AND starts_at > ? AND ${notOnADayOff('s')}
+            ORDER BY starts_at`,
+        ).bind(view[1], new Date().toISOString()).all();
 
         return json({
           salonName: link.salonName, greeting: link.greeting,
@@ -566,6 +642,10 @@ export default {
         // An envelope is ~120 bytes of overhead plus the details; anything
         // much larger is someone using the store as free disk space.
         if (sealed.length > 4096) return json({ error: 'too large' }, 413);
+        // The shape only — only her devices can open it. Junk used to be stored
+        // as a booking: it took the hour, and because an envelope her phone
+        // cannot open is never acknowledged, it sat in her inbox for good.
+        if (!isPlausibleEnvelope(sealed)) return json({ error: 'not a sealed envelope' }, 400);
 
         // A retry after a lost response must return the original booking. Without
         // this the page says "someone took that time" and sends them to a second
@@ -616,8 +696,8 @@ export default {
         // isolate between them burned the slot with no booking behind it.
         const written = await env.DB.batch([
           env.DB.prepare(
-            `UPDATE slots SET taken = 1 WHERE id = ? AND token = ? AND taken = 0`,
-          ).bind(slotId, token),
+            `UPDATE slots SET taken = 1 WHERE id = ? AND token = ? AND taken = 0 AND starts_at > ? AND ${notOnADayOff('slots')}`,
+          ).bind(slotId, token, new Date().toISOString()),
           env.DB.prepare(
             `UPDATE links SET booked_count = booked_count + 1
               WHERE token = ? AND booked_count < max_bookings`,

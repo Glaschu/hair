@@ -1,8 +1,15 @@
-import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { decide, applied } from './resolve.mjs';
 
 /**
  * Applies one intent, atomically.
+ *
+ * WRITTEN FOR THE ADMIN SDK, because that is what Cloud Functions run. The
+ * earlier version of this file used the client SDK, which meant the code these
+ * tests proved was not the code that would ship — the two differ in small ways
+ * that matter (`snap.exists` is a property here and a method there), so a green
+ * suite would have said nothing about production.
+ *
+ * The pure decision lives in resolve.mjs and is SDK-free either way.
  *
  * Three things the transaction body must never do, because Firestore re-runs it
  * on contention and a retried body that did any of them would corrupt state:
@@ -15,13 +22,13 @@ import { decide, applied } from './resolve.mjs';
  * in. `applied()` returns a new day rather than editing the one it was handed,
  * for the same reason.
  */
-export async function applyIntent(db, { salonPath = '', intentId, now = Date.now() }) {
+export async function applyIntent(db, { salonPath = '', intentId, now = Date.now(), FieldValue }) {
   const p = (rest) => (salonPath ? `${salonPath}/${rest}` : rest);
 
-  return runTransaction(db, async (tx) => {
-    const intentRef = doc(db, p(`intents/${intentId}`));
+  return db.runTransaction(async (tx) => {
+    const intentRef = db.doc(p(`intents/${intentId}`));
     const intentSnap = await tx.get(intentRef);
-    if (!intentSnap.exists()) return { action: 'noop', reason: 'intent_missing' };
+    if (!intentSnap.exists) return { action: 'noop', reason: 'intent_missing' };
 
     const intent = { id: intentId, ...intentSnap.data() };
 
@@ -31,14 +38,14 @@ export async function applyIntent(db, { salonPath = '', intentId, now = Date.now
     // wider window.
     if (intent.result != null) return { action: 'noop', reason: 'already_resolved' };
 
-    const dayRef = doc(db, p(`days/${intent.date}`));
+    const dayRef = db.doc(p(`days/${intent.date}`));
     const daySnap = await tx.get(dayRef);
-    const day = daySnap.exists() ? daySnap.data() : { version: 0, intervals: [] };
+    const day = daySnap.exists ? daySnap.data() : { version: 0, intervals: [] };
 
     let booking = null;
     if (intent.bookingId) {
-      const bookingSnap = await tx.get(doc(db, p(`bookings/${intent.bookingId}`)));
-      booking = bookingSnap.exists() ? { id: intent.bookingId, ...bookingSnap.data() } : null;
+      const bookingSnap = await tx.get(db.doc(p(`bookings/${intent.bookingId}`)));
+      booking = bookingSnap.exists ? { id: intent.bookingId, ...bookingSnap.data() } : null;
     }
 
     // All reads are done. Firestore forbids reading after writing in a
@@ -55,7 +62,7 @@ export async function applyIntent(db, { salonPath = '', intentId, now = Date.now
       result: verdict.action,
       reason: verdict.reason,
       conflictWith: verdict.conflictWith ?? null,
-      resolvedAt: serverTimestamp(),
+      resolvedAt: FieldValue ? FieldValue.serverTimestamp() : now,
     });
 
     return verdict;

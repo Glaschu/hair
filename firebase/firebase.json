@@ -1,4 +1,83 @@
 {
+  "hosting": {
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "X-Frame-Options",
+            "value": "DENY"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "no-referrer"
+          },
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'"
+          }
+        ]
+      },
+      {
+        "source": "/b/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          }
+        ]
+      },
+      {
+        "source": "/setup**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          },
+          {
+            "key": "X-Robots-Tag",
+            "value": "noindex, nofollow"
+          }
+        ]
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "function": {
+          "functionId": "api",
+          "region": "europe-west2"
+        }
+      },
+      {
+        "source": "/b/**",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/setup",
+        "destination": "/setup.html"
+      },
+      {
+        "source": "/guide",
+        "destination": "/guide.html"
+      }
+    ],
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "predeploy": [
+      "rm -rf \"$PROJECT_DIR/public\" && cp -R \"$PROJECT_DIR/../booking/site\" \"$PROJECT_DIR/public\""
+    ]
+  },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
@@ -7,9 +86,29 @@
     "firestore": {
       "port": 8080
     },
+    "hosting": {
+      "port": 5055
+    },
     "ui": {
       "enabled": false
     },
-    "singleProjectMode": true
-  }
+    "singleProjectMode": true,
+    "functions": {
+      "port": 5011
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "predeploy": [
+        "rm -rf \"$PROJECT_DIR/functions/src\" && cp -R \"$PROJECT_DIR/src\" \"$PROJECT_DIR/functions/\""
+      ],
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.log"
+      ]
+    }
+  ]
 }

@@ -19,6 +19,11 @@ import RescheduleModal from '../screens/RescheduleModal';
 import AppointmentEditScreen from '../screens/AppointmentEditScreen';
 import VisitWrapUpScreen from '../screens/VisitWrapUpScreen';
 import BookingSetupScreen from '../screens/BookingSetupScreen';
+import BookingGuideScreen from '../screens/BookingGuideScreen';
+import CloudAccessScreen from '../screens/CloudAccessScreen';
+import CancellationPolicyScreen from '../screens/CancellationPolicyScreen';
+import MoneyAlertsScreen from '../screens/MoneyAlertsScreen';
+import DaysOffScreen from '../screens/DaysOffScreen';
 import SendBookingLinkScreen from '../screens/SendBookingLinkScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -81,6 +86,11 @@ export function RootNavigator() {
         options={bottomModal}
       />
       <Stack.Screen name="BookingSetup" component={BookingSetupScreen} options={sheet} />
+      <Stack.Screen name="BookingGuide" component={BookingGuideScreen} options={sheet} />
+      <Stack.Screen name="CloudAccess" component={CloudAccessScreen} options={sheet} />
+      <Stack.Screen name="CancellationPolicy" component={CancellationPolicyScreen} options={sheet} />
+      <Stack.Screen name="MoneyAlerts" component={MoneyAlertsScreen} options={sheet} />
+      <Stack.Screen name="DaysOff" component={DaysOffScreen} options={sheet} />
       <Stack.Screen name="SendBookingLink" component={SendBookingLinkScreen} options={bottomModal} />
     </Stack.Navigator>
   );

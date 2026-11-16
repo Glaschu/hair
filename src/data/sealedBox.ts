@@ -38,13 +38,39 @@ export function fromBase64(b64: string): Uint8Array {
 }
 
 /** Her salon keypair. The secret half never leaves the keychain. */
+/**
+ * Hands tweetnacl its random source, explicitly.
+ *
+ * tweetnacl looks for one exactly once, as it loads, under `self.crypto`. On a
+ * phone that only exists after react-native-get-random-values has run, so an
+ * import landing in the wrong order left it with none — and every key it made
+ * threw "no PRNG". Setting it here, at the moment of use, means import order can
+ * never again silently break setting up online booking.
+ */
+let randomWired = false;
+function ensureRandom(): void {
+  if (randomWired) return;
+  const source = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+  if (!source?.getRandomValues) {
+    throw new Error('This device has no secure random source, so it cannot make keys.');
+  }
+  const fill = source.getRandomValues.bind(source);
+  nacl.setPRNG((x: Uint8Array, n: number) => {
+    const bytes = fill(new Uint8Array(n));
+    for (let i = 0; i < n; i++) x[i] = bytes[i];
+  });
+  randomWired = true;
+}
+
 export function generateKeyPair(): KeyPairB64 {
+  ensureRandom();
   const kp = nacl.box.keyPair();
   return { publicKey: toBase64(kp.publicKey), secretKey: toBase64(kp.secretKey) };
 }
 
 /** Locks a booking for her eyes only. Runs in the client's browser. */
 export function seal(plaintext: string, recipientPublicKeyB64: string): string {
+  ensureRandom();
   const recipient = fromBase64(recipientPublicKeyB64);
   if (recipient.length !== KEY_BYTES) throw new Error('Bad recipient key');
 

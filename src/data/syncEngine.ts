@@ -31,6 +31,7 @@ export async function pushSync(payload: ExportPayload): Promise<void> {
           appointments: mergeAppointments(payload.appointments, remote.appointments, { ...remote.tombstones, ...payload.tombstones }),
           services: mergeById(payload.services, remote.services, { ...remote.tombstones, ...payload.tombstones }),
           schedule: { ...remote.schedule, ...payload.schedule },
+          daysOff: mergeById(payload.daysOff ?? [], remote.daysOff ?? [], { ...remote.tombstones, ...payload.tombstones }),
         };
       }
     } catch (e) {
@@ -78,6 +79,9 @@ export async function pullSync(localPayload: ExportPayload): Promise<ExportPaylo
     appointments: mergeAppointments(localPayload.appointments, remote.appointments, { ...localPayload.tombstones, ...remote.tombstones }),
     services: mergeById(localPayload.services, remote.services, { ...localPayload.tombstones, ...remote.tombstones }),
     schedule: { ...localPayload.schedule, ...remote.schedule },
+    // A day blocked on the iPad has to be off on the phone too — otherwise a
+    // link sent from the phone offers her holiday.
+    daysOff: mergeById(localPayload.daysOff ?? [], remote.daysOff ?? [], { ...localPayload.tombstones, ...remote.tombstones }),
   };
 
   return merged;

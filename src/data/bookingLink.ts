@@ -15,26 +15,53 @@ export interface BookingCredentials {
   deviceKey: string;
   /** Her salon keypair. The secret half opens bookings. */
   keyPair: KeyPairB64;
+  /**
+   * Set only on deployments that keep their data in Firestore. Its absence is
+   * how the app knows there is nothing to sign in to.
+   */
+  firebase?: FirebaseConfig;
 }
 
 /** What a pairing QR carries — everything a second device needs, and nothing more. */
 export interface PairingPayload {
   v: 1;
   url: string;
-  dk: string;   // device key
+  dk: string;   // device key — empty on the Firebase deployment, which has none
   pk: string;   // public key
   sk: string;   // secret key
+  /**
+   * The Firebase project, on that deployment. Without it a second device has
+   * the keys but nothing to sign in to, and reads its inbox from an HTTP
+   * endpoint that deployment does not serve.
+   */
+  fb?: FirebaseConfig;
 }
 
 /**
  * What the service's own /setup page shows: enough to reach the service,
  * but no salon keys — the first device makes those itself.
  */
+/**
+ * The Firebase project this deployment belongs to.
+ *
+ * It has to travel in the code, because self-hosting means every stylist has
+ * her own project and there is nothing to bake into the app. None of it is
+ * secret — a web config is public by design; what protects the data is the
+ * rules and the allowlist, not the obscurity of a project id.
+ */
+export interface FirebaseConfig {
+  apiKey: string;
+  authDomain: string;
+  projectId: string;
+}
+
 export interface SetupPayload {
   v: 1 | 2;
   kind: 'setup';
   url: string;
   dk: string;
+  /** Present only on deployments that keep their data in Firestore. */
+  fb?: FirebaseConfig;
   /**
    * Which kind of service this is. Absent on v1 codes, which every deployed
    * setup page still produces — those are self-hosted by definition, since
@@ -45,11 +72,26 @@ export interface SetupPayload {
 
 export type ScannedCode =
   /** From the service's /setup page: this device will create the salon keys. */
-  | { kind: 'setup'; serviceUrl: string; deviceKey: string; mode: 'self-hosted' | 'hosted' }
+  | {
+      kind: 'setup';
+      serviceUrl: string;
+      deviceKey: string;
+      mode: 'self-hosted' | 'hosted';
+      firebase?: FirebaseConfig;
+    }
   /** From a device already linked: adopt its keys so both can read bookings. */
   | { kind: 'pairing'; credentials: BookingCredentials };
 
 const trimUrl = (url: string) => url.trim().replace(/\/+$/, '');
+
+/** All three fields or none — a half-filled config fails somewhere unhelpful. */
+export function isUsableFirebaseConfig(fb: unknown): fb is FirebaseConfig {
+  const c = fb as Partial<FirebaseConfig> | undefined;
+  return !!c
+    && typeof c.apiKey === 'string' && c.apiKey.length > 0
+    && typeof c.authDomain === 'string' && c.authDomain.length > 0
+    && typeof c.projectId === 'string' && c.projectId.length > 0;
+}
 
 /** True for an https URL we're willing to send her key to. */
 export function isUsableServiceUrl(url: string): boolean {
@@ -61,12 +103,23 @@ export function isUsableServiceUrl(url: string): boolean {
   }
 }
 
-/** Starts a fresh salon: a new keypair, ready to register with the service. */
-export function newCredentials(serviceUrl: string, deviceKey: string): BookingCredentials {
+/**
+ * Starts a fresh salon: a new keypair, ready to register with the service.
+ *
+ * The Firebase config is carried through here because this is where a scanned
+ * setup code becomes credentials — dropping it made every Firebase deployment
+ * look like a Cloudflare one to the rest of the app.
+ */
+export function newCredentials(
+  serviceUrl: string,
+  deviceKey: string,
+  firebase?: FirebaseConfig,
+): BookingCredentials {
   return {
     serviceUrl: trimUrl(serviceUrl),
     deviceKey: deviceKey.trim(),
     keyPair: generateKeyPair(),
+    ...(firebase && isUsableFirebaseConfig(firebase) ? { firebase } : {}),
   };
 }
 
@@ -84,6 +137,7 @@ export function encodePairing(creds: BookingCredentials): string {
     dk: creds.deviceKey,
     pk: creds.keyPair.publicKey,
     sk: creds.keyPair.secretKey,
+    ...(creds.firebase ? { fb: creds.firebase } : {}),
   };
   return JSON.stringify(payload);
 }
@@ -104,13 +158,20 @@ export function decodeScannedCode(scanned: string): ScannedCode | null {
     // stylist standing in front of one should not be told her code is invalid
     // because we added a field.
     if (raw.v !== 1 && raw.v !== 2) return null;
-    if (typeof raw.url !== 'string' || typeof raw.dk !== 'string' || !raw.dk) return null;
+    // No device key on the Firebase deployment — her phone signs in instead —
+    // so an empty one is valid there, and only there.
+    const fb = isUsableFirebaseConfig(raw.fb) ? raw.fb : undefined;
+    if (typeof raw.url !== 'string' || typeof raw.dk !== 'string') return null;
+    if (!raw.dk && !fb) return null;
     if (!isUsableServiceUrl(raw.url)) return null;
     return {
       kind: 'setup',
       serviceUrl: trimUrl(raw.url),
       deviceKey: raw.dk,
       mode: raw.mode === 'hosted' ? 'hosted' : 'self-hosted',
+      // Partial config is worse than none: it would let the app try to sign in
+      // to a project it cannot actually reach, and fail somewhere unhelpful.
+      ...(fb ? { firebase: fb } : {}),
     };
   } catch {
     return null;
@@ -123,13 +184,15 @@ export function decodePairing(scanned: string): BookingCredentials | null {
     const raw = JSON.parse(scanned) as Partial<PairingPayload>;
     if (raw?.v !== 1) return null;
     const { url, dk, pk, sk } = raw;
+    const fb = isUsableFirebaseConfig(raw.fb) ? raw.fb : undefined;
     if (typeof url !== 'string' || typeof dk !== 'string') return null;
     if (typeof pk !== 'string' || typeof sk !== 'string') return null;
-    if (!isUsableServiceUrl(url) || !dk || !pk || !sk) return null;
+    if (!isUsableServiceUrl(url) || (!dk && !fb) || !pk || !sk) return null;
     return {
       serviceUrl: trimUrl(url),
       deviceKey: dk,
       keyPair: { publicKey: pk, secretKey: sk },
+      ...(fb ? { firebase: fb } : {}),
     };
   } catch {
     return null;

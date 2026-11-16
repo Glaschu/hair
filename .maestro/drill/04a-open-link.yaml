@@ -1,0 +1,10 @@
+appId: com.apple.mobilesafari
+name: Drill 4a — the client opens their link
+env:
+  OUTPUT_DIR: screenshots/drill
+---
+- openLink: ${URL}
+- extendedWaitUntil:
+    visible: ".*here are your times.*"
+    timeout: 30000
+- takeScreenshot: ${OUTPUT_DIR}/07-booking-page

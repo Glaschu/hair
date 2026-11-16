@@ -1,4 +1,5 @@
 import { Client, Schedule } from './types';
+import { dayOffOn, type DayOff } from './daysOff';
 
 // Display preferences, set once from Settings via configureFormats so a stylist
 // anywhere can see her own currency and clock convention.
@@ -216,9 +217,13 @@ export function generateTimeSlots(
   return slots;
 }
 
-export function checkSchedule(schedule: Schedule, date: Date, durationMins: number) {
+export function checkSchedule(schedule: Schedule, date: Date, durationMins: number, daysOff: readonly DayOff[] = []) {
   const day = schedule[date.getDay()];
-  if (!day || !day.open) return { dayClosed: true, offHours: false, day };
+  // A day she has blocked off — a holiday, a course — comes before her usual
+  // hours: it is closed whatever weekday it falls on.
+  const dayOff = dayOffOn(daysOff, date);
+  if (dayOff) return { dayClosed: true, offHours: false, day, dayOff };
+  if (!day || !day.open) return { dayClosed: true, offHours: false, day, dayOff: null };
   const [sh, sm] = day.start.split(':').map(Number);
   const [eh, em] = day.end.split(':').map(Number);
   const startMins = date.getHours() * 60 + date.getMinutes();
@@ -226,5 +231,5 @@ export function checkSchedule(schedule: Schedule, date: Date, durationMins: numb
   const dayStart = sh * 60 + sm;
   const dayEnd = eh * 60 + em;
   const offHours = startMins < dayStart || endMins > dayEnd;
-  return { dayClosed: false, offHours, day };
+  return { dayClosed: false, offHours, day, dayOff: null };
 }

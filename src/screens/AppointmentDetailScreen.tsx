@@ -10,6 +10,11 @@ import { RootStackParamList } from '../navigation/types';
 import { Avatar, Icons, RoundBtn, useLocalDialog, ProductPicker, ProductUseRow, PhotoStrip, usePhotoAdd } from '../components';
 import { fmt } from '../data/utils';
 import { useVisitActions } from '../data/useVisitActions';
+import { webBookingIdOf } from '../data/webCancels';
+import { previewWebCancel } from '../data/bookingApi';
+import { describeFailure, type Failure } from '../data/serviceErrors';
+import { depositMoney } from '../data/policy';
+import { loadCredentials } from '../data/bookingStore';
 import { Appointment, Product } from '../data/types';
 import { SERIF } from '../theme';
 
@@ -17,7 +22,10 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AppointmentDetail'>;
 
 export default function AppointmentDetailScreen() {
-  const { theme, appointments, setAppointments, clients, setClients, products, services } = useApp();
+  const {
+    theme, appointments, setAppointments, clients, setClients, products, services,
+    backend, cancelWebBooking, withdrawWebCancel,
+  } = useApp();
   const { confirm, alert, actionSheet, dialog } = useLocalDialog();
   const visit = useVisitActions();
   const addPhotos = usePhotoAdd({ actionSheet, alert });
@@ -94,8 +102,104 @@ export default function AppointmentDetailScreen() {
     setConfirmOpen(false);
   };
 
-  const handleCancel = () => {
+  /**
+   * Cancelling. For an appointment made in the app, as before. For one that
+   * came in online, the booking service has to be told — to give the hour back
+   * and, where a deposit was taken, to refund it — and when a deposit is held,
+   * how much goes back depends on who is cancelling, which only she knows.
+   */
+  const handleCancel = async () => {
+    const bookingId = webBookingIdOf(appt.id);
+    // Linked is what matters, not whether the online-booking buttons are
+    // switched on: a booking that came in online is on the service either way,
+    // and hiding the buttons must not stop the service hearing she cancelled.
+    if (!bookingId || !backend.has('booking-links')) {
+      visit.markCancelled(appt);
+      return;
+    }
+
+    const who = client?.name?.trim().split(/\s+/)[0] ?? 'this';
+    const title = who === 'this' ? 'Cancel this appointment?' : `Cancel ${who}'s appointment?`;
+    let refund: 'full' | 'policy' | null = null;
+
+
+    // Why the service could not be asked, when it could not. Not always the
+    // signal: a sign-in that has lapsed holds the cancellation here until she
+    // signs in again, and she has to be told that, not that she is offline.
+    let failure = null as Failure | null;
+
+    if (backend.has('deposits')) {
+      const creds = await loadCredentials().catch(() => null);
+      // undefined: could not ask. null: this service takes no deposits.
+      const preview = creds
+        ? await previewWebCancel(creds, bookingId).catch((e) => {
+          failure = describeFailure(e, '');
+          return undefined;
+        })
+        : undefined;
+
+      if (preview && preview.depositMinor > 0) {
+        // In pounds, exactly: what the service charged and will refund.
+        const deposit = depositMoney(preview.depositMinor);
+        const backMinor = Math.round(preview.depositMinor * preview.policyRefundPct / 100);
+        const idx = await actionSheet({
+          title,
+          message: `They paid a ${deposit} deposit when they booked. How much goes back?`,
+          actions: [
+            { label: `I'm cancelling: refund all ${deposit}` },
+            { label: backMinor > 0
+              ? `They asked: refund ${depositMoney(backMinor)} (your policy)`
+              : 'They asked: no refund at this notice (your policy)' },
+          ],
+          cancelLabel: 'Keep the appointment',
+        });
+        if (idx === null) return;
+        refund = idx === 0 ? 'full' : 'policy';
+      } else if (preview === undefined) {
+        // Could not ask: the amounts cannot be checked, but the choice can
+        // still be made — it is sent, with the time she made it, once the
+        // service can be reached.
+        const why = failure;
+        const idx = await actionSheet({
+          title,
+          message: why && !why.offline
+            ? `If they paid a deposit, how much goes back? The amounts can't be shown: ${why.message} Your choice is kept and sent once that's done.`
+            : "If they paid a deposit, how much goes back? You're offline, so the amounts can't be shown — your booking page is updated as soon as you're back.",
+          actions: [
+            { label: "I'm cancelling: refund the deposit in full" },
+            { label: 'They asked: use my cancellation policy' },
+          ],
+          cancelLabel: 'Keep the appointment',
+        });
+        if (idx === null) return;
+        refund = idx === 0 ? 'full' : 'policy';
+      }
+    }
+
+    if (!refund) {
+      const ok = await confirm({
+        title,
+        message: 'They booked online, so their booking is cancelled on your booking page too, and the time is free to offer to someone else.',
+        confirmLabel: 'Cancel appointment',
+        cancelLabel: 'Keep it',
+        tone: 'destructive',
+      });
+      if (!ok) return;
+      // No deposit is held, so nothing is refunded either way.
+      refund = 'full';
+    }
+
     visit.markCancelled(appt);
+    const { reached } = await cancelWebBooking(appt.id, refund);
+    if (!reached) {
+      const why = failure;
+      await alert({
+        title: 'Cancelled here',
+        message: why && !why.offline
+          ? `Your booking page will be updated, and any refund sent, once this is sorted: ${why.message}`
+          : "Your booking page will be updated, and any refund sent, as soon as you're back online.",
+      });
+    }
   };
 
   const handleNoShow = () => {
@@ -122,7 +226,39 @@ export default function AppointmentDetailScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleUndo = () => {
+  const handleUndo = async () => {
+    if (isCancelled) {
+      const was = withdrawWebCancel(appt.id);
+      // Still waiting to be sent: taken back, so the service never cancels it
+      // or refunds anything. Nothing more to say.
+      if (was === 'unknown') {
+        // This device never sent a cancellation for it. The client may have
+        // cancelled from their link, or her other device may have — or the
+        // service may still hold it. Only what is known is said.
+        const ok = await confirm({
+          title: 'Put it back in your diary?',
+          message:
+            'This booking came in online. If it was cancelled on your booking page — by the client, or from your ' +
+            "other device — putting it back only changes your diary: the client won't see it. " +
+            'To book them in properly, send them a new link.',
+          confirmLabel: 'Put it back',
+          cancelLabel: 'Leave it cancelled',
+        });
+        if (!ok) return;
+      }
+      if (was === 'sent') {
+        const ok = await confirm({
+          title: 'Put it back in your diary?',
+          message:
+            'This booking is already cancelled on your booking page: any deposit is being refunded, and ' +
+            "their link no longer works. Putting it back only changes your diary — the client won't see it. " +
+            'To book them in properly, send them a new link.',
+          confirmLabel: 'Put it back anyway',
+          cancelLabel: 'Leave it cancelled',
+        });
+        if (!ok) return;
+      }
+    }
     visit.undoComplete(appt);
   };
 

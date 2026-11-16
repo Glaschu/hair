@@ -1,0 +1,44 @@
+appId: com.apple.mobilesafari
+name: Drill 4c — the client pays the deposit with Stripe's test card
+env:
+  OUTPUT_DIR: screenshots/drill
+---
+- tapOn: "you@example.com|email@example.com"
+- inputText: "ada.drill@example.com"
+- tapOn: "Done"
+- tapOn: "Card number|1234 1234 1234 1234"
+- inputText: "4242424242424242"
+- tapOn: "MM / YY"
+- inputText: "1234"
+- tapOn: "Security code|CVC"
+- inputText: "123"
+- tapOn: "Done"
+- tapOn: "First and last name|Full name on card"
+- inputText: "Ada Drill"
+- tapOn: "Done"
+- scrollUntilVisible:
+    element:
+      text: "Postal code"
+    direction: DOWN
+    centerElement: true
+- tapOn: "Postal code"
+- inputText: "SW1A 1AA"
+- tapOn: "Done"
+- takeScreenshot: ${OUTPUT_DIR}/10-card-filled
+- scrollUntilVisible:
+    element:
+      text: "Pay"
+    direction: DOWN
+    centerElement: true
+- tapOn: "Pay"
+# Safari offers to remember the card, on top of the page we need to read.
+- runFlow:
+    when:
+      visible: "Never for This Card"
+    commands:
+      - tapOn: "Not Now"
+# Back on her page: it asks the server, which asks Stripe — the redirect alone proves nothing.
+- extendedWaitUntil:
+    visible: ".*in the book.*"
+    timeout: 90000
+- takeScreenshot: ${OUTPUT_DIR}/11-booked

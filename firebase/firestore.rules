@@ -41,8 +41,29 @@ service cloud.firestore {
           && request.auth.token.get(['firebase','sign_in_provider'], '') != 'anonymous';
     }
 
+    /**
+     * Whether this is her.
+     *
+     * Two ways in, because self-hosting has a bootstrap problem. Custom claims
+     * are the better mechanism — no read cost, nothing to look up — but setting
+     * one needs the Admin SDK, which means either a Cloud Function (Blaze, so a
+     * card) or a downloaded service-account key (a file you should not ask a
+     * hairdresser to look after).
+     *
+     * So an allowlist document is the second door: she signs in, and her uid
+     * goes in `config/access`. One manual step, written down, and no secret
+     * leaves the project. The claim path stays for the hosted deployment, where
+     * there is a Function to set it anyway.
+     */
     function stylist() {
-      return signedIn() && request.auth.token.get('stylist', false) == true;
+      return signedIn()
+          && (request.auth.token.get('stylist', false) == true || allowlisted());
+    }
+
+    function allowlisted() {
+      return exists(/databases/$(database)/documents/config/access)
+          && request.auth.uid in
+             get(/databases/$(database)/documents/config/access).data.get('uids', []);
     }
 
     function tenant(sid) {
@@ -134,6 +155,18 @@ service cloud.firestore {
     match /public/profile {
       allow read:  if true;
       allow write: if false;
+    }
+
+    /**
+     * Who is allowed in. Readable by nobody and writable by nobody — it is
+     * edited from the console or by the setup script, never by the app.
+     *
+     * A client-writable allowlist is not an allowlist. `stylist()` reads it
+     * through `get()`, which is evaluated by the rules engine rather than by
+     * the caller, so denying reads here costs nothing.
+     */
+    match /config/access {
+      allow read, write: if false;
     }
 
     // ================================================================

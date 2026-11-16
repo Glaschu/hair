@@ -1,0 +1,18 @@
+appId: com.glaschu.iris
+name: Drill 6 — she cancels the web booking herself, refunding in full
+env:
+  OUTPUT_DIR: screenshots/drill
+---
+- tapOn: ".*Ada Drill.*"
+- extendedWaitUntil:
+    visible: "No show"
+    timeout: 10000
+- tapOn: "Cancel"
+- extendedWaitUntil:
+    visible: ".*How much goes back.*"
+    timeout: 20000
+- takeScreenshot: ${OUTPUT_DIR}/13-who-is-cancelling
+- tapOn: ".*cancelling: refund all.*"
+- waitForAnimationToEnd:
+    timeout: 8000
+- takeScreenshot: ${OUTPUT_DIR}/14-cancelled

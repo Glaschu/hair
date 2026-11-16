@@ -64,6 +64,13 @@
       "when": 1789149706160,
       "tag": "0008_worried_iceman",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1791718916514,
+      "tag": "0009_small_rawhide_kid",
+      "breakpoints": true
     }
   ]
 }

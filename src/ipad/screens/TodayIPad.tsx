@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../../data/AppContext';
@@ -9,6 +9,8 @@ import { RootStackParamList } from '../../navigation/types';
 import { Avatar, Icons, RoundBtn } from '../../components';
 import { fmt, addDays, is24Hour } from '../../data/utils';
 import { useVisitActions } from '../../data/useVisitActions';
+import { useBookingRefresh } from '../../data/useBookingRefresh';
+import { MoneyAlertBanner } from '../../components/MoneyAlertBanner';
 import { Appointment } from '../../data/types';
 import { Eyebrow, Title, Btn, StatTile } from '../ui';
 import { ChairClientPanel } from '../ChairClientPanel';
@@ -26,6 +28,10 @@ function greetingFor(): string {
 
 export function TodayIPad() {
   const { theme, appointments, products, studioName } = useApp();
+  // Pull down to bring web bookings in. The iPad had no way to at all: it only
+  // saw them second hand, through iCloud from the phone.
+  const { refreshing, onRefresh } = useBookingRefresh();
+  const pull = <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.ink3} />;
   const { isLandscape } = useResponsive();
   const { setSection, setClientMode } = useShell();
   const nav = useNavigation<Nav>();
@@ -210,7 +216,8 @@ export function TodayIPad() {
     return (
       <View style={{ flex: 1 }}>
         <View style={{ paddingHorizontal: 32, paddingTop: 18, paddingBottom: 8 }}>{greeting}</View>
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 32, paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 32, paddingBottom: 28 }} showsVerticalScrollIndicator={false} refreshControl={pull}>
+          <MoneyAlertBanner style={{ marginBottom: 16 }} />
           {hero}
           <View style={{ flexDirection: 'row', gap: 20, marginTop: 20 }}>
             <View style={{ flex: 1.4, gap: 12 }}>
@@ -234,7 +241,8 @@ export function TodayIPad() {
   return (
     <View style={{ flex: 1 }}>
       <View style={{ paddingHorizontal: 28, paddingTop: 16, paddingBottom: 4 }}>{greeting}</View>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 28, paddingBottom: 28, gap: 16 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 28, paddingBottom: 28, gap: 16 }} showsVerticalScrollIndicator={false} refreshControl={pull}>
+        <MoneyAlertBanner />
         {hero}
         {restock}
         <ChairClientPanel />

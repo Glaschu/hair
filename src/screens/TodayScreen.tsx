@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet,
+  View, Text, ScrollView, Pressable, StyleSheet, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -11,6 +11,8 @@ import { RootStackParamList } from '../navigation/types';
 import { Avatar, Icons, RoundBtn, InChairCard } from '../components';
 import { fmt, addDays, isSameDay, is24Hour } from '../data/utils';
 import { useVisitActions } from '../data/useVisitActions';
+import { useBookingRefresh } from '../data/useBookingRefresh';
+import { MoneyAlertBanner } from '../components/MoneyAlertBanner';
 import { Appointment } from '../data/types';
 import { SERIF } from '../theme';
 
@@ -38,6 +40,7 @@ function timeAmPm(iso: string): string {
 export default function TodayScreen() {
   const { theme, appointments, clients, products, studioName } = useApp();
   const nav = useNavigation<Nav>();
+  const { refreshing, onRefresh } = useBookingRefresh();
 
   const today = useMemo(() => {
     const d = new Date();
@@ -88,6 +91,9 @@ export default function TodayScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.ink3} />
+        }
       >
         {/* Header */}
         <View style={styles.header}>
@@ -105,6 +111,9 @@ export default function TodayScreen() {
             </RoundBtn>
           </View>
         </View>
+
+        {/* Money that needs her — only when there is some. */}
+        <MoneyAlertBanner style={{ marginHorizontal: 20, marginBottom: 16 }} />
 
         {/* Day at a glance — dark hero card */}
         <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>

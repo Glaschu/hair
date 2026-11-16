@@ -8,9 +8,12 @@ import { RootStackParamList } from '../../navigation/types';
 import { Avatar, Icons, RoundBtn } from '../../components';
 import { fmt, isSameDay, addDays, startOfWeek, is24Hour } from '../../data/utils';
 import { Appointment, Schedule } from '../../data/types';
+import { dayOffOn, type DayOff } from '../../data/daysOff';
+import { DayOffBanner } from '../../components/DayOffBanner';
 
-/** Configured open hours for a date's weekday (0 when closed/unset). */
-function dayOpenHours(schedule: Schedule, d: Date): number {
+/** Configured open hours for a date (0 when closed, unset, or a day she has blocked off). */
+function dayOpenHours(schedule: Schedule, d: Date, daysOff: readonly DayOff[] = []): number {
+  if (dayOffOn(daysOff, d)) return 0;
   const s = schedule[d.getDay()];
   if (!s || !s.open) return 0;
   const [sh, sm] = s.start.split(':').map(Number);
@@ -30,7 +33,7 @@ const HOURS = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_S
 const hourLabel = (h: number) => is24Hour() ? `${h.toString().padStart(2, '0')}:00` : `${h % 12 || 12} ${h < 12 ? 'am' : 'pm'}`;
 
 export function CalendarIPad() {
-  const { theme, appointments, density, schedule } = useApp();
+  const { theme, appointments, density, schedule, daysOff } = useApp();
   const { isLandscape } = useResponsive();
   const nav = useNavigation<Nav>();
   const [view, setView] = useState<CalView>('week');
@@ -48,19 +51,19 @@ export function CalendarIPad() {
   // Summary adapts to the active view: Day / Week / Month period + its open hours.
   const summary = useMemo(() => {
     if (view === 'day') {
-      return { label: 'Day summary', appts: dayAppts, openHours: dayOpenHours(schedule, selectedDate) };
+      return { label: 'Day summary', appts: dayAppts, openHours: dayOpenHours(schedule, selectedDate, daysOff) };
     }
     if (view === 'month') {
       const m = selectedDate.getMonth(), y = selectedDate.getFullYear();
       const appts = appointments.filter((a) => { const d = new Date(a.start); return d.getMonth() === m && d.getFullYear() === y; });
       const days = new Date(y, m + 1, 0).getDate();
       let openHours = 0;
-      for (let i = 1; i <= days; i++) openHours += dayOpenHours(schedule, new Date(y, m, i));
+      for (let i = 1; i <= days; i++) openHours += dayOpenHours(schedule, new Date(y, m, i), daysOff);
       return { label: 'Month summary', appts, openHours };
     }
-    const openHours = weekDays.reduce((s, d) => s + dayOpenHours(schedule, d), 0);
+    const openHours = weekDays.reduce((s, d) => s + dayOpenHours(schedule, d, daysOff), 0);
     return { label: 'Week summary', appts: weekAppts, openHours };
-  }, [view, dayAppts, weekAppts, weekDays, selectedDate, appointments, schedule]);
+  }, [view, dayAppts, weekAppts, weekDays, selectedDate, appointments, schedule, daysOff]);
 
   const hourHeight = density === 'compact' ? 46 : density === 'comfy' ? 72 : 58;
 
@@ -98,6 +101,7 @@ export function CalendarIPad() {
           <Eyebrow style={{ marginBottom: 8 }}>
             {selectedDate.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase()} · {dayAppts.length} APPT{dayAppts.length === 1 ? '' : 'S'}
           </Eyebrow>
+          <DayOffBanner date={selectedDate} style={{ marginBottom: 10 }} />
           {dayAppts.length === 0 ? (
             <Text style={{ color: theme.ink3, fontStyle: 'italic', fontSize: 13 }}>Nothing booked.</Text>
           ) : (
@@ -129,6 +133,7 @@ export function CalendarIPad() {
         {weekDays.map((d) => {
           const appts = weekAppts.filter((a) => isSameDay(new Date(a.start), d)).sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
           const isToday = isSameDay(d, new Date());
+          const off = appts.length === 0 ? dayOffOn(daysOff, d) : null;
           return (
             <View key={d.toISOString()}>
               <Pressable onPress={() => setSelectedDate(d)} style={{ marginBottom: 8 }}>
@@ -137,7 +142,9 @@ export function CalendarIPad() {
                 </Eyebrow>
               </Pressable>
               {appts.length === 0
-                ? <Text style={{ color: theme.ink3, fontStyle: 'italic', fontSize: 13 }}>Free</Text>
+                ? <Text style={{ color: theme.ink3, fontStyle: 'italic', fontSize: 13 }}>
+                    {off ? `Day off${off.note ? ` · ${off.note}` : ''}` : 'Free'}
+                  </Text>
                 : <View style={{ gap: 8 }}>{appts.map((a) => <RailAppt key={a.id} appt={a} onPress={() => nav.navigate('AppointmentDetail', { appointmentId: a.id })} />)}</View>}
             </View>
           );
@@ -152,6 +159,7 @@ export function CalendarIPad() {
           {view === 'day' && (
             <>
               {stepHeader(selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }), () => setSelectedDate(addDays(selectedDate, -1)), () => setSelectedDate(addDays(selectedDate, 1)))}
+              <DayOffBanner date={selectedDate} />
               {dayList}
             </>
           )}
@@ -168,6 +176,7 @@ export function CalendarIPad() {
                 <Eyebrow style={{ marginBottom: 8 }}>
                   {selectedDate.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase()} · {dayAppts.length} APPT{dayAppts.length === 1 ? '' : 'S'}
                 </Eyebrow>
+                <DayOffBanner date={selectedDate} style={{ marginBottom: 10 }} />
                 {dayList}
               </View>
             </>

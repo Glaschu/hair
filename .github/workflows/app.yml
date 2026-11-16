@@ -1,0 +1,82 @@
+# Builds the iOS app (iPhone and iPad) and, if asked, sends it to TestFlight.
+#
+# Manual, like the deploy: a build uses one of the month's EAS builds and a
+# TestFlight upload is something Jessie's phone will offer her. The build itself
+# runs on Expo's machines (EAS), which hold the signing certificate — this job
+# only checks the code, starts the build and waits for the answer.
+#
+# Needs one secret: EXPO_TOKEN (expo.dev → Account settings → Access tokens).
+# Sending to TestFlight also needs an App Store Connect API key stored with EAS,
+# which `npx eas submit -p ios` sets up the first time it is run by hand.
+name: app
+
+on:
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: Send the build to TestFlight when it finishes
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  # Two builds at once would race for the same build number.
+  group: app-build
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: verify before building
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm }
+      - run: npm ci
+      - run: npx tsc --noEmit -p tsconfig.json
+      - run: npx jest --ci
+
+  build:
+    name: build for iOS
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm }
+
+      - name: is there a token to build with?
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN is not set. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - run: npm ci
+
+      # The build number is counted by EAS ("appVersionSource": "remote"), not
+      # by app.json — a number bumped inside this checkout would be thrown away
+      # with it, and the App Store refuses the same number twice.
+      - name: build
+        run: |
+          if [ "${{ inputs.testflight }}" = "true" ]; then
+            npx eas build --platform ios --profile production --non-interactive --auto-submit
+          else
+            npx eas build --platform ios --profile production --non-interactive
+          fi
+
+      - name: what was built
+        run: |
+          echo "### iOS build" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- commit: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- sent to TestFlight: \`${{ inputs.testflight }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- builds: https://expo.dev/accounts/glaschus-organization/projects/iris/builds" >> "$GITHUB_STEP_SUMMARY"

@@ -30,7 +30,7 @@ const REPEAT_OPTIONS: { weeks: number; label: string }[] = [
 ];
 
 export default function NewAppointmentScreen() {
-  const { theme, clients, setClients, services, products, appointments, setAppointments, schedule, bookingWindowDays } = useApp();
+  const { theme, clients, setClients, services, products, appointments, setAppointments, schedule, daysOff, bookingWindowDays } = useApp();
   const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
@@ -97,8 +97,8 @@ export default function NewAppointmentScreen() {
   const scheduleCheck = useMemo(() => {
     const d = new Date(selectedDate);
     d.setHours(selectedTime.h, selectedTime.m, 0, 0);
-    return checkSchedule(schedule, d, selectedService?.duration ?? 60);
-  }, [schedule, selectedDate, selectedTime, selectedService]);
+    return checkSchedule(schedule, d, selectedService?.duration ?? 60, daysOff);
+  }, [schedule, daysOff, selectedDate, selectedTime, selectedService]);
 
   const timeSlots = useMemo(
     () => generateTimeSlots(schedule, selectedDate),
@@ -465,7 +465,9 @@ export default function NewAppointmentScreen() {
                     {scheduleCheck.dayClosed ? 'Booking on a day off' : 'Outside working hours'}
                   </Text>
                   <Text style={[styles.schedWarnSub, { color: theme.ink2 }]}>
-                    {scheduleCheck.dayClosed
+                    {scheduleCheck.dayOff
+                      ? `You've blocked this day off${scheduleCheck.dayOff.note ? ` (${scheduleCheck.dayOff.note})` : ''}.`
+                      : scheduleCheck.dayClosed
                       ? `${DAY_NAMES[selectedDate.getDay()]} is marked as closed.`
                       : scheduleCheck.day
                         ? `${DAY_NAMES[selectedDate.getDay()]} runs ${fmtHHMM(scheduleCheck.day.start)}–${fmtHHMM(scheduleCheck.day.end)}`
@@ -582,7 +584,9 @@ export default function NewAppointmentScreen() {
                     {scheduleCheck.dayClosed ? 'Booking on a day off' : 'Outside working hours'}
                   </Text>
                   <Text style={[styles.schedWarnSub, { color: theme.ink2 }]}>
-                    {scheduleCheck.dayClosed
+                    {scheduleCheck.dayOff
+                      ? `You've blocked this day off${scheduleCheck.dayOff.note ? ` (${scheduleCheck.dayOff.note})` : ''}. You can still proceed.`
+                      : scheduleCheck.dayClosed
                       ? `${DAY_NAMES[selectedDate.getDay()]} is marked closed. You can still proceed.`
                       : scheduleCheck.day
                         ? `${DAY_NAMES[selectedDate.getDay()]} runs ${fmtHHMM(scheduleCheck.day.start)}–${fmtHHMM(scheduleCheck.day.end)}. You can still proceed.`

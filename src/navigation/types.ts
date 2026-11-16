@@ -15,6 +15,11 @@ export type RootStackParamList = {
   AppointmentEdit: { appointmentId: string };
   VisitWrapUp: { appointmentId: string };
   BookingSetup: undefined;
+  BookingGuide: undefined;
+  CloudAccess: undefined;
+  CancellationPolicy: undefined;
+  DaysOff: undefined;
+  MoneyAlerts: undefined;
   SendBookingLink: { clientId: string };
 };
 

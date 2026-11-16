@@ -131,7 +131,7 @@ describe('booking, end to end', () => {
     const blocked = await svc.call(`/api/l/${link.token}/book`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ slotId: 'anything', sealed: 'x' }),
+      body: JSON.stringify({ slotId: 'anything', sealed: Buffer.alloc(120, 7).toString('base64') }),
     });
     assert.equal(blocked.status, 404);
   });
@@ -168,6 +168,18 @@ describe('booking, end to end', () => {
       body: JSON.stringify({ slotId: page.slots[0].id, sealed: 'x'.repeat(5000) }),
     });
     assert.equal(huge.status, 413, 'the store is not free disk space');
+
+    // Not an envelope at all. Her phone could never open it, and an envelope it
+    // cannot open is never acknowledged — so this used to sit in her inbox for
+    // good, with the hour taken.
+    for (const sealed of ['x', 'not base64!', Buffer.alloc(10).toString('base64'), { an: 'object' }]) {
+      const junk = await svc.call(`/api/l/${link.token}/book`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slotId: page.slots[0].id, sealed }),
+      });
+      assert.equal(junk.status, 400, `refused: ${JSON.stringify(sealed)}`);
+    }
 
     assert.equal(svc.env.DB._raw.prepare('SELECT COUNT(*) n FROM bookings').get().n, 0);
   });
@@ -259,6 +271,22 @@ describe('a leaked device key', () => {
       body: JSON.stringify({ name: 'Iris Studio', publicKey: keys.publicKey }),
     });
     assert.equal(again.status, 200, 'a device re-registering must not be locked out');
+  });
+
+  test('re-registering without terms keeps the terms she set', async () => {
+    const { svc, keys } = await setUpSalon();
+    const terms = 'Cancel 72 hours ahead for a full refund.';
+    await svc.authed('/api/salon', {
+      method: 'PUT',
+      body: JSON.stringify({ name: 'Iris', publicKey: keys.publicKey, policy: terms }),
+    });
+    // What setup on a new device sends: a name and a key, no policy.
+    const relink = await svc.authed('/api/salon', {
+      method: 'PUT',
+      body: JSON.stringify({ name: 'Iris', publicKey: keys.publicKey }),
+    });
+    assert.equal(relink.status, 200);
+    assert.equal((await (await svc.authed('/api/salon')).json()).policy, terms);
   });
 
   test('she can still start over with the reset key from her own account', async () => {
@@ -586,6 +614,30 @@ describe('losses that used to be possible', () => {
     assert.equal(third.status, 200);
   });
 
+  test("a used-up link's other hours go back on offer — the booked one does not", async () => {
+    // Offered twice, booked once: the other hour used to stay blocked from
+    // every other client until the link expired, three weeks later.
+    const svc = makeService();
+    const keys = await salon(svc);
+    const made = await (await mint(svc, [
+      { startsAt: at(6, 10), endsAt: at(6, 11) },
+      { startsAt: at(7, 10), endsAt: at(7, 11) },
+    ])).json();
+    const page = await (await svc.call(`/api/l/${made.token}`)).json();
+    const sealed = pageSeal()(JSON.stringify({ name: 'Sara', phone: '07700900000' }), keys.publicKey);
+    const booked = await svc.call(`/api/l/${made.token}/book`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slotId: page.slots[0].id, sealed, agreed: true }),
+    });
+    assert.equal(booked.status, 200);
+
+    assert.equal((await mint(svc, [{ startsAt: at(7, 10), endsAt: at(7, 11) }])).status, 200,
+      'the hour nobody took is free to offer again');
+    assert.equal((await mint(svc, [{ startsAt: at(6, 10), endsAt: at(6, 11) }])).status, 409,
+      'the hour that was booked is not');
+  });
+
   test('a revoked link frees its hour for the next one', async () => {
     const svc = makeService();
     await salon(svc);
@@ -895,6 +947,38 @@ describe('cancelling', () => {
     assert.ok(bookings[0].cancelledAt > 0);
   });
 
+  test("a client's cancellation goes back into her inbox, so her diary hears about it", async () => {
+    // Before, a booking she had already pulled in stayed in her diary as live
+    // after the client cancelled: a no-show she would wait for.
+    const { svc, booking } = await booked();
+    const seen = await svc.authed(`/api/bookings/${booking.bookingId}/seen`, { method: 'POST' });
+    assert.equal(seen.status, 200);
+    assert.equal((await (await svc.authed('/api/bookings')).json()).bookings.length, 0);
+
+    await svc.call(`/api/c/${booking.cancelToken}`, { method: 'POST' });
+    const { bookings } = await (await svc.authed('/api/bookings')).json();
+    assert.deepEqual(bookings.map((b) => [b.id, b.status]), [[booking.bookingId, 'cancelled']]);
+  });
+
+  test('when she cancels, the hour is free for others but not offered back on the same link', async () => {
+    // Before, cancelling in the app never reached the service at all. Now it
+    // does — and calling a booking off must not let the same client book
+    // straight back into the hour she has just called off.
+    const { svc, link, booking } = await booked({ maxBookings: 1 });
+    const res = await svc.authed(`/api/bookings/${booking.bookingId}/cancel`, { method: 'POST' });
+    assert.equal(res.status, 200);
+    assert.equal((await svc.call(`/api/l/${link.token}`)).status, 404, 'the old link is withdrawn');
+
+    const again = await svc.authed('/api/links', {
+      method: 'POST',
+      body: JSON.stringify({
+        clientRef: 'ref-2', serviceName: 'Colour', priceMinor: 9000,
+        slots: [{ startsAt: hoursOut(120), endsAt: hoursOut(122) }],
+      }),
+    });
+    assert.equal(again.status, 200, 'and the hour can go to someone else');
+  });
+
   test('a cancel token is good for exactly one booking and nothing else', async () => {
     const { svc } = await booked();
     assert.equal((await svc.call('/api/c/deadbeefdeadbeef', { method: 'POST' })).status, 404);
@@ -979,5 +1063,133 @@ describe('what a cancellation actually costs', () => {
     // Boundaries go the client's way, and a boundary that goes the other way is
     // the one people write reviews about.
     assert.equal(await refundPctAt(48.25), 100);
+  });
+});
+
+describe('days off', () => {
+  const hoursOut = (n) => new Date(Date.now() + n * 3_600_000).toISOString();
+
+  async function offered() {
+    const svc = makeService();
+    const keys = newSalonKeys();
+    await svc.authed('/api/salon', { method: 'PUT', body: JSON.stringify({ name: 'Iris', publicKey: keys.publicKey }) });
+    const link = await (await svc.authed('/api/links', {
+      method: 'POST',
+      body: JSON.stringify({
+        clientRef: 'ref-1', serviceName: 'Colour', priceMinor: 9000, maxBookings: 2,
+        slots: [
+          { startsAt: hoursOut(48), endsAt: hoursOut(50) },
+          { startsAt: hoursOut(96), endsAt: hoursOut(98) },
+        ],
+      }),
+    })).json();
+    const block = (ranges) => svc.authed('/api/days-off', { method: 'PUT', body: JSON.stringify({ ranges }) });
+    const view = async () => (await (await svc.call(`/api/l/${link.token}`)).json()).slots ?? [];
+    const book = async (slotId, name = 'Sara') => svc.call(`/api/l/${link.token}/book`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slotId, sealed: pageSeal()(JSON.stringify({ name, phone: '07700900000' }), keys.publicKey), agreed: true }),
+    });
+    return { svc, link, block, view, book };
+  }
+  const day = (fromH, toH) => ({ from: hoursOut(fromH), to: hoursOut(toH) });
+
+  test('a day she blocks disappears from links already sent, and cannot be booked', async () => {
+    const { block, view, book } = await offered();
+    const [first] = await view();
+    assert.equal((await block([day(40, 60)])).status, 200);
+
+    assert.equal((await view()).length, 1, 'only the hour off the blocked day is left');
+    assert.equal((await book(first.id)).status, 409, 'a page opened before she blocked it cannot book it either');
+  });
+
+  test('opening the day again puts the hours back — nothing was thrown away', async () => {
+    const { block, view } = await offered();
+    await block([day(40, 60)]);
+    await block([]);
+    assert.equal((await view()).length, 2);
+  });
+
+  test('an hour freed by a client cancelling on a blocked day stays off', async () => {
+    // The gap a one-off withdrawal would leave: the cancellation frees the
+    // slot, and without the block it would go straight back on offer.
+    const { svc, block, view, book } = await offered();
+    const [first] = await view();
+    const { cancelToken } = await (await book(first.id)).json();
+    await block([day(40, 60)]);
+    await svc.call(`/api/c/${cancelToken}`, { method: 'POST' });
+    const left = await view();
+    assert.equal(left.length, 1, 'the freed hour on the blocked day is not offered');
+    assert.ok(Date.parse(left[0].startsAt) > Date.now() + 90 * 3_600_000, 'only the hour off the blocked day is');
+  });
+
+  test('a new link cannot offer an hour on a day off', async () => {
+    const { svc, block } = await offered();
+    await block([day(140, 170)]);
+    const res = await svc.authed('/api/links', {
+      method: 'POST',
+      body: JSON.stringify({ clientRef: 'r2', serviceName: 'Cut', slots: [{ startsAt: hoursOut(150), endsAt: hoursOut(151) }] }),
+    });
+    assert.equal(res.status, 409);
+    assert.equal((await res.json()).error, 'day off');
+  });
+
+  test('only her devices can set them, and only as real ranges', async () => {
+    const { svc, block } = await offered();
+    const stranger = await svc.call('/api/days-off', {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ranges: [] }),
+    });
+    assert.equal(stranger.status, 401);
+    assert.equal((await block([{ from: hoursOut(10), to: hoursOut(5) }])).status, 400);
+  });
+});
+
+describe('a time that has already started', () => {
+  test('is not offered and cannot be booked', async () => {
+    const svc = makeService();
+    const keys = newSalonKeys();
+    await svc.authed('/api/salon', { method: 'PUT', body: JSON.stringify({ name: 'Iris', publicKey: keys.publicKey }) });
+    const past = new Date(Date.now() - 3_600_000).toISOString();
+    const soon = new Date(Date.now() + 48 * 3_600_000).toISOString();
+    const link = await (await svc.authed('/api/links', {
+      method: 'POST',
+      body: JSON.stringify({ clientRef: 'r', serviceName: 'Cut', maxBookings: 2, slots: [
+        { startsAt: past, endsAt: new Date(Date.now() - 1_800_000).toISOString() },
+        { startsAt: soon, endsAt: new Date(Date.now() + 49 * 3_600_000).toISOString() },
+      ] }),
+    })).json();
+    const page = await (await svc.call(`/api/l/${link.token}`)).json();
+    assert.deepEqual(page.slots.map((s) => s.startsAt), [soon]);
+
+    const gone = svc.env.DB._raw.prepare('SELECT id FROM slots WHERE starts_at = ?').get(past).id;
+    const res = await svc.call(`/api/l/${link.token}/book`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slotId: gone, sealed: pageSeal()(JSON.stringify({ name: 'A', phone: '1' }), keys.publicKey) }),
+    });
+    assert.equal(res.status, 409);
+  });
+});
+
+describe('a client cancelling between the fetch and the acknowledgement', () => {
+  test('is not swallowed by the acknowledgement', async () => {
+    const svc = makeService();
+    const keys = newSalonKeys();
+    await svc.authed('/api/salon', { method: 'PUT', body: JSON.stringify({ name: 'Iris', publicKey: keys.publicKey }) });
+    const link = await (await svc.authed('/api/links', { method: 'POST', body: JSON.stringify({
+      clientRef: 'r', serviceName: 'Cut',
+      slots: [{ startsAt: new Date(Date.now() + 72 * 3_600_000).toISOString(), endsAt: new Date(Date.now() + 73 * 3_600_000).toISOString() }],
+    }) })).json();
+    const page = await (await svc.call(`/api/l/${link.token}`)).json();
+    const booked = await (await svc.call(`/api/l/${link.token}/book`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slotId: page.slots[0].id, sealed: pageSeal()(JSON.stringify({ name: 'A', phone: '1' }), keys.publicKey) }),
+    })).json();
+
+    // Her device fetched it as confirmed; the client cancels; then the ack arrives.
+    await svc.call(`/api/c/${booked.cancelToken}`, { method: 'POST' });
+    await svc.authed(`/api/bookings/${booked.bookingId}/seen`, { method: 'POST', body: JSON.stringify({ status: 'confirmed' }) });
+
+    const { bookings } = await (await svc.authed('/api/bookings')).json();
+    assert.deepEqual(bookings.map((b) => b.status), ['cancelled'], 'still in the inbox, as cancelled');
   });
 });

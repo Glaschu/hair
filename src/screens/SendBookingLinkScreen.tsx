@@ -10,9 +10,11 @@ import { RootStackParamList } from '../navigation/types';
 import { Card, Icons, RoundBtn, useLocalDialog } from '../components';
 import { fmt, addDays, generateTimeSlots, isSameDay } from '../data/utils';
 import { hasConflict } from '../data/booking';
+import { closedOn } from '../data/daysOff';
 import { loadCredentials } from '../data/bookingStore';
-import { createLink } from '../data/bookingApi';
-import { newClientRef, recordSentLink } from '../db/bookingLinks';
+import { createLink, ensurePolicy } from '../data/bookingApi';
+import { recordSentLink } from '../db/bookingLinks';
+import { sealClientRef } from '../data/clientRef';
 import { bookingInviteMessage, firstNameOf } from '../data/bookingMessage';
 import { Service } from '../data/types';
 import { SERIF } from '../theme';
@@ -20,11 +22,9 @@ import { SERIF } from '../theme';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'SendBookingLink'>;
 
-/** How many days ahead she can offer from. */
-const DAYS_AHEAD = 28;
 
 export default function SendBookingLinkScreen() {
-  const { theme, clients, services, appointments, schedule, studioName, backend } = useApp();
+  const { theme, clients, services, appointments, schedule, daysOff, bookingWindowDays, studioName, backend } = useApp();
   const { alert, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
@@ -41,14 +41,17 @@ export default function SendBookingLinkScreen() {
     [appointments],
   );
 
-  /** Free times over the next few weeks, her working hours only. */
+  /**
+   * Free times she can offer: her working hours, as far ahead as her booking
+   * window reaches — that setting is what "releases" days — and never on a day
+   * she has blocked off.
+   */
   const days = useMemo(() => {
     if (!service) return [];
     const out: { date: Date; times: Date[] }[] = [];
-    for (let i = 1; i <= DAYS_AHEAD; i++) {
+    for (let i = 1; i <= bookingWindowDays; i++) {
       const date = addDays(new Date(), i);
-      const open = schedule[date.getDay()]?.open ?? true;
-      if (!open) continue;
+      if (closedOn(schedule, daysOff, date).closed) continue;
 
       const times = generateTimeSlots(schedule, date)
         .map(({ h, m }) => {
@@ -64,7 +67,7 @@ export default function SendBookingLinkScreen() {
       if (times.length) out.push({ date, times });
     }
     return out;
-  }, [service, schedule, busy]);
+  }, [service, schedule, daysOff, bookingWindowDays, busy]);
 
   const toggle = (start: Date) => {
     const iso = start.toISOString();
@@ -84,9 +87,16 @@ export default function SendBookingLinkScreen() {
         return;
       }
 
-      // A fresh reference each time, so the service can never tell that
-      // two links belong to the same person.
-      const clientRef = newClientRef();
+      // Which client this is for, sealed to her own salon key: any of her
+      // devices can open it when the booking comes back, so it lands on this
+      // card whichever device pulls it in. Sealed afresh every time, so the
+      // service can never tell that two links belong to the same person.
+      const clientRef = sealClientRef(client.id, creds.keyPair.publicKey);
+
+      // Her cancellation terms have to be on the service BEFORE the link is
+      // made, because the link pins the terms in force when it was created —
+      // and a link made without any asks the client to agree to nothing.
+      await ensurePolicy(creds);
       const slots = chosen.sort().map((iso) => ({
         startsAt: iso,
         endsAt: new Date(new Date(iso).getTime() + service.duration * 60000).toISOString(),
@@ -115,7 +125,10 @@ export default function SendBookingLinkScreen() {
           service,
           slotCount: slots.length,
           url: link.url,
-          depositPercent: 50,
+          // Only when this service actually takes one. Promising a deposit the
+          // page never asks for is a message the client cannot square with
+          // what they see.
+          depositPercent: backend.has('deposits') ? 50 : undefined,
         }),
       });
       nav.goBack();

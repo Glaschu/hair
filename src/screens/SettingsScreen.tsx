@@ -9,6 +9,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
 import { useApp, ExportPayload } from '../data/AppContext';
+import { upcomingDaysOff, describeDayOff } from '../data/daysOff';
 import { DEFAULT_SCHEDULE } from '../data/mockData';
 import { RootStackParamList } from '../navigation/types';
 import { Card, Icons, RoundBtn, useLocalDialog, PrivacyPolicyModal, appVersionLabel, WhatsNewList } from '../components';
@@ -38,7 +39,7 @@ for (let h = 6; h <= 22; h++) {
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SettingsScreen() {
-  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, vatRate, setVatRate, currency, setCurrency, hour24, setHour24, calendarSyncEnabled, setCalendarSyncEnabled, bookingEnabled, setBookingEnabled, backend, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
+  const { theme, studioName, setStudioName, dark, setDark, accent, setAccent, services, setServices, schedule, setSchedule, daysOff, density, setDensity, bookingWindowDays, setBookingWindowDays, remindersEnabled, setRemindersEnabled, reminderLeadMinutes, setReminderLeadMinutes, vatRate, setVatRate, currency, setCurrency, hour24, setHour24, calendarSyncEnabled, setCalendarSyncEnabled, bookingEnabled, setBookingEnabled, backend, appleCalendarId, setAppleCalendarId, iCloudSyncEnabled, setICloudSyncEnabled, lastExportAt, markExported, clients, products, appointments, resetToDemo, loadFromExport, forceSync } = useApp();
   const { alert, confirm, actionSheet, dialog } = useLocalDialog();
   const nav = useNavigation<Nav>();
   const [editingName, setEditingName] = useState(false);
@@ -60,6 +61,7 @@ export default function SettingsScreen() {
         appointments,
         services,
         schedule,
+        daysOff,
       };
       const json = JSON.stringify(payload, null, 2);
       const file = new File(Paths.document, 'iris-export.json');
@@ -503,6 +505,21 @@ export default function SettingsScreen() {
             </View>
             {bookingEnabled && (
               <>
+                {/* First, because setup is spread over three screens and a web
+                    page and nothing else says what order they go in. */}
+                <View style={[styles.divider, { backgroundColor: theme.line }]} />
+                <Pressable style={styles.dataRow} onPress={() => nav.navigate('BookingGuide')}>
+                  <View style={[styles.dataIcon, { backgroundColor: theme.sage + '18' }]}>
+                    <Icons.clipboardCheck size={16} color={theme.sage} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.dataLabel, { color: theme.ink }]}>How it works</Text>
+                    <Text style={[styles.dataSub, { color: theme.ink3 }]}>
+                      Setting it up and using it, step by step
+                    </Text>
+                  </View>
+                  <Icons.chevronRight size={16} color={theme.ink3} />
+                </Pressable>
                 <View style={[styles.divider, { backgroundColor: theme.line }]} />
                 <Pressable style={styles.dataRow} onPress={() => nav.navigate('BookingSetup')}>
                   <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
@@ -528,6 +545,52 @@ export default function SettingsScreen() {
                   </View>
                   <Icons.chevronRight size={16} color={theme.ink3} />
                 </Pressable>
+                {/*
+                  Her terms, shown to clients before they book — and on a
+                  service that takes deposits, how much comes back. Only once
+                  there is a service to keep them on.
+                */}
+                {backend.has('booking-links') && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.line }]} />
+                    <Pressable style={styles.dataRow} onPress={() => nav.navigate('CancellationPolicy')}>
+                      <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
+                        <Icons.calendar size={16} color={theme.accent} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.dataLabel, { color: theme.ink }]}>Cancellation policy</Text>
+                        <Text style={[styles.dataSub, { color: theme.ink3 }]}>
+                          {backend.has('deposits')
+                            ? 'What clients agree to, and what comes back'
+                            : 'What clients agree to before booking'}
+                        </Text>
+                      </View>
+                      <Icons.chevronRight size={16} color={theme.ink3} />
+                    </Pressable>
+                  </>
+                )}
+                {/*
+                  Only on a deployment that keeps its data in Firestore. The
+                  Cloudflare version has nothing to sign in to, so offering it
+                  would be a door to a room that does not exist.
+                */}
+                {backend.has('live-sync') && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.line }]} />
+                    <Pressable style={styles.dataRow} onPress={() => nav.navigate('CloudAccess')}>
+                      <View style={[styles.dataIcon, { backgroundColor: theme.sage + '18' }]}>
+                        <Icons.lock size={16} color={theme.sage} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.dataLabel, { color: theme.ink }]}>Your database</Text>
+                        <Text style={[styles.dataSub, { color: theme.ink3 }]}>
+                          Sign this device in to your own storage
+                        </Text>
+                      </View>
+                      <Icons.chevronRight size={16} color={theme.ink3} />
+                    </Pressable>
+                  </>
+                )}
               </>
             )}
           </Card>
@@ -630,6 +693,27 @@ export default function SettingsScreen() {
                 </React.Fragment>
               );
             })}
+          </Card>
+          {/*
+            The exceptions to the week above — a holiday, a course. Never
+            offered in a link, closed on the calendar.
+          */}
+          <Card style={{ marginTop: 12 }}>
+            <Pressable style={styles.dataRow} onPress={() => nav.navigate('DaysOff')}>
+              <View style={[styles.dataIcon, { backgroundColor: theme.accent + '18' }]}>
+                <Icons.calendar size={16} color={theme.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.dataLabel, { color: theme.ink }]}>Days off</Text>
+                <Text style={[styles.dataSub, { color: theme.ink3 }]}>
+                  {(() => {
+                    const next = upcomingDaysOff(daysOff)[0];
+                    return next ? `Next: ${describeDayOff(next)}${next.note ? ` · ${next.note}` : ''}` : 'Block off a holiday or a day away';
+                  })()}
+                </Text>
+              </View>
+              <Icons.chevronRight size={16} color={theme.ink3} />
+            </Pressable>
           </Card>
         </View>
 

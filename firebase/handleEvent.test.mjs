@@ -1,8 +1,16 @@
+import { testDb, wipe, closeDb } from './src/testDb.mjs';
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, setDoc, getDoc, getDocs, collection } from 'firebase/firestore';
 import { handleEvent } from './src/handleEvent.mjs';
+
+// Thin shims so the test bodies read the same as before. The Admin SDK is
+// method-on-reference where the client SDK is free functions; nothing else
+// about these tests changes.
+const doc = (d, path) => d.doc(path);
+const collection = (d, path) => d.collection(path);
+const setDoc = (ref, data) => ref.set(data);
+const getDoc = (ref) => ref.get();
+const getDocs = (q) => q.get();
 
 /**
  * The webhook handler, against a real database.
@@ -13,27 +21,29 @@ import { handleEvent } from './src/handleEvent.mjs';
  * thing still waiting on an account.
  */
 
-let env, db;
+let db, FieldValue, app;
 const NOW = Date.UTC(2026, 9, 3, 9, 0, 0);
 
-before(async () => {
-  env = await initializeTestEnvironment({
-    projectId: 'iris-webhook-test',
-    firestore: {
-      rules: 'rules_version = "2"; service cloud.firestore { match /{d=**} { allow read, write: if true; } }',
-      host: '127.0.0.1', port: 8080,
-    },
-  });
-});
-after(async () => { await env?.cleanup(); });
-beforeEach(async () => {
-  await env.clearFirestore();
-  db = env.unauthenticatedContext().firestore();
-});
+before(() => { ({ db, FieldValue, app } = testDb('iris-webhook-test')); });
+after(async () => { await closeDb(app); });
+beforeEach(async () => { await wipe(db); });
 
-const booking = (over = {}) => setDoc(doc(db, 'bookings/bk_1'), {
-  classification: 'pending', expectedAmountMinor: 4500, currency: 'gbp', ...over,
-});
+/**
+ * A deposit mid-checkout, as startDeposit leaves it: the booking waiting for
+ * payment, and its own hold on the slot. Anything less is not a booking the
+ * webhook can ever actually meet.
+ */
+const booking = async (over = {}) => {
+  await setDoc(doc(db, 'links/tok1'), {
+    revoked: false, maxBookings: 1, bookedCount: 0, expiresAt: NOW + 86_400_000,
+    slots: [{ id: 's0', s: NOW + 50 * 3_600_000, e: NOW + 53 * 3_600_000,
+              taken: false, heldBy: 'bk_1', heldUntil: NOW + 600_000 }],
+  });
+  return setDoc(doc(db, 'bookings/bk_1'), {
+    classification: 'pending', status: 'pending_payment', token: 'tok1', slotId: 's0',
+    expectedAmountMinor: 4500, currency: 'gbp', ...over,
+  });
+};
 
 const object = (over = {}) => ({
   bookingId: 'bk_1', paymentStatus: 'paid', amountMinor: 4500, currency: 'gbp',
@@ -178,5 +188,61 @@ describe('a payment with no booking behind it', () => {
     const out = await fire('evt_1', object({ bookingId: null }));
     assert.equal(out.action, 'ignored');
     assert.equal((await read('processedEvents/evt_1')).outcome, 'ignored');
+  });
+});
+
+describe('the booking status, not just the money', () => {
+  /**
+   * The classification says what the MONEY did. `status` says what the BOOKING
+   * is, and her device reads that one — the inbox asks for
+   * `status == 'confirmed'`.
+   *
+   * Moving one without the other was a real defect: a paid deposit advanced to
+   * classification `confirmed` while status stayed `pending_payment`, where
+   * nothing would ever look at it again. Money taken, appointment never
+   * delivered — the exact outcome this whole design exists to prevent.
+   */
+  test('a paid deposit becomes visible to her device', async () => {
+    await booking({ status: 'pending_payment' });
+    await fire('evt_1', object());
+
+    const b = await read('bookings/bk_1');
+    assert.equal(b.classification, 'confirmed');
+    assert.equal(b.status, 'confirmed', 'the inbox queries status, so this is the field that matters');
+    assert.equal(typeof b.confirmedAt, 'number');
+  });
+
+  test('a booking she already cancelled is not resurrected by a late webhook', async () => {
+    // The payment may well confirm after she cancelled. The money story moves
+    // on; the appointment does not come back — and the money goes back.
+    await booking({ status: 'cancelled' });
+    await fire('evt_1', object());
+
+    const b = await read('bookings/bk_1');
+    assert.equal(b.classification, 'confirmed', 'the money is still tracked');
+    assert.equal(b.status, 'cancelled', 'but the appointment stays cancelled');
+    assert.deepEqual(await outboxKinds(), ['notify_stylist', 'refund_deposit'],
+      'no "you are booked" message for an appointment that does not exist');
+    assert.equal((await read('links/tok1')).slots[0].taken, false, 'and the hour is not taken');
+  });
+
+  test('a refund does not quietly change what the booking is', async () => {
+    // Cancelling is its own flow, with its own notice and refund tiers. A
+    // refund event must not shortcut it.
+    await booking({ status: 'confirmed', classification: 'confirmed' });
+    await fire('evt_2', object({ amountRefundedMinor: 4500 }));
+
+    const b = await read('bookings/bk_1');
+    assert.equal(b.classification, 'refunded');
+    assert.equal(b.status, 'confirmed');
+  });
+
+  test('an unpaid session confirms nothing, in either field', async () => {
+    await booking({ status: 'pending_payment' });
+    await fire('evt_1', object({ paymentStatus: 'unpaid' }));
+
+    const b = await read('bookings/bk_1');
+    assert.notEqual(b.classification, 'confirmed');
+    assert.equal(b.status, 'pending_payment');
   });
 });
